@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
+import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { spokenText } from './core/message.ts'
@@ -10,12 +11,26 @@ export interface SpeechResult {
 }
 
 export interface ProcessOneResult {
-  status: 'idle' | 'heard' | 'failed'
+  status: 'idle' | 'heard' | 'failed' | 'locked'
   exitCode: number
   voicemailId?: number
 }
 
 export type SpeakVoicemail = (text: string) => SpeechResult
+
+export function processOneVoicemailWithLock(store: VoicemailStore, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
+  const owner = `processor:${process.pid}`
+
+  if (!store.acquireProcessorLock(owner)) {
+    return { status: 'locked', exitCode: 0 }
+  }
+
+  try {
+    return processOneVoicemail(store, speak)
+  } finally {
+    store.releaseProcessorLock(owner)
+  }
+}
 
 export function processOneVoicemail(store: VoicemailStore, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
   const voicemail = store.claimNextForSpeech()
@@ -43,7 +58,7 @@ if (isMainModule()) {
   const store = new VoicemailStore()
 
   try {
-    const result = processOneVoicemail(store)
+    const result = processOneVoicemailWithLock(store)
     process.exitCode = result.exitCode
   } finally {
     store.close()
@@ -51,5 +66,12 @@ if (isMainModule()) {
 }
 
 function isMainModule(): boolean {
-  return process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]
+  if (process.argv[1] === undefined) {
+    return false
+  }
+
+  const executable = basename(process.argv[1])
+
+  return fileURLToPath(import.meta.url) === process.argv[1]
+    || executable === 'voicemail-processor'
 }

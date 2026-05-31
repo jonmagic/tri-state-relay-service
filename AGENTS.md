@@ -99,7 +99,7 @@ Use this order unless there is a strong reason to change it:
 9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
 10. Menu bar app shell with queue count and ready/focus/mute controls.
 11. Replay last, skip current, mark handled, and clear heard.
-12. Processor single-writer lock and launchd-friendly daemon mode.
+12. Launchd-friendly daemon mode.
 13. Source actions: reveal cwd, copy cwd, activate source app.
 14. Terminal-specific focus adapters where reliable.
 

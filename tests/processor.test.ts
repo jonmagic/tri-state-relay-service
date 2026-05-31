@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { processOneVoicemail, type SpeechResult } from '../src/processor.ts'
+import { processOneVoicemail, processOneVoicemailWithLock, type SpeechResult } from '../src/processor.ts'
 import { VoicemailStore } from '../src/storage/store.ts'
 
 test('processor marks one ready voicemail heard after successful speech', () => {
@@ -63,6 +63,40 @@ test('processor converts missing speech status to failure exit code', () => {
 
   assert.deepEqual(result, { status: 'failed', exitCode: 1, voicemailId: queued.id })
   assert.equal(store.list()[0].status, 'failed')
+  store.close()
+})
+
+test('processor lock prevents a second speaker from claiming voicemail', () => {
+  const dbPath = temporaryDatabasePath()
+  const store = new VoicemailStore(dbPath)
+  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.setMode('ready')
+  store.acquireProcessorLock('other-processor')
+  const spoken: string[] = []
+
+  const result = processOneVoicemailWithLock(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  })
+
+  assert.deepEqual(result, { status: 'locked', exitCode: 0 })
+  assert.deepEqual(spoken, [])
+  assert.equal(store.list()[0].status, 'queued')
+  store.releaseProcessorLock('other-processor')
+  store.close()
+})
+
+test('processor lock is released after processing', () => {
+  const dbPath = temporaryDatabasePath()
+  const store = new VoicemailStore(dbPath)
+  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.setMode('ready')
+
+  const result = processOneVoicemailWithLock(store, () => ({ status: 0 }))
+
+  assert.equal(result.status, 'heard')
+  assert.equal(store.acquireProcessorLock('next-processor'), true)
+  store.releaseProcessorLock('next-processor')
   store.close()
 })
 

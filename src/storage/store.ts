@@ -149,6 +149,22 @@ export class VoicemailStore {
     return mapVoicemail(row)
   }
 
+  acquireProcessorLock(owner: string): boolean {
+    const result = this.database.prepare(`
+      INSERT OR IGNORE INTO settings (key, value)
+      VALUES ('processor_lock', ?)
+    `).run(owner)
+
+    return Number(result.changes) === 1
+  }
+
+  releaseProcessorLock(owner: string): void {
+    this.database.prepare(`
+      DELETE FROM settings
+      WHERE key = 'processor_lock' AND value = ?
+    `).run(owner)
+  }
+
   private migrate(): void {
     this.database.exec(`
       PRAGMA journal_mode = WAL;
