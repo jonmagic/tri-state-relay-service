@@ -17,10 +17,11 @@ Current slice:
 9. `src/app/processor-loop.ts` provides the app-owned processor loop for the future menu bar app.
 10. `src/app/controller.ts` provides menu-bar-facing queue status and ready/focus/mute/unmute/clear controls without exposing message text.
 11. `src/app/menu-bar-shell.ts` composes queue controls and the processor loop for future native macOS adapters.
+12. `src/app/native-menu-bar-adapter.ts` maps shell snapshots and actions into a safe native menu render contract.
 
 Roadmap gaps from the latest feature review:
 
 1. The roadmap should include safe aggregate queue views for producer/project/priority/staleness patterns without exposing message text.
 2. Perry guidance should live in a library skill with references, scripts, and templates rather than identity or voice notes.
 
-Recommended next slice: add native macOS menu bar adapters around the app shell.
+Recommended next slice: add an actual AppKit or Perry-native menu bar host for the native adapter.

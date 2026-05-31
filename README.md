@@ -62,7 +62,7 @@ By default, TSRS stores its database at `~/Library/Application Support/Tri-State
 
 ## Next slices
 
-1. Add native macOS menu bar adapters around the app shell.
+1. Add an actual AppKit or Perry-native menu bar host for the native adapter.
 2. Add replay last, skip current, mark handled, and clear heard controls.
 3. Add source-context actions for opening or revealing captured project paths.
 4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
