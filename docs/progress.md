@@ -18,11 +18,11 @@ Current slice:
 10. `src/app/controller.ts` provides menu-bar-facing queue status and ready/focus/mute/unmute/clear controls without exposing message text.
 11. `src/app/menu-bar-shell.ts` composes queue controls and the processor loop for future native macOS adapters.
 12. `src/app/native-menu-bar-adapter.ts` maps shell snapshots and actions into a safe native menu render contract.
-13. `src/app/perry-menu-bar.ts` builds an interactable Perry tray/menu bar app using ready/focus/mute/unmute/clear controls.
+13. `src/app/perry-menu-bar.ts` builds an interactable Perry window and macOS menu using ready/focus/mute/unmute/clear controls.
 
 Roadmap gaps from the latest feature review:
 
 1. The roadmap should include safe aggregate queue views for producer/project/priority/staleness patterns without exposing message text.
 2. Perry guidance should live in a library skill with references, scripts, and templates rather than identity or voice notes.
 
-Recommended next slice: add automatic menu refresh while the Perry menu bar app is running.
+Recommended next slice: move from the current native Perry window/menu to a status-item menu bar app once Perry's tray runtime export is available.

@@ -99,7 +99,7 @@ Use this order unless there is a strong reason to change it:
 9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
 10. App-owned processor loop.
 11. Replay last, skip current, mark handled, and clear heard.
-12. Perry tray/menu bar host around the app shell.
+12. Interactable Perry window/menu host around the app shell.
 13. Source actions: reveal cwd, copy cwd, activate source app.
 14. Terminal-specific focus adapters where reliable.
 
