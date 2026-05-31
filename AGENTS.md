@@ -17,6 +17,8 @@ Send an update when:
 5. Completing a slice with a useful outcome.
 6. Suggesting the next concrete step.
 
+When in doubt, enqueue the short update. Follow-up explanations such as "what's next?" or "ELI5" still benefit from TSRS when they summarize current project direction or close a work slice, even if the chat response itself is brief.
+
 Keep updates brief, intentional, and human-authored. Say what is happening or what changed, not raw details. Do not include code, logs, terminal output, file contents, secrets, private data, or long explanations.
 
 Use TSRS as the transport when available. In this repository, use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before sending an update:
