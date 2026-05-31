@@ -2,73 +2,61 @@ import SwiftUI
 
 @main
 struct TriStateRelayServiceApp: App {
-    @State private var status = QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0, sourcePath: nil, sourceURL: nil)
+    @StateObject private var model = MenuBarModel()
 
     var body: some Scene {
-        MenuBarExtra(status.title, systemImage: status.systemImage) {
-            Text(status.title)
+        MenuBarExtra(model.status.title, systemImage: model.status.systemImage) {
+            Text(model.status.title)
             Divider()
             Button("Ready") {
-                runVoicemail("ready")
-                runProcessor()
-                refresh()
+                model.ready()
             }
-            .disabled(status.mode == "ready")
+            .disabled(model.status.mode == "ready")
             Button("Focus") {
-                runVoicemail("focus")
-                refresh()
+                model.focus()
             }
-            .disabled(status.mode == "focus")
+            .disabled(model.status.mode == "focus")
             Divider()
             Button("Mute") {
-                runVoicemail("mute")
-                refresh()
+                model.mute()
             }
-            .disabled(status.muted)
+            .disabled(model.status.muted)
             Button("Unmute") {
-                runVoicemail("unmute")
-                refresh()
+                model.unmute()
             }
-            .disabled(!status.muted)
+            .disabled(!model.status.muted)
             Divider()
             Button("Clear Queue") {
-                runVoicemail("clear")
-                refresh()
+                model.clear()
             }
-            .disabled(status.queued == 0)
+            .disabled(model.status.queued == 0)
             Button("Skip Next") {
-                runVoicemail("skip-next")
-                refresh()
+                model.skipNext()
             }
-            .disabled(status.queued == 0)
+            .disabled(model.status.queued == 0)
             Button("Replay Last") {
-                runVoicemail("replay-last")
-                refresh()
+                model.replayLast()
             }
-            .disabled(status.heard == 0)
+            .disabled(model.status.heard == 0)
             Button("Mark Handled") {
-                runVoicemail("mark-handled")
-                refresh()
+                model.markHandled()
             }
-            .disabled(status.heard == 0)
+            .disabled(model.status.heard == 0)
             Button("Clear Heard") {
-                runVoicemail("clear-heard")
-                refresh()
+                model.clearHeard()
             }
-            .disabled(status.heard == 0)
+            .disabled(model.status.heard == 0)
             Divider()
             Button("Reveal Source") {
-                runVoicemail("reveal-source")
-                refresh()
+                model.revealSource()
             }
-            .disabled(!status.hasSourcePath)
+            .disabled(!model.status.hasSourcePath)
             Button("Copy Source") {
-                runVoicemail("copy-source")
-                refresh()
+                model.copySource()
             }
-            .disabled(!status.hasSource)
+            .disabled(!model.status.hasSource)
             Button("Refresh Status") {
-                refresh()
+                model.refresh()
             }
             Divider()
             Button("Quit") {
@@ -77,12 +65,89 @@ struct TriStateRelayServiceApp: App {
         }
         .menuBarExtraStyle(.menu)
     }
+}
+
+final class MenuBarModel: ObservableObject {
+    @Published var status = QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0, sourcePath: nil, sourceURL: nil)
+    private var timer: Timer?
 
     init() {
         refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.processIfReady()
+        }
     }
 
-    private func refresh() {
+    deinit {
+        timer?.invalidate()
+    }
+
+    func ready() {
+        runVoicemail("ready")
+        processIfReady()
+    }
+
+    func focus() {
+        runVoicemail("focus")
+        refresh()
+    }
+
+    func mute() {
+        runVoicemail("mute")
+        refresh()
+    }
+
+    func unmute() {
+        runVoicemail("unmute")
+        processIfReady()
+    }
+
+    func clear() {
+        runVoicemail("clear")
+        refresh()
+    }
+
+    func skipNext() {
+        runVoicemail("skip-next")
+        refresh()
+    }
+
+    func replayLast() {
+        runVoicemail("replay-last")
+        refresh()
+    }
+
+    func markHandled() {
+        runVoicemail("mark-handled")
+        refresh()
+    }
+
+    func clearHeard() {
+        runVoicemail("clear-heard")
+        refresh()
+    }
+
+    func revealSource() {
+        runVoicemail("reveal-source")
+        refresh()
+    }
+
+    func copySource() {
+        runVoicemail("copy-source")
+        refresh()
+    }
+
+    func refresh() {
+        status = loadStatus()
+    }
+
+    func processIfReady() {
+        let currentStatus = loadStatus()
+
+        if currentStatus.shouldProcess {
+            runProcessor()
+        }
+
         status = loadStatus()
     }
 
@@ -119,9 +184,12 @@ struct TriStateRelayServiceApp: App {
     }
 
     private func runExecutable(named name: String, arguments: [String]) -> String {
-        let executableURL = Bundle.main.bundleURL
+        guard let executableURL = Bundle.main.executableURL?
             .deletingLastPathComponent()
             .appendingPathComponent(name)
+        else {
+            return "missing app executable URL"
+        }
         let process = Process()
         let output = Pipe()
 
@@ -156,6 +224,10 @@ struct QueueStatus {
 
     var hasSource: Bool {
         sourcePath != nil || sourceURL != nil
+    }
+
+    var shouldProcess: Bool {
+        mode == "ready" && !muted && queued > 0
     }
 
     var title: String {

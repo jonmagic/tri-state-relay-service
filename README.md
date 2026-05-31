@@ -77,6 +77,8 @@ The first interactable app is a SwiftUI `MenuBarExtra` host that shells
 out to the Perry-built `voicemail` and `voicemail-processor` binaries.
 It exposes ready, focus, mute, unmute, clear, refresh, and quit controls.
 The app reads `voicemail status` JSON rather than scraping message text.
+It refreshes periodically and, when in ready mode and not muted, releases
+one queued voicemail through the app-owned processor path.
 It also exposes lifecycle controls for skipping the next queued message,
 replaying the last heard message, marking heard messages handled, and
 clearing heard messages.
