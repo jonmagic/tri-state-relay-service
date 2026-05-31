@@ -15,7 +15,7 @@ import { VoicemailStore } from '../src/storage/store.ts'
 test('native menu bar render model exposes safe title and controls', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const shell = new MenuBarAppShell(store)
-  store.enqueue({ project: 'Brain', message: 'Do not render this message text.' })
+  store.enqueue({ line: 'Brain', message: 'Do not render this message text.' })
 
   const model = renderModel(shell.ready())
 
@@ -38,7 +38,7 @@ test('native menu bar adapter sends rendered models to the host', () => {
   const adapter = new NativeMenuBarAdapter(shell, {
     render: (model) => rendered.push(model),
   })
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   adapter.render()
   adapter.perform('ready')

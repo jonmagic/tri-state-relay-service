@@ -2,15 +2,15 @@
 
 ## 2026-05-30
 
-Started the repository from the Brain plan in `Daily Projects/2026-05-30/01 agent voicemail speech queue.md`.
+Started the repository from the Brain plan in `Daily Lines/2026-05-30/01 agent voicemail speech queue.md`.
 
 Current slice:
 
-1. Agent-first project guide and local skills are in place.
-2. TypeScript strict-mode project skeleton is in place.
+1. Agent-first line guide and local skills are in place.
+2. TypeScript strict-mode line skeleton is in place.
 3. SQLite-backed queue core uses `better-sqlite3` and supports enqueue, list, clear, focus, ready, mute, unmute, and claim-next-for-speech.
 4. Ready mode claims exactly one queued voicemail and returns to focus.
-5. The CLI accepts the v0 `voicemail --project ... --message ...` contract.
+5. The CLI accepts the v0 `voicemail --line ... --message ...` contract.
 6. Perry is documented as a local library and wired into package scripts for dependency compatibility checks and native binary builds.
 7. `voicemail-processor` owns the `/usr/bin/say` path, marks successful playback as `heard`, and marks speech failures as `failed`.
 8. Processor execution uses a SQLite-backed single-writer lock before claiming messages.
@@ -23,14 +23,14 @@ Current slice:
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
 16. The CLI and menu bar app support source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 17. The menu bar app periodically refreshes queue state and processes one queued voicemail when ready and unmuted.
-18. `docs/prompts/combine-inactive-lane.md` defines the LLM prompt for collapsing inactive-lane updates into one pending message.
-19. `npm run eval:inactive-lane` compares `apfel` and `llm` against voicemail-composition fixtures with contract checks and an LLM judge.
-20. `voicemail combiner --tool none|llm|apfel` configures whether inactive lanes use latest-message-only behavior or CLI LLM combination.
-21. `voicemail lane --project ...` sets the active lane, the menu shows lane counts, and the app auto-plays active-lane messages while leaving other lanes queued.
+18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
+19. `npm run eval:inactive-line` compares `apfel` and `llm` against voicemail-composition fixtures with contract checks and an LLM judge.
+20. `voicemail combiner --tool none|llm|apfel` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
+21. `voicemail line --line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
 
 Roadmap gaps from the latest feature review:
 
-1. The roadmap should include safe aggregate queue views for producer/project/priority/staleness patterns without exposing message text.
+1. The roadmap should include safe aggregate queue views for producer/line/priority/staleness patterns without exposing message text.
 2. Perry guidance should live in a library skill with references, scripts, and templates rather than identity or voice notes.
 
 Recommended next slice: replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.

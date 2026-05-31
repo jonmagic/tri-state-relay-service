@@ -10,8 +10,8 @@ import { VoicemailStore } from '../src/storage/store.ts'
 test('app controller reports menu bar queue status without message text', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
-  store.enqueue({ project: 'Hamzo', message: 'The review is blocked.', priority: 'high' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Hamzo', message: 'The review is blocked.', priority: 'high' })
 
   const status = controller.status()
 
@@ -28,7 +28,7 @@ test('app controller reports menu bar queue status without message text', () => 
 test('app controller toggles ready focus mute and unmute through store rules', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   assert.equal(controller.ready().canPlay, true)
   assert.equal(controller.mute().canPlay, false)
@@ -40,7 +40,7 @@ test('app controller toggles ready focus mute and unmute through store rules', (
 test('app controller clear updates queue status for menu bar display', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   const status = controller.clear()
 

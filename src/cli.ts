@@ -20,7 +20,7 @@ try {
 function run(parsed: ParsedCommand): void {
   if (parsed.command === 'enqueue') {
     const voicemail = store.enqueue({
-      project: requiredFlag(parsed.flags, 'project'),
+      line: requiredFlag(parsed.flags, 'line'),
       message: requiredFlag(parsed.flags, 'message'),
       type: parsed.flags.type,
       priority: parsed.flags.priority,
@@ -30,7 +30,7 @@ function run(parsed: ParsedCommand): void {
       url: parsed.flags.url,
     })
 
-    console.log(`queued #${voicemail.id} ${voicemail.project}: ${voicemail.message}`)
+    console.log(`queued #${voicemail.id} ${voicemail.line}: ${voicemail.message}`)
     return
   }
 
@@ -39,7 +39,7 @@ function run(parsed: ParsedCommand): void {
     console.log(`mode=${state.mode} muted=${state.muted}`)
 
     for (const voicemail of store.list()) {
-      console.log(`#${voicemail.id} [${voicemail.status}] [${voicemail.priority}] ${voicemail.project}: ${voicemail.message}`)
+      console.log(`#${voicemail.id} [${voicemail.status}] [${voicemail.priority}] ${voicemail.line}: ${voicemail.message}`)
     }
     return
   }
@@ -48,18 +48,18 @@ function run(parsed: ParsedCommand): void {
     const state = store.getState()
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
-    const lanes = store.projectLanes()
+    const lines = store.lineSummaries()
 
     console.log(JSON.stringify({
       mode: state.mode,
       muted: state.muted,
-      inactiveLaneCombiner: state.inactiveLaneCombiner,
-      activeProject: state.activeProject,
+      inactiveLineCombiner: state.inactiveLineCombiner,
+      activeLine: state.activeLine,
       counts,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
       source,
-      lanes,
+      lines,
     }))
     return
   }
@@ -151,21 +151,21 @@ function run(parsed: ParsedCommand): void {
 
   if (parsed.command === 'state') {
     const state = store.getState()
-    console.log(`${state.mode}${state.muted ? ', muted' : ''}, active-lane=${state.activeProject ?? 'none'}, inactive-lane-combiner=${state.inactiveLaneCombiner}`)
+    console.log(`${state.mode}${state.muted ? ', muted' : ''}, active-line=${state.activeLine ?? 'none'}, inactive-line-combiner=${state.inactiveLineCombiner}`)
     return
   }
 
-  if (parsed.command === 'lane') {
-    const requested = parsed.flags.project
+  if (parsed.command === 'line') {
+    const requested = parsed.flags.line
 
     if (requested === undefined) {
       const state = store.getState()
-      console.log(state.activeProject ?? 'none')
+      console.log(state.activeLine ?? 'none')
       return
     }
 
-    const state = store.setActiveProject(requested)
-    console.log(`active lane set to ${state.activeProject}`)
+    const state = store.setActiveLine(requested)
+    console.log(`active line set to ${state.activeLine}`)
     return
   }
 
@@ -173,7 +173,7 @@ function run(parsed: ParsedCommand): void {
     const requested = parsed.flags.tool
 
     if (requested === undefined) {
-      console.log(store.getState().inactiveLaneCombiner)
+      console.log(store.getState().inactiveLineCombiner)
       return
     }
 
@@ -181,8 +181,8 @@ function run(parsed: ParsedCommand): void {
       throw new Error('--tool must be one of: none, llm, apfel')
     }
 
-    const state = store.setInactiveLaneCombiner(requested)
-    console.log(`inactive lane combiner set to ${state.inactiveLaneCombiner}`)
+    const state = store.setInactiveLineCombiner(requested)
+    console.log(`inactive line combiner set to ${state.inactiveLineCombiner}`)
     return
   }
 
@@ -239,7 +239,7 @@ function requiredFlag(flags: Record<string, string>, key: string): string {
 
 function printHelp(): void {
   console.log(`Usage:
-  voicemail --project "Brain" --message "The plan is ready."
+  voicemail --line "Brain" --message "The plan is ready."
   voicemail list
   voicemail ready
   voicemail focus
@@ -253,8 +253,8 @@ function printHelp(): void {
   voicemail source
   voicemail reveal-source
   voicemail copy-source
-  voicemail lane
-  voicemail lane --project "Tri-State Relay Service"
+  voicemail line
+  voicemail line --line "Tri-State Relay Service"
   voicemail combiner
   voicemail combiner --tool none|llm|apfel
   voicemail state

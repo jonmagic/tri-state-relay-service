@@ -3,8 +3,8 @@
     "id": "routine-progress",
     "description": "Routine progress should become one natural voicemail.",
     "input": {
-      "activeProject": "Tri-State Relay Service",
-      "inactiveProject": "Hamzo",
+      "activeLine": "Tri-State Relay Service",
+      "inactiveLine": "Hamzo",
       "existingPendingMessage": null,
       "incoming": [
         {
@@ -36,8 +36,8 @@
     "id": "blocked-after-progress",
     "description": "A blocker after progress should be promoted.",
     "input": {
-      "activeProject": "Tri-State Relay Service",
-      "inactiveProject": "Hamzo",
+      "activeLine": "Tri-State Relay Service",
+      "inactiveLine": "Hamzo",
       "existingPendingMessage": "Hamzo update: tests are running after a parser patch.",
       "incoming": [
         {
@@ -64,8 +64,8 @@
     "id": "completion-wins",
     "description": "A completion should become the final point.",
     "input": {
-      "activeProject": "Tri-State Relay Service",
-      "inactiveProject": "Spamurai",
+      "activeLine": "Tri-State Relay Service",
+      "inactiveLine": "Spamurai",
       "existingPendingMessage": null,
       "incoming": [
         {
@@ -97,8 +97,8 @@
     "id": "duplicate-routine",
     "description": "Repeated routine status can be dropped.",
     "input": {
-      "activeProject": "Tri-State Relay Service",
-      "inactiveProject": "Brain",
+      "activeLine": "Tri-State Relay Service",
+      "inactiveLine": "Brain",
       "existingPendingMessage": "Brain update: indexing is running and I will report when it finishes.",
       "incoming": [
         {

@@ -3,10 +3,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 const root = new URL('..', import.meta.url).pathname
-const fixturesPath = join(root, 'evals/inactive-lane-fixtures.json')
-const combinePromptPath = join(root, 'docs/prompts/combine-inactive-lane.md')
-const evaluatorPromptPath = join(root, 'docs/prompts/evaluate-inactive-lane.md')
-const outputPath = join(root, 'evals/results/inactive-lane-results.json')
+const fixturesPath = join(root, 'evals/inactive-line-fixtures.json')
+const combinePromptPath = join(root, 'docs/prompts/combine-inactive-line.md')
+const evaluatorPromptPath = join(root, 'docs/prompts/evaluate-inactive-line.md')
+const outputPath = join(root, 'evals/results/inactive-line-results.json')
 const fixtures = JSON.parse(readFileSync(fixturesPath, 'utf8'))
 const combinePrompt = readFileSync(combinePromptPath, 'utf8')
 const evaluatorPrompt = readFileSync(evaluatorPromptPath, 'utf8')

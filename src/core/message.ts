@@ -7,7 +7,7 @@ export type Priority = typeof priorities[number]
 export type MessageStatus = typeof messageStatuses[number]
 
 export interface NewVoicemailInput {
-  project: string
+  line?: string
   message: string
   type?: string
   priority?: string
@@ -18,7 +18,7 @@ export interface NewVoicemailInput {
 }
 
 export interface NewVoicemail {
-  project: string
+  line: string
   message: string
   type: MessageType
   priority: Priority
@@ -44,7 +44,7 @@ const tokenPatterns = [
 ]
 
 export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
-  const project = normalizeRequiredText(input.project, 'project', 80)
+  const line = normalizeRequiredText(input.line ?? '', 'line', 80)
   const message = normalizeRequiredText(input.message, 'message', maxMessageLength)
   const type = normalizeEnum(input.type ?? 'update', messageTypes, 'type')
   const priority = normalizeEnum(input.priority ?? 'normal', priorities, 'priority')
@@ -56,7 +56,7 @@ export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
   rejectUnsafeMessage(message)
 
   const voicemail: NewVoicemail = {
-    project,
+    line,
     message,
     type,
     priority,
@@ -70,9 +70,9 @@ export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
   return voicemail
 }
 
-export function spokenText(voicemail: Pick<Voicemail, 'project' | 'type' | 'message'>): string {
+export function spokenText(voicemail: Pick<Voicemail, 'line' | 'type' | 'message'>): string {
   const typePrefix = voicemail.type === 'update' ? '' : `${voicemail.type}. `
-  return `${voicemail.project}. ${typePrefix}${voicemail.message}`
+  return `${voicemail.line}. ${typePrefix}${voicemail.message}`
 }
 
 function normalizeRequiredText(value: string, field: string, maxLength: number): string {

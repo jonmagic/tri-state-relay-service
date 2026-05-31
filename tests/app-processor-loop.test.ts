@@ -9,7 +9,7 @@ import { VoicemailStore } from '../src/storage/store.ts'
 
 test('app processor loop processes ready voicemail through locked processor path', async () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  const queued = store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
   store.setMode('ready')
   const slept: number[] = []
 

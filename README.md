@@ -5,8 +5,8 @@ Tri-State Relay Service is a local macOS agent voicemail inbox. Agents submit sh
 The first useful contract is intentionally small:
 
 ```sh
-voicemail --project "Brain" --message "The daily project note is ready."
-voicemail --project "Brain" --type complete --priority normal --message "The plan is ready to review."
+voicemail --line "Brain" --message "The daily line note is ready."
+voicemail --line "Brain" --type complete --priority normal --message "The plan is ready to review."
 voicemail list
 voicemail ready
 voicemail-processor
@@ -20,14 +20,14 @@ voicemail replay-last
 voicemail source
 voicemail reveal-source
 voicemail copy-source
-voicemail lane
-voicemail lane --project "Tri-State Relay Service"
+voicemail line
+voicemail line --line "Tri-State Relay Service"
 voicemail combiner
 voicemail combiner --tool none|llm|apfel
 voicemail status
 ```
 
-## Project shape
+## Line shape
 
 This repository starts with the queue core and CLI before a menu bar UI. The invariant is more important than the surface: many producers can enqueue messages, but only the app-owned processor loop may speak.
 
@@ -97,7 +97,7 @@ When developing TSRS, use the built native CLI to enqueue real progress
 messages:
 
 ```sh
-./dist/native/voicemail --project "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+./dist/native/voicemail --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
 ```
 
 Good dogfood messages are short, intentionally authored status updates:
@@ -107,21 +107,21 @@ code, logs, secrets, private data, or long explanations.
 
 ## LLM evaluation
 
-Inactive-lane voicemail combination has a manual evaluation suite:
+Inactive-line voicemail combination has a manual evaluation suite:
 
 ```sh
-npm run eval:inactive-lane
+npm run eval:inactive-line
 ```
 
 The suite runs `apfel` and `llm` against fixtures in
-`evals/inactive-lane-fixtures.json`, validates the JSON contract, and uses
+`evals/inactive-line-fixtures.json`, validates the JSON contract, and uses
 an LLM judge prompt to score whether each candidate sounds like one useful
 voicemail instead of a log summary. Results are written to
-`evals/results/inactive-lane-results.json`.
+`evals/results/inactive-line-results.json`.
 
-## Inactive-lane combiner setting
+## Inactive-line combiner setting
 
-Inactive-lane rollups are configurable:
+Inactive-line rollups are configurable:
 
 ```sh
 voicemail combiner --tool none
@@ -131,25 +131,25 @@ voicemail combiner --tool apfel
 
 `none` is the default and works without any LLM tool. In that mode TSRS
 should avoid rollups and use latest-message-only behavior for inactive
-lanes. `llm` and `apfel` enable the prompt-driven combination workflow
-described in `docs/inactive-lane-combination.md`.
+lines. `llm` and `apfel` enable the prompt-driven combination workflow
+described in `docs/inactive-line-combination.md`.
 
-## Project lanes
+## Lines
 
-TSRS tracks an active project lane:
+TSRS tracks an active line:
 
 ```sh
-voicemail lane
-voicemail lane --project "Tri-State Relay Service"
+voicemail line
+voicemail line --line "Tri-State Relay Service"
 ```
 
-The menu bar app shows the active lane and queued project lanes in the
+The menu bar app shows the active line and queued lines in the
 right-click menu. When unmuted, the app keeps playing queued messages from
-the active lane as they arrive. Messages from other lanes remain queued
-until you switch lanes or pull them manually.
+the active line as they arrive. Messages from other lines remain queued
+until you switch lines or pull them manually.
 
 ## Next slices
 
 1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-2. Add active project lanes and inactive-lane LLM combination using `docs/prompts/combine-inactive-lane.md`.
-3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+2. Add inactive-line LLM combination using `docs/prompts/combine-inactive-line.md`.
+3. Add safe aggregate queue views that summarize producers, lines, priorities, and stale blockers without exposing message text.

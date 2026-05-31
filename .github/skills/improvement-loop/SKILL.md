@@ -19,7 +19,7 @@ Every agent miss is a learning opportunity. The goal is to design an environment
 
 | Diagnosis | Artifact |
 | --- | --- |
-| Missing project knowledge | Update `AGENTS.md`, `README.md`, or `docs/` |
+| Missing line knowledge | Update `AGENTS.md`, `README.md`, or `docs/` |
 | Missing queue knowledge | Update `AGENTS.md` or relevant product docs |
 | Missing verification | Add or improve a test, script, checklist, or CI gate |
 | Too much freedom | Add a guardrail or require human approval |

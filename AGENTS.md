@@ -22,7 +22,7 @@ Keep updates brief, intentional, and human-authored. Say what is happening or wh
 Use TSRS as the transport when available. In this repository, use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before sending an update:
 
 ```sh
-./dist/native/voicemail --project "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+./dist/native/voicemail --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
 ```
 
 Use `--type complete` for completion updates and `--priority high` only when the message needs prompt human attention. Include `--cwd` when safe so source context can be revealed later. The TSRS app owns playback; do not call `/usr/bin/say` directly.
@@ -66,8 +66,8 @@ Focus mode is safe and quiet. Incoming messages queue but do not play. Ready mod
 Keep the agent-facing command readable:
 
 ```sh
-voicemail --project "Brain" --message "The plan is ready."
-voicemail --project "Brain" --type complete --priority normal --message "The plan is ready."
+voicemail --line "Brain" --message "The plan is ready."
+voicemail --line "Brain" --type complete --priority normal --message "The plan is ready."
 voicemail list
 voicemail ready
 voicemail mute
@@ -75,7 +75,7 @@ voicemail unmute
 voicemail clear
 ```
 
-Use long flags only. `--project` is authoritative when provided. Future auto-detection may fill missing project labels, but must not override explicit project input.
+Use long flags only. `--line` is authoritative when provided. Future auto-detection may fill missing line labels, but must not override explicit line input.
 
 Messages are intentionally authored human status updates, not command output. Cap message length, reject empty messages, reject obvious token-looking strings, avoid stdin piping for v0, and do not speak code, secrets, logs, file contents, private data, or long explanations.
 
@@ -104,19 +104,19 @@ Keep dependencies flowing inward:
 
 Use this order unless there is a strong reason to change it:
 
-1. Project skeleton, commands, and documentation.
+1. Line skeleton, commands, and documentation.
 2. SQLite schema and CLI enqueue/list/mute/unmute/clear/ready.
 3. Message validation, max length, type and priority defaults, and token-looking input rejection.
-4. Queue ordering, duplicate collapse, max depth, and per-project rate limits.
+4. Queue ordering, duplicate collapse, max depth, and per-line rate limits.
 5. Processor claim-next-and-speak flow.
 6. Persistent focus/ready/mute state.
 7. Perry-compatible native binary builds and storage runtime compatibility.
 8. Source-context metadata: session, app, cwd, and URL.
-9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
+9. Safe aggregate queue views by producer, line, priority, age, and status without exposing message text.
 10. App-owned processor loop.
 11. Interactable SwiftUI menu bar host around the Perry-built CLI and processor binaries.
 12. Replay last, skip current, mark handled, and clear heard.
-13. Safe aggregate queue views by producer, project, priority, age, and status.
+13. Safe aggregate queue views by producer, line, priority, age, and status.
 14. Terminal-specific focus adapters where reliable.
 
 ## Task exit criteria

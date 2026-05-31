@@ -10,7 +10,7 @@ test('persists queued voicemail in SQLite', () => {
   const dbPath = temporaryDatabasePath()
   const firstStore = new VoicemailStore(dbPath)
   const queued = firstStore.enqueue({
-    project: 'Brain',
+    line: 'Brain',
     message: 'The plan is ready.',
   })
   firstStore.close()
@@ -23,7 +23,7 @@ test('persists queued voicemail in SQLite', () => {
 
 test('focus mode prevents claiming a queued voicemail', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   assert.equal(store.claimNextForSpeech(), undefined)
   assert.equal(store.list()[0].status, 'queued')
@@ -32,13 +32,13 @@ test('focus mode prevents claiming a queued voicemail', () => {
 
 test('ready mode claims exactly one voicemail and returns to focus', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ project: 'Low', priority: 'low', message: 'Low priority update.' })
-  store.enqueue({ project: 'High', priority: 'high', message: 'High priority update.' })
+  store.enqueue({ line: 'Low', priority: 'low', message: 'Low priority update.' })
+  store.enqueue({ line: 'High', priority: 'high', message: 'High priority update.' })
   store.setMode('ready')
 
   const claimed = store.claimNextForSpeech()
 
-  assert.equal(claimed?.project, 'High')
+  assert.equal(claimed?.line, 'High')
   assert.equal(store.getState().mode, 'focus')
   assert.equal(store.claimNextForSpeech(), undefined)
   assert.equal(store.list().filter((voicemail) => voicemail.status === 'speaking').length, 1)
@@ -47,7 +47,7 @@ test('ready mode claims exactly one voicemail and returns to focus', () => {
 
 test('mute prevents ready mode from claiming voicemail', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
   store.setMode('ready')
   store.setMuted(true)
 
@@ -56,34 +56,34 @@ test('mute prevents ready mode from claiming voicemail', () => {
   store.close()
 })
 
-test('inactive lane combiner setting defaults to none and can be configured', () => {
+test('inactive line combiner setting defaults to none and can be configured', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
 
-  assert.equal(store.getState().inactiveLaneCombiner, 'none')
-  assert.equal(store.setInactiveLaneCombiner('llm').inactiveLaneCombiner, 'llm')
-  assert.equal(store.setInactiveLaneCombiner('apfel').inactiveLaneCombiner, 'apfel')
-  assert.equal(store.setInactiveLaneCombiner('none').inactiveLaneCombiner, 'none')
+  assert.equal(store.getState().inactiveLineCombiner, 'none')
+  assert.equal(store.setInactiveLineCombiner('llm').inactiveLineCombiner, 'llm')
+  assert.equal(store.setInactiveLineCombiner('apfel').inactiveLineCombiner, 'apfel')
+  assert.equal(store.setInactiveLineCombiner('none').inactiveLineCombiner, 'none')
   store.close()
 })
 
-test('active lane setting and project lane counts are persisted', () => {
+test('active line setting and line counts are persisted', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
-  store.enqueue({ project: 'Brain', message: 'The second update is ready.' })
-  store.enqueue({ project: 'TSRS', message: 'The app is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The second update is ready.' })
+  store.enqueue({ line: 'TSRS', message: 'The app is ready.' })
   store.markStatus(3, 'heard')
 
-  assert.equal(store.setActiveProject('Brain').activeProject, 'Brain')
-  assert.deepEqual(store.projectLanes(), [
-    { project: 'Brain', queued: 2, heard: 0, failed: 0 },
-    { project: 'TSRS', queued: 0, heard: 1, failed: 0 },
+  assert.equal(store.setActiveLine('Brain').activeLine, 'Brain')
+  assert.deepEqual(store.lineSummaries(), [
+    { line: 'Brain', queued: 2, heard: 0, failed: 0 },
+    { line: 'TSRS', queued: 0, heard: 1, failed: 0 },
   ])
   store.close()
 })
 
 test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  const queued = store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   assert.equal(store.skipNextQueued()?.id, queued.id)
   assert.equal(store.list()[0].status, 'skipped')
@@ -104,9 +104,9 @@ test('lifecycle controls skip replay handle and clear heard voicemails', () => {
 
 test('latest source context omits message text and prefers newest metadata', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ project: 'Brain', message: 'No source here.' })
+  store.enqueue({ line: 'Brain', message: 'No source here.' })
   store.enqueue({
-    project: 'TSRS',
+    line: 'TSRS',
     message: 'The app is ready.',
     session: 'agent session',
     app: 'Ghostty',
@@ -116,7 +116,7 @@ test('latest source context omits message text and prefers newest metadata', () 
 
   assert.deepEqual(store.latestSourceContext(), {
     id: 2,
-    project: 'TSRS',
+    line: 'TSRS',
     session: 'agent session',
     app: 'Ghostty',
     cwd: '~/code/tri-state-relay-service',

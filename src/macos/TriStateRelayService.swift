@@ -26,7 +26,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         refreshStatusItem()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.model.playActiveLane()
+            self?.model.playActiveLine()
             self?.refreshStatusItem()
             self?.schedulePlaybackRefresh()
         }
@@ -111,27 +111,27 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
-    @objc private func selectLane(_ sender: NSMenuItem) {
-        guard let project = sender.representedObject as? String else {
+    @objc private func selectLine(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
             return
         }
 
-        model.setActiveLane(project)
+        model.setActiveLine(line)
         refreshStatusItem()
     }
 
     @objc private func useNoCombiner() {
-        model.setInactiveLaneCombiner("none")
+        model.setInactiveLineCombiner("none")
         refreshStatusItem()
     }
 
     @objc private func useLLMCombiner() {
-        model.setInactiveLaneCombiner("llm")
+        model.setInactiveLineCombiner("llm")
         refreshStatusItem()
     }
 
     @objc private func useApfelCombiner() {
-        model.setInactiveLaneCombiner("apfel")
+        model.setInactiveLineCombiner("apfel")
         refreshStatusItem()
     }
 
@@ -154,10 +154,10 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem(title: model.status.title, action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Active Lane: \(model.status.activeLaneTitle)", action: nil, keyEquivalent: ""))
-        for lane in model.status.lanes {
-            let item = menuItem("Use \(lane.project) (\(lane.queued) queued)", action: #selector(selectLane(_:)), enabled: lane.project != model.status.activeProject)
-            item.representedObject = lane.project
+        menu.addItem(NSMenuItem(title: "Active Line: \(model.status.activeLineTitle)", action: nil, keyEquivalent: ""))
+        for line in model.status.lines {
+            let item = menuItem("Use \(line.line) (\(line.queued) queued)", action: #selector(selectLine(_:)), enabled: line.line != model.status.activeLine)
+            item.representedObject = line.line
             menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -176,10 +176,10 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Reveal Source", action: #selector(revealSource), enabled: model.status.hasSourcePath))
         menu.addItem(menuItem("Copy Source", action: #selector(copySource), enabled: model.status.hasSource))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Inactive Combiner: \(model.status.inactiveLaneCombiner)", action: nil, keyEquivalent: ""))
-        menu.addItem(menuItem("Use Latest Only", action: #selector(useNoCombiner), enabled: model.status.inactiveLaneCombiner != "none"))
-        menu.addItem(menuItem("Use llm", action: #selector(useLLMCombiner), enabled: model.status.inactiveLaneCombiner != "llm"))
-        menu.addItem(menuItem("Use apfel", action: #selector(useApfelCombiner), enabled: model.status.inactiveLaneCombiner != "apfel"))
+        menu.addItem(NSMenuItem(title: "Inactive Combiner: \(model.status.inactiveLineCombiner)", action: nil, keyEquivalent: ""))
+        menu.addItem(menuItem("Use Latest Only", action: #selector(useNoCombiner), enabled: model.status.inactiveLineCombiner != "none"))
+        menu.addItem(menuItem("Use llm", action: #selector(useLLMCombiner), enabled: model.status.inactiveLineCombiner != "llm"))
+        menu.addItem(menuItem("Use apfel", action: #selector(useApfelCombiner), enabled: model.status.inactiveLineCombiner != "apfel"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
@@ -216,7 +216,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", activeProject: nil, lanes: [], sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], sourcePath: nil, sourceURL: nil)
 
     init() {
         refresh()
@@ -235,20 +235,20 @@ final class MenuBarModel {
         refresh()
     }
 
-    func playActiveLane() {
+    func playActiveLine() {
         let currentStatus = loadStatus()
 
         guard
             !currentStatus.muted,
             currentStatus.speaking == 0,
-            let activeProject = currentStatus.activeProject,
-            currentStatus.queuedCount(for: activeProject) > 0
+            let activeLine = currentStatus.activeLine,
+            currentStatus.queuedCount(for: activeLine) > 0
         else {
             status = currentStatus
             return
         }
 
-        runProcessorAsync(project: activeProject)
+        runProcessorAsync(line: activeLine)
         refresh()
     }
 
@@ -306,13 +306,13 @@ final class MenuBarModel {
         refresh()
     }
 
-    func setInactiveLaneCombiner(_ combiner: String) {
+    func setInactiveLineCombiner(_ combiner: String) {
         runVoicemail("combiner", arguments: ["--tool", combiner])
         refresh()
     }
 
-    func setActiveLane(_ project: String) {
-        runVoicemail("lane", arguments: ["--project", project])
+    func setActiveLine(_ line: String) {
+        runVoicemail("line", arguments: ["--line", line])
         refresh()
     }
 
@@ -327,23 +327,23 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", activeProject: nil, lanes: [], sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
         let muted = json["muted"] as? Bool ?? false
-        let inactiveLaneCombiner = json["inactiveLaneCombiner"] as? String ?? "none"
-        let activeProject = json["activeProject"] as? String
+        let inactiveLineCombiner = json["inactiveLineCombiner"] as? String ?? "none"
+        let activeLine = json["activeLine"] as? String
         let queued = intValue(json["queueCount"])
         let counts = json["counts"] as? [String: Any] ?? [:]
         let speaking = intValue(counts["speaking"])
         let heard = intValue(counts["heard"])
-        let lanes = parseLanes(json["lanes"])
+        let lines = parseLines(json["lines"])
         let source = json["source"] as? [String: Any]
         let cwd = source?["cwd"] as? String
         let url = source?["url"] as? String
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLaneCombiner: inactiveLaneCombiner, activeProject: activeProject, lanes: lanes, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
@@ -365,8 +365,8 @@ final class MenuBarModel {
         runExecutableAsync(named: "voicemail-processor", arguments: [])
     }
 
-    private func runProcessorAsync(project: String) {
-        runExecutableAsync(named: "voicemail-processor", arguments: ["--project", project])
+    private func runProcessorAsync(line: String) {
+        runExecutableAsync(named: "voicemail-processor", arguments: ["--line", line])
     }
 
     private func runExecutable(named name: String, arguments: [String]) -> String {
@@ -423,9 +423,9 @@ struct QueueStatus {
     let queued: Int
     let speaking: Int
     let heard: Int
-    let inactiveLaneCombiner: String
-    let activeProject: String?
-    let lanes: [ProjectLane]
+    let inactiveLineCombiner: String
+    let activeLine: String?
+    let lines: [LineSummary]
     let sourcePath: String?
     let sourceURL: String?
 
@@ -441,12 +441,12 @@ struct QueueStatus {
         !muted && queued > 0
     }
 
-    var activeLaneTitle: String {
-        activeProject ?? "None"
+    var activeLineTitle: String {
+        activeLine ?? "None"
     }
 
-    func queuedCount(for project: String) -> Int {
-        lanes.first { $0.project == project }?.queued ?? 0
+    func queuedCount(for line: String) -> Int {
+        lines.first { $0.line == line }?.queued ?? 0
     }
 
     var title: String {
@@ -482,8 +482,8 @@ struct QueueStatus {
     }
 }
 
-struct ProjectLane {
-    let project: String
+struct LineSummary {
+    let line: String
     let queued: Int
     let heard: Int
     let failed: Int
@@ -501,18 +501,18 @@ private func intValue(_ value: Any?) -> Int {
     return 0
 }
 
-private func parseLanes(_ value: Any?) -> [ProjectLane] {
+private func parseLines(_ value: Any?) -> [LineSummary] {
     guard let rows = value as? [[String: Any]] else {
         return []
     }
 
     return rows.compactMap { row in
-        guard let project = row["project"] as? String else {
+        guard let line = row["line"] as? String else {
             return nil
         }
 
-        return ProjectLane(
-            project: project,
+        return LineSummary(
+            line: line,
             queued: intValue(row["queued"]),
             heard: intValue(row["heard"]),
             failed: intValue(row["failed"]),

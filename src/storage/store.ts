@@ -6,19 +6,19 @@ import Database from 'better-sqlite3'
 import { normalizeVoicemail, type MessageStatus, type NewVoicemailInput, type Voicemail } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
-export type InactiveLaneCombiner = 'none' | 'llm' | 'apfel'
+export type InactiveLineCombiner = 'none' | 'llm' | 'apfel'
 
 export interface QueueState {
   mode: PlaybackMode
   muted: boolean
-  inactiveLaneCombiner: InactiveLaneCombiner
-  activeProject?: string
+  inactiveLineCombiner: InactiveLineCombiner
+  activeLine?: string
 }
 
 export type QueueCounts = Record<MessageStatus, number>
 
-export interface ProjectLane {
-  project: string
+export interface LineSummary {
+  line: string
   queued: number
   heard: number
   failed: number
@@ -26,7 +26,7 @@ export interface ProjectLane {
 
 export interface SourceContext {
   id: number
-  project: string
+  line: string
   session?: string
   app?: string
   cwd?: string
@@ -55,13 +55,13 @@ export class VoicemailStore {
     const now = new Date().toISOString()
     const insert = this.database.prepare(`
       INSERT INTO voicemails (
-        project, message, type, priority, session, app, cwd, url, status, created_at, updated_at
+        line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
       RETURNING *
     `)
 
     return mapVoicemail(insert.get(
-      voicemail.project,
+      voicemail.line,
       voicemail.message,
       voicemail.type,
       voicemail.priority,
@@ -115,22 +115,22 @@ export class VoicemailStore {
     return counts
   }
 
-  projectLanes(): ProjectLane[] {
+  lineSummaries(): LineSummary[] {
     const rows = this.database.prepare(`
       SELECT
-        project,
+        line,
         SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
         SUM(CASE WHEN status = 'heard' THEN 1 ELSE 0 END) AS heard,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
       FROM voicemails
       WHERE status IN ('queued', 'heard', 'failed')
-      GROUP BY project
+      GROUP BY line
       HAVING queued > 0 OR heard > 0 OR failed > 0
-      ORDER BY queued DESC, heard DESC, failed DESC, project ASC
-    `).all() as Array<{ project: string, queued: number, heard: number, failed: number }>
+      ORDER BY queued DESC, heard DESC, failed DESC, line ASC
+    `).all() as Array<{ line: string, queued: number, heard: number, failed: number }>
 
     return rows.map((row) => ({
-      project: row.project,
+      line: row.line,
       queued: Number(row.queued),
       heard: Number(row.heard),
       failed: Number(row.failed),
@@ -139,7 +139,7 @@ export class VoicemailStore {
 
   latestSourceContext(): SourceContext | undefined {
     const row = this.database.prepare(`
-      SELECT id, project, session, app, cwd, url
+      SELECT id, line, session, app, cwd, url
       FROM voicemails
       WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
       ORDER BY created_at DESC, id DESC
@@ -154,7 +154,7 @@ export class VoicemailStore {
 
     return {
       id: Number(value.id),
-      project: String(value.project),
+      line: String(value.line),
       session: optionalString(value.session),
       app: optionalString(value.app),
       cwd: optionalString(value.cwd),
@@ -195,14 +195,14 @@ export class VoicemailStore {
   getState(): QueueState {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
-    const inactiveLaneCombiner = normalizeInactiveLaneCombiner(this.getSetting('inactive_lane_combiner'))
-    const activeProject = this.getSetting('active_project')
+    const inactiveLineCombiner = normalizeInactiveLineCombiner(this.getSetting('inactive_line_combiner'))
+    const activeLine = this.getSetting('active_line')
 
     return {
       mode: mode === 'ready' ? 'ready' : 'focus',
       muted,
-      inactiveLaneCombiner,
-      activeProject,
+      inactiveLineCombiner,
+      activeLine,
     }
   }
 
@@ -216,19 +216,19 @@ export class VoicemailStore {
     return this.getState()
   }
 
-  setInactiveLaneCombiner(combiner: InactiveLaneCombiner): QueueState {
-    this.setSetting('inactive_lane_combiner', combiner)
+  setInactiveLineCombiner(combiner: InactiveLineCombiner): QueueState {
+    this.setSetting('inactive_line_combiner', combiner)
     return this.getState()
   }
 
-  setActiveProject(project: string): QueueState {
-    const normalized = project.trim()
+  setActiveLine(line: string): QueueState {
+    const normalized = line.trim()
 
     if (normalized === '') {
-      throw new Error('active project cannot be empty')
+      throw new Error('active line cannot be empty')
     }
 
-    this.setSetting('active_project', normalized)
+    this.setSetting('active_line', normalized)
     return this.getState()
   }
 
@@ -266,7 +266,7 @@ export class VoicemailStore {
     return mapVoicemail(row)
   }
 
-  claimNextForProject(project: string): Voicemail | undefined {
+  claimNextForLine(line: string): Voicemail | undefined {
     const state = this.getState()
 
     if (state.muted) {
@@ -279,7 +279,7 @@ export class VoicemailStore {
       WHERE id = (
         SELECT id
         FROM voicemails
-        WHERE status = 'queued' AND project = ?
+        WHERE status = 'queued' AND line = ?
         ORDER BY
           CASE priority
             WHEN 'high' THEN 0
@@ -290,7 +290,7 @@ export class VoicemailStore {
         LIMIT 1
       )
       RETURNING *
-    `).get(new Date().toISOString(), project)
+    `).get(new Date().toISOString(), line)
 
     if (row === undefined) {
       return undefined
@@ -382,7 +382,7 @@ export class VoicemailStore {
       );
       CREATE TABLE IF NOT EXISTS voicemails (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project TEXT NOT NULL,
+        line TEXT NOT NULL,
         message TEXT NOT NULL,
         type TEXT NOT NULL,
         priority TEXT NOT NULL,
@@ -397,7 +397,7 @@ export class VoicemailStore {
       INSERT OR IGNORE INTO schema_migrations (version) VALUES (${schemaVersion});
       INSERT OR IGNORE INTO settings (key, value) VALUES ('mode', 'focus');
       INSERT OR IGNORE INTO settings (key, value) VALUES ('muted', 'false');
-      INSERT OR IGNORE INTO settings (key, value) VALUES ('inactive_lane_combiner', 'none');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('inactive_line_combiner', 'none');
     `)
   }
 
@@ -432,7 +432,7 @@ function mapVoicemail(row: unknown): Voicemail {
 
   return {
     id: Number(value.id),
-    project: String(value.project),
+    line: String(value.line),
     message: String(value.message),
     type: String(value.type) as Voicemail['type'],
     priority: String(value.priority) as Voicemail['priority'],
@@ -454,7 +454,7 @@ function optionalString(value: unknown): string | undefined {
   return String(value)
 }
 
-function normalizeInactiveLaneCombiner(value: string | undefined): InactiveLaneCombiner {
+function normalizeInactiveLineCombiner(value: string | undefined): InactiveLineCombiner {
   if (value === 'llm' || value === 'apfel') {
     return value
   }

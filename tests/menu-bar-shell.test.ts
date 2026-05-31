@@ -11,7 +11,7 @@ test('menu bar shell exposes focus ready and mute snapshots', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const snapshots: MenuBarSnapshot[] = []
   const shell = new MenuBarAppShell(store, { onSnapshot: (snapshot) => snapshots.push(snapshot) })
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
   assert.equal(shell.snapshot().title, 'TSRS focus (1)')
   assert.equal(shell.ready().title, 'TSRS ready (1)')
@@ -35,7 +35,7 @@ test('menu bar shell updates snapshot after app-owned processor loop runs', asyn
     speak: () => ({ status: 0 }),
     onSnapshot: (snapshot) => snapshots.push(snapshot),
   })
-  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
   shell.ready()
 
   const results = await shell.runProcessorLoop()
@@ -49,7 +49,7 @@ test('menu bar shell updates snapshot after app-owned processor loop runs', asyn
 test('menu bar title summarizes state without exposing message text', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const shell = new MenuBarAppShell(store)
-  store.enqueue({ project: 'Brain', message: 'Secret-looking content should stay out of the title.' })
+  store.enqueue({ line: 'Brain', message: 'Secret-looking content should stay out of the title.' })
 
   const title = menuBarTitle(shell.ready().status)
 

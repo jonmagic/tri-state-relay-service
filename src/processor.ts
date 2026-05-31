@@ -36,7 +36,7 @@ export function processOneVoicemail(store: VoicemailStore, speak: SpeakVoicemail
   return processClaimedVoicemail(store, store.claimNextForSpeech(), speak)
 }
 
-export function processOneProjectVoicemailWithLock(store: VoicemailStore, project: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
+export function processOneLineVoicemailWithLock(store: VoicemailStore, line: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
   if (!store.acquireProcessorLock(owner)) {
@@ -44,14 +44,14 @@ export function processOneProjectVoicemailWithLock(store: VoicemailStore, projec
   }
 
   try {
-    return processOneProjectVoicemail(store, project, speak)
+    return processOneLineVoicemail(store, line, speak)
   } finally {
     store.releaseProcessorLock(owner)
   }
 }
 
-export function processOneProjectVoicemail(store: VoicemailStore, project: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
-  return processClaimedVoicemail(store, store.claimNextForProject(project), speak)
+export function processOneLineVoicemail(store: VoicemailStore, line: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
+  return processClaimedVoicemail(store, store.claimNextForLine(line), speak)
 }
 
 function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<VoicemailStore['claimNextForSpeech']>, speak: SpeakVoicemail): ProcessOneResult {
@@ -74,8 +74,8 @@ export function speakWithSay(text: string): SpeechResult {
   return spawnSync('/usr/bin/say', [text], { stdio: 'ignore' })
 }
 
-function projectArg(args: string[]): string | undefined {
-  const index = args.indexOf('--project')
+function lineArg(args: string[]): string | undefined {
+  const index = args.indexOf('--line')
 
   if (index === -1) {
     return undefined
@@ -88,10 +88,10 @@ if (isMainModule()) {
   const store = new VoicemailStore()
 
   try {
-    const project = projectArg(process.argv.slice(2))
-    const result = project === undefined
+    const line = lineArg(process.argv.slice(2))
+    const result = line === undefined
       ? processOneVoicemailWithLock(store)
-      : processOneProjectVoicemailWithLock(store, project)
+      : processOneLineVoicemailWithLock(store, line)
     process.exitCode = result.exitCode
   } finally {
     store.close()

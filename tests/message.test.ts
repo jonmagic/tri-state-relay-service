@@ -5,12 +5,12 @@ import { normalizeVoicemail, spokenText } from '../src/core/message.ts'
 
 test('normalizes the smallest agent voicemail contract', () => {
   const voicemail = normalizeVoicemail({
-    project: ' Brain ',
+    line: ' Brain ',
     message: ' The plan   is ready. ',
   })
 
   assert.deepEqual(voicemail, {
-    project: 'Brain',
+    line: 'Brain',
     message: 'The plan is ready.',
     type: 'update',
     priority: 'normal',
@@ -19,7 +19,7 @@ test('normalizes the smallest agent voicemail contract', () => {
 
 test('accepts v0 type, priority, and source metadata', () => {
   const voicemail = normalizeVoicemail({
-    project: 'Brain',
+    line: 'Brain',
     message: 'The plan is ready.',
     type: 'complete',
     priority: 'high',
@@ -37,14 +37,14 @@ test('accepts v0 type, priority, and source metadata', () => {
 
 test('rejects obvious token-looking strings', () => {
   assert.throws(() => normalizeVoicemail({
-    project: 'Brain',
+    line: 'Brain',
     message: 'token=TEST_TOKEN',
   }), /secret or token/)
 })
 
-test('formats spoken text with project and non-update type', () => {
+test('formats spoken text with line and non-update type', () => {
   const text = spokenText({
-    project: 'Brain',
+    line: 'Brain',
     type: 'blocked',
     message: 'I need a decision.',
   })
