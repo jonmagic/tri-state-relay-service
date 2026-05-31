@@ -96,6 +96,52 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
+    @objc private func clearLine(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.clear(line: line)
+        refreshStatusItem()
+    }
+
+    @objc private func skipLineNext(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.skipNext(line: line)
+        refreshStatusItem()
+    }
+
+    @objc private func replayLineLast(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.replayLast(line: line)
+        refreshStatusItem()
+        schedulePlaybackRefresh()
+    }
+
+    @objc private func markLineHandled(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.markHandled(line: line)
+        refreshStatusItem()
+    }
+
+    @objc private func clearLineHeard(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.clearHeard(line: line)
+        refreshStatusItem()
+    }
+
     @objc private func revealSource() {
         model.revealSource()
         refreshStatusItem()
@@ -243,14 +289,27 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             }
 
             if queued > 0 {
-                submenu.addItem(menuItem("Skip Next", action: #selector(skipNext), enabled: true))
-                submenu.addItem(menuItem("Clear Queue", action: #selector(clear), enabled: true))
+                let skip = menuItem("Skip Next", action: #selector(skipLineNext(_:)), enabled: true)
+                skip.representedObject = line
+                submenu.addItem(skip)
+
+                let clearQueue = menuItem("Clear Queue", action: #selector(clearLine(_:)), enabled: true)
+                clearQueue.representedObject = line
+                submenu.addItem(clearQueue)
             }
 
             if heard > 0 {
-                submenu.addItem(menuItem("Replay Last", action: #selector(replayLast), enabled: true))
-                submenu.addItem(menuItem("Mark Handled", action: #selector(markHandled), enabled: true))
-                submenu.addItem(menuItem("Clear Heard", action: #selector(clearHeard), enabled: true))
+                let replay = menuItem("Replay Last", action: #selector(replayLineLast(_:)), enabled: true)
+                replay.representedObject = line
+                submenu.addItem(replay)
+
+                let handled = menuItem("Mark Handled", action: #selector(markLineHandled(_:)), enabled: true)
+                handled.representedObject = line
+                submenu.addItem(handled)
+
+                let clearHeard = menuItem("Clear Heard", action: #selector(clearLineHeard(_:)), enabled: true)
+                clearHeard.representedObject = line
+                submenu.addItem(clearHeard)
             }
         }
 
@@ -314,8 +373,13 @@ final class MenuBarModel {
             return
         }
 
-        runVoicemail("ready")
-        runProcessorAsync()
+        if let line = currentStatus.nextQueuedLine {
+            setActiveLine(line)
+            runProcessorAsync(line: line)
+        } else {
+            runVoicemail("ready")
+            runProcessorAsync()
+        }
         refresh()
     }
 
@@ -360,8 +424,18 @@ final class MenuBarModel {
         refresh()
     }
 
+    func clear(line: String) {
+        runVoicemail("clear-line", arguments: ["--line", line])
+        refresh()
+    }
+
     func skipNext() {
         runVoicemail("skip-next")
+        refresh()
+    }
+
+    func skipNext(line: String) {
+        runVoicemail("skip-next", arguments: ["--line", line])
         refresh()
     }
 
@@ -370,13 +444,29 @@ final class MenuBarModel {
         playNext()
     }
 
+    func replayLast(line: String) {
+        runVoicemail("replay-last", arguments: ["--line", line])
+        setActiveLine(line)
+        playActiveLine()
+    }
+
     func markHandled() {
         runVoicemail("mark-handled")
         refresh()
     }
 
+    func markHandled(line: String) {
+        runVoicemail("mark-handled", arguments: ["--line", line])
+        refresh()
+    }
+
     func clearHeard() {
         runVoicemail("clear-heard")
+        refresh()
+    }
+
+    func clearHeard(line: String) {
+        runVoicemail("clear-heard", arguments: ["--line", line])
         refresh()
     }
 
@@ -539,6 +629,10 @@ struct QueueStatus {
         }
 
         return lines
+    }
+
+    var nextQueuedLine: String? {
+        lines.first { $0.queued > 0 }?.line
     }
 
     func queuedCount(for line: String) -> Int {

@@ -164,6 +164,28 @@ test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   store.close()
 })
 
+test('lifecycle controls can be scoped to a line', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const brain = store.enqueue({ line: 'Brain', message: 'Brain update.' })
+  const tsrs = store.enqueue({ line: 'TSRS', message: 'TSRS update.' })
+
+  assert.equal(store.skipNextQueued('Brain')?.id, brain.id)
+  assert.equal(store.list().find((voicemail) => voicemail.id === tsrs.id)?.status, 'queued')
+
+  store.markStatus(brain.id, 'heard')
+  store.markStatus(tsrs.id, 'heard')
+  assert.equal(store.replayLatestHeard('Brain')?.id, brain.id)
+  assert.equal(store.list().find((voicemail) => voicemail.id === tsrs.id)?.status, 'heard')
+
+  store.markStatus(brain.id, 'heard')
+  assert.equal(store.markLatestHeardHandled('Brain')?.id, brain.id)
+  assert.equal(store.list().find((voicemail) => voicemail.id === tsrs.id)?.status, 'heard')
+
+  assert.equal(store.clearHeard('TSRS'), 1)
+  assert.equal(store.list().some((voicemail) => voicemail.id === tsrs.id), false)
+  store.close()
+})
+
 test('latest source context omits message text and prefers newest metadata', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   store.enqueue({ line: 'Brain', message: 'No source here.' })

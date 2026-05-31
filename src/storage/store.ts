@@ -260,7 +260,16 @@ export class VoicemailStore {
     return Number(result.changes)
   }
 
-  clearHeard(): number {
+  clearHeard(line?: string): number {
+    if (line !== undefined) {
+      const result = this.database.prepare(`
+        DELETE FROM voicemails
+        WHERE status = 'heard' AND line = ?
+      `).run(line)
+
+      return Number(result.changes)
+    }
+
     const result = this.database.prepare(`
       DELETE FROM voicemails
       WHERE status = 'heard'
@@ -269,16 +278,25 @@ export class VoicemailStore {
     return Number(result.changes)
   }
 
-  skipNextQueued(): Voicemail | undefined {
-    return this.markFirstMatchingStatus('queued', 'skipped')
+  clearQueued(line: string): number {
+    const result = this.database.prepare(`
+      DELETE FROM voicemails
+      WHERE status = 'queued' AND line = ?
+    `).run(line)
+
+    return Number(result.changes)
   }
 
-  markLatestHeardHandled(): Voicemail | undefined {
-    return this.markLatestMatchingStatus('heard', 'handled')
+  skipNextQueued(line?: string): Voicemail | undefined {
+    return this.markFirstMatchingStatus('queued', 'skipped', line)
   }
 
-  replayLatestHeard(): Voicemail | undefined {
-    return this.markLatestMatchingStatus('heard', 'queued')
+  markLatestHeardHandled(line?: string): Voicemail | undefined {
+    return this.markLatestMatchingStatus('heard', 'handled', line)
+  }
+
+  replayLatestHeard(line?: string): Voicemail | undefined {
+    return this.markLatestMatchingStatus('heard', 'queued', line)
   }
 
   getState(): QueueState {
@@ -403,14 +421,14 @@ export class VoicemailStore {
     return mapVoicemail(row)
   }
 
-  private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus): Voicemail | undefined {
+  private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Voicemail | undefined {
     const row = this.database.prepare(`
       UPDATE voicemails
       SET status = ?, updated_at = ?
       WHERE id = (
         SELECT id
         FROM voicemails
-        WHERE status = ?
+        WHERE status = ? AND (? IS NULL OR line = ?)
         ORDER BY
           CASE priority
             WHEN 'high' THEN 0
@@ -421,24 +439,24 @@ export class VoicemailStore {
         LIMIT 1
       )
       RETURNING *
-    `).get(to, new Date().toISOString(), from)
+    `).get(to, new Date().toISOString(), from, line ?? null, line ?? null)
 
     return row === undefined ? undefined : mapVoicemail(row)
   }
 
-  private markLatestMatchingStatus(from: MessageStatus, to: MessageStatus): Voicemail | undefined {
+  private markLatestMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Voicemail | undefined {
     const row = this.database.prepare(`
       UPDATE voicemails
       SET status = ?, updated_at = ?
       WHERE id = (
         SELECT id
         FROM voicemails
-        WHERE status = ?
+        WHERE status = ? AND (? IS NULL OR line = ?)
         ORDER BY updated_at DESC, id DESC
         LIMIT 1
       )
       RETURNING *
-    `).get(to, new Date().toISOString(), from)
+    `).get(to, new Date().toISOString(), from, line ?? null, line ?? null)
 
     return row === undefined ? undefined : mapVoicemail(row)
   }

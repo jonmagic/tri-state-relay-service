@@ -97,25 +97,31 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'clear-heard') {
-    console.log(`cleared ${store.clearHeard()} heard voicemails`)
+    console.log(`cleared ${store.clearHeard(parsed.flags.line)} heard voicemails`)
     return
   }
 
   if (parsed.command === 'skip-next') {
-    const skipped = store.skipNextQueued()
+    const skipped = store.skipNextQueued(parsed.flags.line)
     console.log(skipped === undefined ? 'no queued voicemail to skip' : `skipped #${skipped.id}`)
     return
   }
 
   if (parsed.command === 'mark-handled') {
-    const handled = store.markLatestHeardHandled()
+    const handled = store.markLatestHeardHandled(parsed.flags.line)
     console.log(handled === undefined ? 'no heard voicemail to mark handled' : `handled #${handled.id}`)
     return
   }
 
   if (parsed.command === 'replay-last') {
-    const replayed = store.replayLatestHeard()
+    const replayed = store.replayLatestHeard(parsed.flags.line)
     console.log(replayed === undefined ? 'no heard voicemail to replay' : `queued #${replayed.id} for replay`)
+    return
+  }
+
+  if (parsed.command === 'clear-line') {
+    const line = requiredFlag(parsed.flags, 'line')
+    console.log(`cleared ${store.clearQueued(line)} queued voicemails from ${line}`)
     return
   }
 
@@ -277,6 +283,7 @@ function printHelp(): void {
   voicemail skip-next
   voicemail mark-handled
   voicemail replay-last
+  voicemail clear-line --line "Brain"
   voicemail source
   voicemail reveal-source
   voicemail copy-source
