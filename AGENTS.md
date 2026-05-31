@@ -94,12 +94,14 @@ Use this order unless there is a strong reason to change it:
 4. Queue ordering, duplicate collapse, max depth, and per-project rate limits.
 5. Processor claim-next-and-speak with a single-writer lock.
 6. Persistent focus/ready/mute state.
-7. Source-context metadata: session, app, cwd, and URL.
-8. Menu bar app shell with queue count and ready/focus/mute controls.
-9. Replay last, skip current, mark handled, and clear heard.
-10. Launchd-friendly daemon mode.
-11. Source actions: reveal cwd, copy cwd, activate source app.
-12. Terminal-specific focus adapters where reliable.
+7. Perry-compatible native binary builds and storage runtime compatibility.
+8. Source-context metadata: session, app, cwd, and URL.
+9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
+10. Menu bar app shell with queue count and ready/focus/mute controls.
+11. Replay last, skip current, mark handled, and clear heard.
+12. Launchd-friendly daemon mode.
+13. Source actions: reveal cwd, copy cwd, activate source app.
+14. Terminal-specific focus adapters where reliable.
 
 ## Task exit criteria
 

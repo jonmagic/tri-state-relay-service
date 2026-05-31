@@ -48,19 +48,26 @@ export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
   const message = normalizeRequiredText(input.message, 'message', maxMessageLength)
   const type = normalizeEnum(input.type ?? 'update', messageTypes, 'type')
   const priority = normalizeEnum(input.priority ?? 'normal', priorities, 'priority')
+  const session = normalizeOptionalText(input.session, 120)
+  const app = normalizeOptionalText(input.app, 80)
+  const cwd = normalizeOptionalText(input.cwd, 500)
+  const url = normalizeOptionalText(input.url, 500)
 
   rejectUnsafeMessage(message)
 
-  return stripUndefined({
+  const voicemail: NewVoicemail = {
     project,
     message,
     type,
     priority,
-    session: normalizeOptionalText(input.session, 120),
-    app: normalizeOptionalText(input.app, 80),
-    cwd: normalizeOptionalText(input.cwd, 500),
-    url: normalizeOptionalText(input.url, 500),
-  })
+  }
+
+  if (session !== undefined) voicemail.session = session
+  if (app !== undefined) voicemail.app = app
+  if (cwd !== undefined) voicemail.cwd = cwd
+  if (url !== undefined) voicemail.url = url
+
+  return voicemail
 }
 
 export function spokenText(voicemail: Pick<Voicemail, 'project' | 'type' | 'message'>): string {
@@ -114,8 +121,4 @@ function rejectUnsafeMessage(message: string): void {
       throw new Error('message looks like it may contain a secret or token')
     }
   }
-}
-
-function stripUndefined<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T
 }

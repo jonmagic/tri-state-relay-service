@@ -5,13 +5,16 @@
   "type": "module",
   "description": "Local macOS agent voicemail queue with serialized speech playback.",
   "bin": {
-    "voicemail": "./dist/cli.js"
+    "voicemail": "./dist/src/cli.js",
+    "voicemail-processor": "./dist/src/processor.js"
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "validate": "npm test && npm run typecheck && npm run build"
+    "build:native": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/voicemail && perry compile src/processor.ts -o dist/native/voicemail-processor",
+    "perry:check": "perry check src/ --check-deps",
+    "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
   },
   "keywords": [
     "agent",
@@ -22,7 +25,12 @@
   "author": "",
   "license": "UNLICENSED",
   "devDependencies": {
+    "@perryts/perry": "^0.5.1025",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.0",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0"
   }
 }

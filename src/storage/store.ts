@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { DatabaseSync } from 'node:sqlite'
+import Database from 'better-sqlite3'
 
 import { normalizeVoicemail, type MessageStatus, type NewVoicemailInput, type Voicemail } from '../core/message.ts'
 
@@ -16,12 +16,12 @@ const schemaVersion = 1
 
 export class VoicemailStore {
   readonly path: string
-  readonly database: DatabaseSync
+  readonly database: Database.Database
 
   constructor(path = defaultDatabasePath()) {
     this.path = path
     mkdirSync(dirname(path), { recursive: true })
-    this.database = new DatabaseSync(path)
+    this.database = new Database(path)
     this.migrate()
   }
 

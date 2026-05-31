@@ -45,6 +45,17 @@ npm run build
 npm link
 ```
 
+Build native Perry binaries:
+
+```sh
+npm run build:native
+```
+
+Perry currently compiles the CLI and processor entrypoints, but the
+native runtime requires Perry-compatible dependencies. The SQLite store
+uses `better-sqlite3`, which is covered by the Perry dependency check and
+native runtime smoke test.
+
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Next slices
@@ -53,3 +64,4 @@ By default, TSRS stores its database at `~/Library/Application Support/Tri-State
 2. Add a launchd-friendly daemon loop with a single-writer lock.
 3. Add the first menu bar wrapper for ready, focus, replay last, mute, and queue status.
 4. Add source-context actions for opening or revealing captured project paths.
+5. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
