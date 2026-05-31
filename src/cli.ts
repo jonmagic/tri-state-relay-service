@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { basename, join } from 'node:path'
 
+import { buildCommandInvocation, commandIsEnabled } from './core/command-template.ts'
 import { messageTypes, priorities } from './core/message.ts'
 import { type InactiveLineCombineInput, type InactiveLineCombineResult, VoicemailStore } from './storage/store.ts'
 
@@ -57,6 +57,8 @@ function run(parsed: ParsedCommand): void {
       mode: state.mode,
       muted: state.muted,
       inactiveLineCombiner: state.inactiveLineCombiner,
+      inactiveLineCombinerCommand: state.inactiveLineCombinerCommand,
+      speechCommand: state.speechCommand,
       activeLine: state.activeLine,
       counts,
       queueCount: counts.queued,
@@ -179,19 +181,35 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'combiner') {
-    const requested = parsed.flags.tool
+    const requested = parsed.flags.command ?? parsed.flags.tool
 
     if (requested === undefined) {
-      console.log(store.getState().inactiveLineCombiner)
+      console.log(store.getState().inactiveLineCombinerCommand)
       return
     }
 
-    if (requested !== 'none' && requested !== 'llm' && requested !== 'apfel') {
-      throw new Error('--tool must be one of: none, llm, apfel')
+    const state = store.setInactiveLineCombinerCommand(requested === 'none' ? '' : requested)
+    console.log(`inactive line combiner set to ${state.inactiveLineCombiner}`)
+    return
+  }
+
+  if (parsed.command === 'settings') {
+    const state = store.getState()
+
+    if (parsed.flags['combiner-command'] !== undefined) {
+      store.setInactiveLineCombinerCommand(parsed.flags['combiner-command'])
     }
 
-    const state = store.setInactiveLineCombiner(requested)
-    console.log(`inactive line combiner set to ${state.inactiveLineCombiner}`)
+    if (parsed.flags['speech-command'] !== undefined) {
+      store.setSpeechCommand(parsed.flags['speech-command'])
+    }
+
+    const updated = store.getState()
+    console.log(JSON.stringify({
+      inactiveLineCombiner: updated.inactiveLineCombiner,
+      inactiveLineCombinerCommand: updated.inactiveLineCombinerCommand,
+      speechCommand: updated.speechCommand,
+    }))
     return
   }
 
@@ -290,46 +308,55 @@ function printHelp(): void {
   voicemail line
   voicemail line "Tri-State Relay Service"
   voicemail combiner
-  voicemail combiner --tool none|llm|apfel
+  voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+  voicemail settings
   voicemail state
   voicemail status`)
 }
 
 function inactiveLineCombiner(): ((input: InactiveLineCombineInput) => InactiveLineCombineResult | undefined) | undefined {
-  const tool = store.getState().inactiveLineCombiner
+  const state = store.getState()
 
-  if (tool === 'none') {
+  if (!commandIsEnabled(state.inactiveLineCombinerCommand)) {
     return undefined
   }
 
-  return (input) => combineInactiveLine(tool, input)
+  return (input) => combineInactiveLine(state.inactiveLineCombinerCommand, input)
 }
 
-function combineInactiveLine(tool: 'llm' | 'apfel', input: InactiveLineCombineInput): InactiveLineCombineResult | undefined {
+function combineInactiveLine(commandTemplate: string, input: InactiveLineCombineInput): InactiveLineCombineResult | undefined {
   if (!canUseExternalCombiner()) {
     return latestOnlyFallback(input)
   }
 
   const inputJson = JSON.stringify(input)
-  const helperResult = runCombinerHelper(tool, inputJson)
+  const helperResult = runCombinerCommand(commandTemplate, inputJson)
 
   if (helperResult !== undefined) {
     return parseCombineResult(helperResult) ?? latestOnlyFallback(input)
   }
 
   function canUseExternalCombiner(): boolean {
-    const executable = process.argv[1]
-
-    return executable !== undefined && basename(executable) !== 'voicemail'
+    return process.argv[1] !== undefined && !process.argv[1].endsWith('/voicemail')
   }
 
   return latestOnlyFallback(input)
 }
 
-function runCombinerHelper(tool: 'llm' | 'apfel', inputJson: string): string | undefined {
-  const helperPath = join(process.cwd(), 'scripts', 'combine-inactive-line.mjs')
-  const result = spawnSync('node', [helperPath, tool, inputJson], {
+function runCombinerCommand(commandTemplate: string, inputJson: string): string | undefined {
+  const invocation = buildCommandInvocation(commandTemplate, {
+    '<input>': inputJson,
+    '<system>': combinerSystemPrompt,
+  })
+
+  if (invocation === undefined) {
+    return undefined
+  }
+
+  const result = spawnSync(invocation.command, invocation.args, {
     encoding: 'utf8',
+    input: inputJson,
+    maxBuffer: 1024 * 1024,
   })
 
   if (result.status === 0 && result.stdout.trim() !== '') {
@@ -338,6 +365,13 @@ function runCombinerHelper(tool: 'llm' | 'apfel', inputJson: string): string | u
 
   return undefined
 }
+
+const combinerSystemPrompt = `You combine pending inactive-line agent voicemail updates into one short spoken voicemail.
+
+Return only JSON with this shape:
+{"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short voicemail"}
+
+Prefer one useful update over a transcript. Drop duplicate progress-only updates. Promote blockers or completion when warranted. Keep message <= 160 characters.`
 
 function parseCombineResult(output: string): InactiveLineCombineResult | undefined {
   const json = extractJson(output)

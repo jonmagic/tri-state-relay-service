@@ -25,11 +25,12 @@ Current state:
 17. The menu bar app periodically refreshes queue state and processes one queued voicemail when ready and unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
 19. `npm run eval:inactive-line` compares `apfel` and `llm` against voicemail-composition fixtures with contract checks and an LLM judge.
-20. `voicemail combiner --tool none|llm|apfel` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
+20. `voicemail combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
 21. `voicemail line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
 22. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the Node CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
 23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 24. Left-click playback makes the line it pulls from active before speaking.
+25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and speech command templates.
 
 Roadmap gaps from the latest feature review:
 

@@ -56,14 +56,42 @@ test('mute prevents ready mode from claiming voicemail', () => {
   store.close()
 })
 
-test('inactive line combiner setting defaults to none and can be configured', () => {
+test('command settings default safely and can be configured', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
 
   assert.equal(store.getState().inactiveLineCombiner, 'none')
-  assert.equal(store.setInactiveLineCombiner('llm').inactiveLineCombiner, 'llm')
-  assert.equal(store.setInactiveLineCombiner('apfel').inactiveLineCombiner, 'apfel')
-  assert.equal(store.setInactiveLineCombiner('none').inactiveLineCombiner, 'none')
+  assert.equal(store.getState().inactiveLineCombinerCommand.includes('https://github.com/simonw/llm'), true)
+  assert.equal(store.getState().speechCommand.includes('/usr/bin/say <message>'), true)
+  assert.equal(store.setInactiveLineCombinerCommand('llm prompt <input> --system <system>').inactiveLineCombiner, 'custom')
+  assert.equal(store.setInactiveLineCombinerCommand('').inactiveLineCombiner, 'none')
+  assert.equal(store.setSpeechCommand('').speechCommand.includes('/usr/bin/say <message>'), true)
   store.close()
+})
+
+test('legacy llm combiner setting migrates to command template', () => {
+  const dbPath = temporaryDatabasePath()
+  const store = new VoicemailStore(dbPath)
+  store.database.prepare("UPDATE settings SET value = 'llm' WHERE key = 'inactive_line_combiner'").run()
+  store.database.prepare("DELETE FROM settings WHERE key = 'inactive_line_combiner_command'").run()
+  store.close()
+
+  const migrated = new VoicemailStore(dbPath)
+  assert.equal(migrated.getState().inactiveLineCombiner, 'custom')
+  assert.equal(migrated.getState().inactiveLineCombinerCommand, 'llm prompt <input> --system <system> --no-stream --no-log')
+  migrated.close()
+})
+
+test('legacy apfel combiner setting migrates to command template', () => {
+  const dbPath = temporaryDatabasePath()
+  const store = new VoicemailStore(dbPath)
+  store.database.prepare("UPDATE settings SET value = 'apfel' WHERE key = 'inactive_line_combiner'").run()
+  store.database.prepare("DELETE FROM settings WHERE key = 'inactive_line_combiner_command'").run()
+  store.close()
+
+  const migrated = new VoicemailStore(dbPath)
+  assert.equal(migrated.getState().inactiveLineCombiner, 'custom')
+  assert.equal(migrated.getState().inactiveLineCombinerCommand, 'apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>')
+  migrated.close()
 })
 
 test('active line setting and line counts are persisted', () => {
@@ -95,7 +123,7 @@ test('inactive line without combiner keeps only latest queued message', () => {
 test('inactive line with combiner replaces queued messages with one voicemail', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   store.setActiveLine('TSRS')
-  store.setInactiveLineCombiner('llm')
+  store.setInactiveLineCombinerCommand('llm prompt <input> --system <system>')
   store.enqueueWithLinePolicy({ line: 'Brain', message: 'I found the issue.' }, () => ({
     action: 'replace',
     type: 'update',
@@ -124,7 +152,7 @@ test('inactive line with combiner replaces queued messages with one voicemail', 
 test('inactive line combiner drop preserves existing pending voicemail', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   store.setActiveLine('TSRS')
-  store.setInactiveLineCombiner('llm')
+  store.setInactiveLineCombinerCommand('llm prompt <input> --system <system>')
   const existing = store.enqueueWithLinePolicy({ line: 'Brain', message: 'Indexing is running.' }, () => ({
     action: 'replace',
     type: 'update',

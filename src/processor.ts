@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { buildCommandInvocation } from './core/command-template.ts'
 import { spokenText } from './core/message.ts'
 import { VoicemailStore } from './storage/store.ts'
 
@@ -18,7 +19,7 @@ export interface ProcessOneResult {
 
 export type SpeakVoicemail = (text: string) => SpeechResult
 
-export function processOneVoicemailWithLock(store: VoicemailStore, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
+export function processOneVoicemailWithLock(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
   if (!store.acquireProcessorLock(owner)) {
@@ -32,11 +33,11 @@ export function processOneVoicemailWithLock(store: VoicemailStore, speak: SpeakV
   }
 }
 
-export function processOneVoicemail(store: VoicemailStore, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
-  return processClaimedVoicemail(store, store.claimNextForSpeech(), speak)
+export function processOneVoicemail(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
+  return processClaimedVoicemail(store, store.claimNextForSpeech(), speak ?? configuredSpeaker(store))
 }
 
-export function processOneLineVoicemailWithLock(store: VoicemailStore, line: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
+export function processOneLineVoicemailWithLock(store: VoicemailStore, line: string, speak?: SpeakVoicemail): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
   if (!store.acquireProcessorLock(owner)) {
@@ -50,8 +51,8 @@ export function processOneLineVoicemailWithLock(store: VoicemailStore, line: str
   }
 }
 
-export function processOneLineVoicemail(store: VoicemailStore, line: string, speak: SpeakVoicemail = speakWithSay): ProcessOneResult {
-  return processClaimedVoicemail(store, store.claimNextForLine(line), speak)
+export function processOneLineVoicemail(store: VoicemailStore, line: string, speak?: SpeakVoicemail): ProcessOneResult {
+  return processClaimedVoicemail(store, store.claimNextForLine(line), speak ?? configuredSpeaker(store))
 }
 
 function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<VoicemailStore['claimNextForSpeech']>, speak: SpeakVoicemail): ProcessOneResult {
@@ -72,6 +73,18 @@ function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<Vo
 
 export function speakWithSay(text: string): SpeechResult {
   return spawnSync('/usr/bin/say', [text], { stdio: 'ignore' })
+}
+
+function configuredSpeaker(store: VoicemailStore): SpeakVoicemail {
+  return (text) => {
+    const invocation = buildCommandInvocation(store.getState().speechCommand, { '<message>': text })
+
+    if (invocation === undefined) {
+      return { status: 1 }
+    }
+
+    return spawnSync(invocation.command, invocation.args, { stdio: 'ignore' })
+  }
 }
 
 function lineArg(args: string[]): string | undefined {

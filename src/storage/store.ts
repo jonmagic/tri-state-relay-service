@@ -3,15 +3,18 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import Database from 'better-sqlite3'
 
+import { commandIsEnabled, defaultInactiveLineCombinerCommand, defaultSpeechCommand, resetBlankCommand } from '../core/command-template.ts'
 import { normalizeVoicemail, type MessageStatus, type MessageType, type NewVoicemail, type NewVoicemailInput, type Priority, type Voicemail } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
-export type InactiveLineCombiner = 'none' | 'llm' | 'apfel'
+export type InactiveLineCombiner = 'none' | 'custom'
 
 export interface QueueState {
   mode: PlaybackMode
   muted: boolean
   inactiveLineCombiner: InactiveLineCombiner
+  inactiveLineCombinerCommand: string
+  speechCommand: string
   activeLine?: string
 }
 
@@ -302,13 +305,16 @@ export class VoicemailStore {
   getState(): QueueState {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
-    const inactiveLineCombiner = normalizeInactiveLineCombiner(this.getSetting('inactive_line_combiner'))
+    const inactiveLineCombinerCommand = this.getSetting('inactive_line_combiner_command') ?? this.migratedInactiveLineCombinerCommand()
+    const speechCommand = this.getSetting('speech_command') ?? defaultSpeechCommand
     const activeLine = this.getSetting('active_line')
 
     return {
       mode: mode === 'ready' ? 'ready' : 'focus',
       muted,
-      inactiveLineCombiner,
+      inactiveLineCombiner: commandIsEnabled(inactiveLineCombinerCommand) ? 'custom' : 'none',
+      inactiveLineCombinerCommand,
+      speechCommand,
       activeLine,
     }
   }
@@ -323,8 +329,13 @@ export class VoicemailStore {
     return this.getState()
   }
 
-  setInactiveLineCombiner(combiner: InactiveLineCombiner): QueueState {
-    this.setSetting('inactive_line_combiner', combiner)
+  setInactiveLineCombinerCommand(command: string): QueueState {
+    this.setSetting('inactive_line_combiner_command', resetBlankCommand(command, defaultInactiveLineCombinerCommand))
+    return this.getState()
+  }
+
+  setSpeechCommand(command: string): QueueState {
+    this.setSetting('speech_command', resetBlankCommand(command, defaultSpeechCommand))
     return this.getState()
   }
 
@@ -505,7 +516,10 @@ export class VoicemailStore {
       INSERT OR IGNORE INTO settings (key, value) VALUES ('mode', 'focus');
       INSERT OR IGNORE INTO settings (key, value) VALUES ('muted', 'false');
       INSERT OR IGNORE INTO settings (key, value) VALUES ('inactive_line_combiner', 'none');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('inactive_line_combiner_command', '${escapeSql(defaultInactiveLineCombinerCommand)}');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('speech_command', '${escapeSql(defaultSpeechCommand)}');
     `)
+    this.migrateLegacyCombinerSetting()
   }
 
   private getSetting(key: string): string | undefined {
@@ -519,6 +533,34 @@ export class VoicemailStore {
       VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(key, value)
+  }
+
+  private migratedInactiveLineCombinerCommand(): string {
+    const legacy = this.getSetting('inactive_line_combiner')
+
+    if (legacy === 'llm') {
+      return 'llm prompt <input> --system <system> --no-stream --no-log'
+    }
+
+    if (legacy === 'apfel') {
+      return 'apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>'
+    }
+
+    return defaultInactiveLineCombinerCommand
+  }
+
+  private migrateLegacyCombinerSetting(): void {
+    const current = this.getSetting('inactive_line_combiner_command')
+
+    if (current !== defaultInactiveLineCombinerCommand) {
+      return
+    }
+
+    const migrated = this.migratedInactiveLineCombinerCommand()
+
+    if (migrated !== defaultInactiveLineCombinerCommand) {
+      this.setSetting('inactive_line_combiner_command', migrated)
+    }
   }
 }
 
@@ -561,14 +603,10 @@ function optionalString(value: unknown): string | undefined {
   return String(value)
 }
 
-function normalizeInactiveLineCombiner(value: string | undefined): InactiveLineCombiner {
-  if (value === 'llm' || value === 'apfel') {
-    return value
-  }
-
-  return 'none'
-}
-
 function lastItem<T>(items: T[]): T | undefined {
   return items.length === 0 ? undefined : items[items.length - 1]
+}
+
+function escapeSql(value: string): string {
+  return value.replaceAll("'", "''")
 }

@@ -9,34 +9,40 @@ Use an LLM only on short, intentionally-authored TSRS messages that have
 already passed queue validation. Never send raw terminal output, code, logs,
 secrets, private data, or file contents to the LLM.
 
-## Tool preference
+## Command setting
 
-The combiner is configured by the `inactive_line_combiner` setting:
+The combiner is configured by the `inactive_line_combiner_command` setting.
+Open Settings from the menu bar app, or use:
 
 ```sh
-voicemail combiner --tool none
-voicemail combiner --tool llm
-voicemail combiner --tool apfel
+voicemail combiner
+voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+voicemail combiner --command none
 ```
 
-`none` is the default and requires no LLM. When set to `none`, inactive
-lines should not attempt a rollup; they should keep only the latest relevant
-message for the line. Use an LLM only when the setting is `llm` or `apfel`.
+The default is a fully commented template that requires no LLM. When the
+template has no non-comment command, inactive lines keep only the latest
+relevant message for the line.
 
-The Node CLI path can invoke `llm` and `apfel`. The Perry native CLI must
-fall back to latest-message-only behavior until native child-process handling
-is reliable enough for multi-message LLM combination.
+The command is parsed into argv without a shell. Placeholders are inserted
+as single argv values:
+
+- `<input>`: JSON input shape for the inactive-line update.
+- `<system>`: the combiner system prompt.
+
+Pipes, redirects, command substitution, and shell expansion are
+intentionally unsupported.
 
 `apfel` uses local Apple Intelligence:
 
 ```sh
-apfel --system-file docs/prompts/combine-inactive-line.md --max-tokens 160 --temperature 0
+apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>
 ```
 
 `llm` uses the configured `llm` CLI default model:
 
 ```sh
-llm --system "$(cat docs/prompts/combine-inactive-line.md)"
+llm prompt <input> --system <system> --no-stream --no-log
 ```
 
 Run the manual eval suite to compare both tools:
@@ -83,7 +89,7 @@ The model must return exactly one JSON object:
 ```json
 {
   "action": "drop|replace|promote",
-  "type": "update|complete|blocked|needs-input",
+  "type": "update|complete|blocked",
   "priority": "low|normal|high",
   "message": "Short message safe to queue or speak."
 }

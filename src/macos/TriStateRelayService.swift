@@ -6,6 +6,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var playbackRefreshTimer: Timer?
+    private var settingsWindowController: SettingsWindowController?
 
     static func main() {
         let app = NSApplication.shared
@@ -177,18 +178,17 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         schedulePlaybackRefresh()
     }
 
-    @objc private func useNoCombiner() {
-        model.setInactiveLineCombiner("none")
-        refreshStatusItem()
-    }
+    @objc private func openSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(model: model) { [weak self] in
+                self?.refreshStatusItem()
+            }
+        }
 
-    @objc private func useLLMCombiner() {
-        model.setInactiveLineCombiner("llm")
-        refreshStatusItem()
-    }
-
-    @objc private func useApfelCombiner() {
-        model.setInactiveLineCombiner("apfel")
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindowController?.showWindow(nil)
+        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         refreshStatusItem()
     }
 
@@ -230,7 +230,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             menu.addItem(menuItem("Copy Source", action: #selector(copySource), enabled: true))
         }
         menu.addItem(.separator())
-        menu.addItem(settingsMenuItem())
+        if model.status.muted {
+            menu.addItem(menuItem("Unmute", action: #selector(unmute), enabled: true))
+        } else {
+            menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
+        }
+        menu.addItem(menuItem("Settings...", action: #selector(openSettings), enabled: true))
         menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
@@ -321,25 +326,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func settingsMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-
-        if model.status.muted {
-            submenu.addItem(menuItem("Unmute", action: #selector(unmute), enabled: true))
-        } else {
-            submenu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
-        }
-        submenu.addItem(.separator())
-        submenu.addItem(NSMenuItem(title: "Inactive Combiner: \(model.status.inactiveLineCombiner)", action: nil, keyEquivalent: ""))
-        submenu.addItem(menuItem("Use Latest Only", action: #selector(useNoCombiner), enabled: model.status.inactiveLineCombiner != "none"))
-        submenu.addItem(menuItem("Use llm", action: #selector(useLLMCombiner), enabled: model.status.inactiveLineCombiner != "llm"))
-        submenu.addItem(menuItem("Use apfel", action: #selector(useApfelCombiner), enabled: model.status.inactiveLineCombiner != "apfel"))
-        item.submenu = submenu
-
-        return item
-    }
-
     private func schedulePlaybackRefresh() {
         playbackRefreshTimer?.invalidate()
         playbackRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
@@ -355,6 +341,103 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 timer.invalidate()
             }
         }
+    }
+}
+
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    private let model: MenuBarModel
+    private let onSave: () -> Void
+    private let combinerTextView = NSTextView()
+    private let speechTextView = NSTextView()
+
+    init(model: MenuBarModel, onSave: @escaping () -> Void) {
+        self.model = model
+        self.onSave = onSave
+
+        let tabView = NSTabView(frame: NSRect(x: 0, y: 48, width: 720, height: 432))
+        tabView.autoresizingMask = [.width, .height]
+        tabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
+        tabView.addTabViewItem(Self.tabItem(label: "Speech", textView: speechTextView))
+
+        let saveButton = NSButton(title: "Save", target: nil, action: nil)
+        saveButton.frame = NSRect(x: 608, y: 12, width: 88, height: 28)
+        saveButton.bezelStyle = .rounded
+
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+        content.addSubview(tabView)
+        content.addSubview(saveButton)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Tri-State Relay Service Settings"
+        window.contentView = content
+        window.center()
+
+        super.init(window: window)
+        window.delegate = self
+        saveButton.target = self
+        saveButton.action = #selector(save)
+        reload()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func showWindow(_ sender: Any?) {
+        reload()
+        super.showWindow(sender)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    @objc private func save() {
+        model.saveSettings(
+            inactiveLineCombinerCommand: combinerTextView.string,
+            speechCommand: speechTextView.string
+        )
+        reload()
+        onSave()
+    }
+
+    private func reload() {
+        let settings = model.loadSettings()
+        combinerTextView.string = settings.inactiveLineCombinerCommand
+        speechTextView.string = settings.speechCommand
+    }
+
+    private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
+        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = false
+
+        let scrollView = NSScrollView(frame: NSRect(x: 12, y: 12, width: 680, height: 360))
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.documentView = textView
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
+        container.addSubview(scrollView)
+
+        let item = NSTabViewItem(identifier: label)
+        item.label = label
+        item.view = container
+        return item
     }
 }
 
@@ -480,13 +563,34 @@ final class MenuBarModel {
         refresh()
     }
 
-    func setInactiveLineCombiner(_ combiner: String) {
-        runVoicemail("combiner", arguments: ["--tool", combiner])
+    func setActiveLine(_ line: String) {
+        runVoicemail("line", arguments: [line])
         refresh()
     }
 
-    func setActiveLine(_ line: String) {
-        runVoicemail("line", arguments: [line])
+    func loadSettings() -> SettingsSnapshot {
+        let output = runVoicemail("settings")
+
+        guard
+            let data = output.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return SettingsSnapshot(inactiveLineCombinerCommand: "", speechCommand: "/usr/bin/say <message>")
+        }
+
+        return SettingsSnapshot(
+            inactiveLineCombinerCommand: json["inactiveLineCombinerCommand"] as? String ?? "",
+            speechCommand: json["speechCommand"] as? String ?? "/usr/bin/say <message>"
+        )
+    }
+
+    func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
+        runVoicemail("settings", arguments: [
+            "--combiner-command",
+            inactiveLineCombinerCommand,
+            "--speech-command",
+            speechCommand,
+        ])
         refresh()
     }
 
@@ -677,6 +781,11 @@ struct LineSummary {
     let queued: Int
     let heard: Int
     let failed: Int
+}
+
+struct SettingsSnapshot {
+    let inactiveLineCombinerCommand: String
+    let speechCommand: String
 }
 
 private func intValue(_ value: Any?) -> Int {

@@ -66,6 +66,19 @@ test('processor converts missing speech status to failure exit code', () => {
   store.close()
 })
 
+test('processor uses configured speech command without shell expansion', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const queued = store.enqueue({ line: 'Brain', message: 'hello; rm -rf ~' })
+  store.setMode('ready')
+  store.setSpeechCommand('/usr/bin/printf <message>')
+
+  const result = processOneVoicemail(store)
+
+  assert.deepEqual(result, { status: 'heard', exitCode: 0, voicemailId: queued.id })
+  assert.equal(store.list()[0].status, 'heard')
+  store.close()
+})
+
 test('processor lock prevents a second speaker from claiming voicemail', () => {
   const dbPath = temporaryDatabasePath()
   const store = new VoicemailStore(dbPath)

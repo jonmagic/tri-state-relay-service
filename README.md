@@ -23,7 +23,8 @@ voicemail copy-source
 voicemail line
 voicemail line "Tri-State Relay Service"
 voicemail combiner
-voicemail combiner --tool none|llm|apfel
+voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+voicemail settings
 voicemail status
 ```
 
@@ -86,8 +87,7 @@ messages on the active line. Other lines stay quiet and can be pulled from
 their line submenu.
 
 Each line submenu scopes lifecycle controls to that line: play next, skip
-next, clear queue, replay last, mark handled, and clear heard. Global
-controls cover focus, ready, mute, unmute, clear, refresh, and quit.
+next, clear queue, replay last, mark handled, and clear heard. Global controls cover mute, unmute, settings, refresh, and quit.
 Source controls can reveal the latest captured working directory or copy
 the latest captured working directory/URL without exposing message text.
 
@@ -123,23 +123,25 @@ voicemail instead of a log summary. Results are written to
 
 ## Inactive-line combiner setting
 
-Inactive-line rollups are configurable:
+Inactive-line rollups are configured with a command template. The Settings
+window has an Inactive Combiner tab with commented examples for `llm` and
+`apfel`, including their GitHub project URLs. Leave the template commented,
+or clear it and save, to use latest-only inactive-line behavior.
 
 ```sh
-voicemail combiner --tool none
-voicemail combiner --tool llm
-voicemail combiner --tool apfel
+voicemail combiner
+voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+voicemail combiner --command none
 ```
 
-`none` is the default and works without any LLM tool. In that mode TSRS
-should avoid rollups and use latest-message-only behavior for inactive
-lines. `llm` and `apfel` enable the prompt-driven combination workflow
-described in `docs/inactive-line-combination.md`.
+The command is parsed into argv without a shell. Placeholders such as
+`<input>`, `<system>`, and `<message>` are inserted as single argv values.
+Pipes, redirects, command substitution, and shell expansion are intentionally
+unsupported.
 
-Current implementation note: the Node CLI path can invoke `llm` and
-`apfel` for combination. The Perry native CLI falls back to latest-only
-behavior even when a combiner is selected, because native child-process
-handling is not reliable enough for multi-message LLM combination yet.
+The Speech tab configures the command used by the processor to speak one
+message. The default is `/usr/bin/say <message>`. `/usr/bin/say` ships with
+macOS, so no extra install is required.
 
 ## Lines
 
