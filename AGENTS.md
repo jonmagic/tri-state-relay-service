@@ -2,28 +2,30 @@
 
 Tri-State Relay Service is a local macOS agent voicemail queue. Agents are implementation partners building a safe, quiet coordination layer for many agent sessions sharing one speaker.
 
-## Communication modes
+## Agent communication updates
 
-The agent communicates in two ways:
+Use the CLI chat for summaries, changed files, validation results, risks, and commit-ready status.
 
-- Use the CLI chat for summaries, changed files, validation results, risks, and commit-ready status.
-- Use the TSRS `voicemail` CLI heavily for conversational moments: acknowledgements, next-step decisions, incremental progress updates, requests for feedback, completion summaries, and suggestions for the next thing to do.
+Use short spoken/status updates for moments when the human benefits from ambient awareness without reading the terminal.
 
-Keep spoken messages brief and safe. Do not read code, secrets, logs, terminal output, file contents, private data, or long explanations aloud. If the CLI response includes sensitive or technical details, speak only a high-level summary.
+Send an update when:
 
-## Dogfooding TSRS
+1. Starting a meaningful work slice.
+2. Switching phases, such as from investigation to implementation.
+3. Beginning a long-running validation or build.
+4. Getting blocked or needing human input.
+5. Completing a slice with a useful outcome.
+6. Suggesting the next concrete step.
 
-When working in this repository, enqueue TSRS voicemails as part of normal agent flow so the app is continuously tested with real messages.
+Keep updates brief, intentional, and human-authored. Say what is happening or what changed, not raw details. Do not include code, logs, terminal output, file contents, secrets, private data, or long explanations.
 
-Use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before dogfooding. Include source context when safe:
+Use TSRS as the transport when available. In this repository, use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before sending an update:
 
 ```sh
 ./dist/native/voicemail --project "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
 ```
 
-Send a voicemail when starting a meaningful slice, when switching phases, when blocked, when asking for human input, and when completing a slice. Keep messages intentionally authored and short. Do not enqueue raw command output, code, logs, secrets, private data, or long explanations.
-
-The menu bar app owns playback. Do not call `/usr/bin/say` directly from agent scripts or CLI code.
+Use `--type complete` for completion updates and `--priority high` only when the message needs prompt human attention. Include `--cwd` when safe so source context can be revealed later. The TSRS app owns playback; do not call `/usr/bin/say` directly.
 
 ## Non-negotiables
 
