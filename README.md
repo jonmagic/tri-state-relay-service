@@ -51,7 +51,6 @@ Build native Perry binaries:
 
 ```sh
 npm run build:native
-./dist/native/tri-state-relay-service
 ```
 
 Perry currently compiles the CLI and processor entrypoints, but the
@@ -59,16 +58,22 @@ native runtime requires Perry-compatible dependencies. The SQLite store
 uses `better-sqlite3`, which is covered by the Perry dependency check and
 native runtime smoke test.
 
-The first interactable app is `dist/native/tri-state-relay-service`. It
-creates a small native Perry window and a macOS menu named `Voicemail`
-with ready, focus, mute, unmute, clear, and refresh controls backed by
-the app shell.
+Build and run the macOS menu bar app:
+
+```sh
+npm run build:macos
+open "dist/macos/Tri-State Relay Service.app"
+```
+
+The first interactable app is a SwiftUI `MenuBarExtra` host that shells
+out to the Perry-built `voicemail` and `voicemail-processor` binaries.
+It exposes ready, focus, mute, unmute, clear, refresh, and quit controls.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Next slices
 
-1. Move from the current native Perry window/menu to a status-item menu bar app once Perry's tray runtime export is available.
+1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
 2. Add replay last, skip current, mark handled, and clear heard controls.
 3. Add source-context actions for opening or revealing captured project paths.
 4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.

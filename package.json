@@ -12,7 +12,8 @@
     "test": "node --test --experimental-strip-types tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "build:native": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/voicemail && perry compile src/processor.ts -o dist/native/voicemail-processor && perry compile src/app/perry-menu-bar.ts -o dist/native/tri-state-relay-service",
+    "build:native": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/voicemail && perry compile src/processor.ts -o dist/native/voicemail-processor",
+    "build:macos": "npm run build:native && mkdir -p dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS && swiftc -parse-as-library src/macos/TriStateRelayService.swift -o dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/Tri-State\\ Relay\\ Service && cp dist/native/voicemail dist/native/voicemail-processor dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/",
     "perry:check": "perry check src/ --check-deps",
     "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
   },
