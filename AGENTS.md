@@ -100,7 +100,7 @@ Use this order unless there is a strong reason to change it:
 10. App-owned processor loop.
 11. Interactable SwiftUI menu bar host around the Perry-built CLI and processor binaries.
 12. Replay last, skip current, mark handled, and clear heard.
-13. Source actions: reveal cwd, copy cwd, activate source app.
+13. Safe aggregate queue views by producer, project, priority, age, and status.
 14. Terminal-specific focus adapters where reliable.
 
 ## Task exit criteria

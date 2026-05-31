@@ -14,6 +14,15 @@ export interface QueueState {
 
 export type QueueCounts = Record<MessageStatus, number>
 
+export interface SourceContext {
+  id: number
+  project: string
+  session?: string
+  app?: string
+  cwd?: string
+  url?: string
+}
+
 const schemaVersion = 1
 
 export class VoicemailStore {
@@ -94,6 +103,31 @@ export class VoicemailStore {
     }
 
     return counts
+  }
+
+  latestSourceContext(): SourceContext | undefined {
+    const row = this.database.prepare(`
+      SELECT id, project, session, app, cwd, url
+      FROM voicemails
+      WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `).get()
+
+    if (row === undefined) {
+      return undefined
+    }
+
+    const value = row as Record<string, unknown>
+
+    return {
+      id: Number(value.id),
+      project: String(value.project),
+      session: optionalString(value.session),
+      app: optionalString(value.app),
+      cwd: optionalString(value.cwd),
+      url: optionalString(value.url),
+    }
   }
 
   clear(): number {

@@ -17,6 +17,9 @@ voicemail clear-heard
 voicemail skip-next
 voicemail mark-handled
 voicemail replay-last
+voicemail source
+voicemail reveal-source
+voicemail copy-source
 voicemail status
 ```
 
@@ -77,11 +80,12 @@ The app reads `voicemail status` JSON rather than scraping message text.
 It also exposes lifecycle controls for skipping the next queued message,
 replaying the last heard message, marking heard messages handled, and
 clearing heard messages.
+Source controls can reveal the latest captured working directory or copy
+the latest captured working directory/URL without exposing message text.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Next slices
 
 1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-2. Add source-context actions for opening or revealing captured project paths.
-3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+2. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.

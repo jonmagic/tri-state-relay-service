@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process'
+
 import { VoicemailStore } from './storage/store.ts'
 
 interface ParsedCommand {
@@ -45,6 +47,7 @@ function run(parsed: ParsedCommand): void {
   if (parsed.command === 'status') {
     const state = store.getState()
     const counts = store.countByStatus()
+    const source = store.latestSourceContext()
 
     console.log(JSON.stringify({
       mode: state.mode,
@@ -52,6 +55,7 @@ function run(parsed: ParsedCommand): void {
       counts,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
+      source,
     }))
     return
   }
@@ -105,6 +109,39 @@ function run(parsed: ParsedCommand): void {
   if (parsed.command === 'replay-last') {
     const replayed = store.replayLatestHeard()
     console.log(replayed === undefined ? 'no heard voicemail to replay' : `queued #${replayed.id} for replay`)
+    return
+  }
+
+  if (parsed.command === 'source') {
+    const source = store.latestSourceContext()
+    console.log(JSON.stringify(source ?? null))
+    return
+  }
+
+  if (parsed.command === 'reveal-source') {
+    const source = store.latestSourceContext()
+
+    if (source?.cwd === undefined) {
+      console.log('no source cwd to reveal')
+      return
+    }
+
+    spawnSync('/usr/bin/open', [source.cwd], { stdio: 'ignore' })
+    console.log(`revealed ${source.cwd}`)
+    return
+  }
+
+  if (parsed.command === 'copy-source') {
+    const source = store.latestSourceContext()
+    const value = source?.cwd ?? source?.url
+
+    if (value === undefined) {
+      console.log('no source path or URL to copy')
+      return
+    }
+
+    spawnSync('/usr/bin/pbcopy', { input: value })
+    console.log('copied source')
     return
   }
 
@@ -178,6 +215,9 @@ function printHelp(): void {
   voicemail skip-next
   voicemail mark-handled
   voicemail replay-last
+  voicemail source
+  voicemail reveal-source
+  voicemail copy-source
   voicemail state
   voicemail status`)
 }

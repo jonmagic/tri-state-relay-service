@@ -21,6 +21,7 @@ Current slice:
 13. `src/macos/TriStateRelayService.swift` builds an interactable SwiftUI `MenuBarExtra` app around the Perry-built CLI and processor binaries.
 14. `voicemail status` exposes JSON queue state for the app without scraping message text.
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
+16. The CLI and menu bar app support source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 
 Roadmap gaps from the latest feature review:
 

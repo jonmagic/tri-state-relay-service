@@ -77,6 +77,30 @@ test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   store.close()
 })
 
+test('latest source context omits message text and prefers newest metadata', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.enqueue({ project: 'Brain', message: 'No source here.' })
+  store.enqueue({
+    project: 'TSRS',
+    message: 'The app is ready.',
+    session: 'agent session',
+    app: 'Ghostty',
+    cwd: '~/code/tri-state-relay-service',
+    url: 'https://github.com/jonmagic/tri-state-relay-service',
+  })
+
+  assert.deepEqual(store.latestSourceContext(), {
+    id: 2,
+    project: 'TSRS',
+    session: 'agent session',
+    app: 'Ghostty',
+    cwd: '~/code/tri-state-relay-service',
+    url: 'https://github.com/jonmagic/tri-state-relay-service',
+  })
+  assert.equal(JSON.stringify(store.latestSourceContext()).includes('The app is ready.'), false)
+  store.close()
+})
+
 function temporaryDatabasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
 }

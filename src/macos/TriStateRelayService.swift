@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct TriStateRelayServiceApp: App {
-    @State private var status = QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0)
+    @State private var status = QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0, sourcePath: nil, sourceURL: nil)
 
     var body: some Scene {
         MenuBarExtra(status.title, systemImage: status.systemImage) {
@@ -56,6 +56,17 @@ struct TriStateRelayServiceApp: App {
                 refresh()
             }
             .disabled(status.heard == 0)
+            Divider()
+            Button("Reveal Source") {
+                runVoicemail("reveal-source")
+                refresh()
+            }
+            .disabled(!status.hasSourcePath)
+            Button("Copy Source") {
+                runVoicemail("copy-source")
+                refresh()
+            }
+            .disabled(!status.hasSource)
             Button("Refresh Status") {
                 refresh()
             }
@@ -82,7 +93,7 @@ struct TriStateRelayServiceApp: App {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0, sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
@@ -90,8 +101,11 @@ struct TriStateRelayServiceApp: App {
         let queued = json["queueCount"] as? Int ?? 0
         let counts = json["counts"] as? [String: Int] ?? [:]
         let heard = counts["heard"] ?? 0
+        let source = json["source"] as? [String: Any]
+        let cwd = source?["cwd"] as? String
+        let url = source?["url"] as? String
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, heard: heard)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, heard: heard, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
@@ -133,6 +147,16 @@ struct QueueStatus {
     let muted: Bool
     let queued: Int
     let heard: Int
+    let sourcePath: String?
+    let sourceURL: String?
+
+    var hasSourcePath: Bool {
+        sourcePath != nil
+    }
+
+    var hasSource: Bool {
+        sourcePath != nil || sourceURL != nil
+    }
 
     var title: String {
         if muted {
