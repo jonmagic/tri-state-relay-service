@@ -1,0 +1,28 @@
+{
+  "name": "tri-state-relay-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local macOS agent voicemail queue with serialized speech playback.",
+  "bin": {
+    "voicemail": "./dist/cli.js"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "validate": "npm test && npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "agent",
+    "voicemail",
+    "speech",
+    "macos"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.8.3"
+  }
+}

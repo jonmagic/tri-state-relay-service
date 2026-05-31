@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+import { VoicemailStore } from './storage/store.ts'
+
+interface ParsedCommand {
+  command: string
+  flags: Record<string, string>
+}
+
+const store = new VoicemailStore()
+
+try {
+  const parsed = parseArgs(process.argv.slice(2))
+  run(parsed)
+} finally {
+  store.close()
+}
+
+function run(parsed: ParsedCommand): void {
+  if (parsed.command === 'enqueue') {
+    const voicemail = store.enqueue({
+      project: requiredFlag(parsed.flags, 'project'),
+      message: requiredFlag(parsed.flags, 'message'),
+      type: parsed.flags.type,
+      priority: parsed.flags.priority,
+      session: parsed.flags.session,
+      app: parsed.flags.app,
+      cwd: parsed.flags.cwd,
+      url: parsed.flags.url,
+    })
+
+    console.log(`queued #${voicemail.id} ${voicemail.project}: ${voicemail.message}`)
+    return
+  }
+
+  if (parsed.command === 'list') {
+    for (const voicemail of store.list()) {
+      console.log(`#${voicemail.id} [${voicemail.status}] [${voicemail.priority}] ${voicemail.project}: ${voicemail.message}`)
+    }
+    return
+  }
+
+  if (parsed.command === 'ready') {
+    const state = store.setMode('ready')
+    console.log(state.muted ? 'ready queued, but muted is on' : 'ready for one voicemail')
+    return
+  }
+
+  if (parsed.command === 'focus') {
+    store.setMode('focus')
+    console.log('focus mode on')
+    return
+  }
+
+  if (parsed.command === 'mute') {
+    store.setMuted(true)
+    console.log('muted')
+    return
+  }
+
+  if (parsed.command === 'unmute') {
+    store.setMuted(false)
+    console.log('unmuted')
+    return
+  }
+
+  if (parsed.command === 'clear') {
+    console.log(`cleared ${store.clear()} voicemails`)
+    return
+  }
+
+  if (parsed.command === 'state') {
+    const state = store.getState()
+    console.log(`${state.mode}${state.muted ? ', muted' : ''}`)
+    return
+  }
+
+  printHelp()
+  process.exitCode = parsed.command === 'help' ? 0 : 1
+}
+
+function parseArgs(args: string[]): ParsedCommand {
+  if (args.length === 0) {
+    return { command: 'help', flags: {} }
+  }
+
+  if (!args[0].startsWith('--')) {
+    const [command, ...rest] = args
+    return { command, flags: parseFlags(rest) }
+  }
+
+  return { command: 'enqueue', flags: parseFlags(args) }
+}
+
+function parseFlags(args: string[]): Record<string, string> {
+  const flags: Record<string, string> = {}
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+
+    if (!arg.startsWith('--')) {
+      throw new Error(`unexpected argument: ${arg}`)
+    }
+
+    const key = arg.slice(2)
+    const value = args[index + 1]
+
+    if (value === undefined || value.startsWith('--')) {
+      throw new Error(`missing value for --${key}`)
+    }
+
+    flags[key] = value
+    index += 1
+  }
+
+  return flags
+}
+
+function requiredFlag(flags: Record<string, string>, key: string): string {
+  const value = flags[key]
+
+  if (value === undefined || value.trim() === '') {
+    throw new Error(`--${key} is required`)
+  }
+
+  return value
+}
+
+function printHelp(): void {
+  console.log(`Usage:
+  voicemail --project "Brain" --message "The plan is ready."
+  voicemail list
+  voicemail ready
+  voicemail focus
+  voicemail mute
+  voicemail unmute
+  voicemail clear
+  voicemail state`)
+}

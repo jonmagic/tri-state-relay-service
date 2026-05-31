@@ -1,0 +1,233 @@
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { DatabaseSync } from 'node:sqlite'
+
+import { normalizeVoicemail, type MessageStatus, type NewVoicemailInput, type Voicemail } from '../core/message.ts'
+
+export type PlaybackMode = 'focus' | 'ready'
+
+export interface QueueState {
+  mode: PlaybackMode
+  muted: boolean
+}
+
+const schemaVersion = 1
+
+export class VoicemailStore {
+  readonly path: string
+  readonly database: DatabaseSync
+
+  constructor(path = defaultDatabasePath()) {
+    this.path = path
+    mkdirSync(dirname(path), { recursive: true })
+    this.database = new DatabaseSync(path)
+    this.migrate()
+  }
+
+  close(): void {
+    this.database.close()
+  }
+
+  enqueue(input: NewVoicemailInput): Voicemail {
+    const voicemail = normalizeVoicemail(input)
+    const now = new Date().toISOString()
+    const insert = this.database.prepare(`
+      INSERT INTO voicemails (
+        project, message, type, priority, session, app, cwd, url, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+      RETURNING *
+    `)
+
+    return mapVoicemail(insert.get(
+      voicemail.project,
+      voicemail.message,
+      voicemail.type,
+      voicemail.priority,
+      voicemail.session ?? null,
+      voicemail.app ?? null,
+      voicemail.cwd ?? null,
+      voicemail.url ?? null,
+      now,
+      now,
+    ))
+  }
+
+  list(limit = 20): Voicemail[] {
+    const select = this.database.prepare(`
+      SELECT *
+      FROM voicemails
+      ORDER BY
+        CASE status
+          WHEN 'speaking' THEN 0
+          WHEN 'queued' THEN 1
+          WHEN 'heard' THEN 2
+          ELSE 3
+        END,
+        created_at ASC
+      LIMIT ?
+    `)
+
+    return select.all(limit).map(mapVoicemail)
+  }
+
+  clear(): number {
+    const result = this.database.prepare(`
+      DELETE FROM voicemails
+      WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
+    `).run()
+
+    return Number(result.changes)
+  }
+
+  getState(): QueueState {
+    const mode = this.getSetting('mode') ?? 'focus'
+    const muted = this.getSetting('muted') === 'true'
+
+    return {
+      mode: mode === 'ready' ? 'ready' : 'focus',
+      muted,
+    }
+  }
+
+  setMode(mode: PlaybackMode): QueueState {
+    this.setSetting('mode', mode)
+    return this.getState()
+  }
+
+  setMuted(muted: boolean): QueueState {
+    this.setSetting('muted', String(muted))
+    return this.getState()
+  }
+
+  claimNextForSpeech(): Voicemail | undefined {
+    const state = this.getState()
+
+    if (state.muted || state.mode !== 'ready') {
+      return undefined
+    }
+
+    const row = this.database.prepare(`
+      UPDATE voicemails
+      SET status = 'speaking', updated_at = ?
+      WHERE id = (
+        SELECT id
+        FROM voicemails
+        WHERE status = 'queued'
+        ORDER BY
+          CASE priority
+            WHEN 'high' THEN 0
+            WHEN 'normal' THEN 1
+            ELSE 2
+          END,
+          created_at ASC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(new Date().toISOString())
+
+    if (row === undefined) {
+      return undefined
+    }
+
+    this.setMode('focus')
+    return mapVoicemail(row)
+  }
+
+  markStatus(id: number, status: MessageStatus): Voicemail {
+    const row = this.database.prepare(`
+      UPDATE voicemails
+      SET status = ?, updated_at = ?
+      WHERE id = ?
+      RETURNING *
+    `).get(status, new Date().toISOString(), id)
+
+    if (row === undefined) {
+      throw new Error(`voicemail ${id} not found`)
+    }
+
+    return mapVoicemail(row)
+  }
+
+  private migrate(): void {
+    this.database.exec(`
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY
+      );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS voicemails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project TEXT NOT NULL,
+        message TEXT NOT NULL,
+        type TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        session TEXT,
+        app TEXT,
+        cwd TEXT,
+        url TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO schema_migrations (version) VALUES (${schemaVersion});
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('mode', 'focus');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('muted', 'false');
+    `)
+  }
+
+  private getSetting(key: string): string | undefined {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return row?.value
+  }
+
+  private setSetting(key: string, value: string): void {
+    this.database.prepare(`
+      INSERT INTO settings (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(key, value)
+  }
+}
+
+export function defaultDatabasePath(): string {
+  if (process.env.TSRS_DB_PATH !== undefined && process.env.TSRS_DB_PATH.trim() !== '') {
+    return process.env.TSRS_DB_PATH
+  }
+
+  return join(homedir(), 'Library', 'Application Support', 'Tri-State Relay Service', 'voicemail.db')
+}
+
+function mapVoicemail(row: unknown): Voicemail {
+  if (row === undefined || row === null || typeof row !== 'object') {
+    throw new Error('expected voicemail row')
+  }
+
+  const value = row as Record<string, unknown>
+
+  return {
+    id: Number(value.id),
+    project: String(value.project),
+    message: String(value.message),
+    type: String(value.type) as Voicemail['type'],
+    priority: String(value.priority) as Voicemail['priority'],
+    session: optionalString(value.session),
+    app: optionalString(value.app),
+    cwd: optionalString(value.cwd),
+    url: optionalString(value.url),
+    status: String(value.status) as Voicemail['status'],
+    createdAt: String(value.created_at),
+    updatedAt: String(value.updated_at),
+  }
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined
+  }
+
+  return String(value)
+}
