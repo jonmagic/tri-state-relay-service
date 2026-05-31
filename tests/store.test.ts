@@ -56,6 +56,16 @@ test('mute prevents ready mode from claiming voicemail', () => {
   store.close()
 })
 
+test('inactive lane combiner setting defaults to none and can be configured', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+
+  assert.equal(store.getState().inactiveLaneCombiner, 'none')
+  assert.equal(store.setInactiveLaneCombiner('llm').inactiveLaneCombiner, 'llm')
+  assert.equal(store.setInactiveLaneCombiner('apfel').inactiveLaneCombiner, 'apfel')
+  assert.equal(store.setInactiveLaneCombiner('none').inactiveLaneCombiner, 'none')
+  store.close()
+})
+
 test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const queued = store.enqueue({ project: 'Brain', message: 'The plan is ready.' })

@@ -6,10 +6,12 @@ import Database from 'better-sqlite3'
 import { normalizeVoicemail, type MessageStatus, type NewVoicemailInput, type Voicemail } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
+export type InactiveLaneCombiner = 'none' | 'llm' | 'apfel'
 
 export interface QueueState {
   mode: PlaybackMode
   muted: boolean
+  inactiveLaneCombiner: InactiveLaneCombiner
 }
 
 export type QueueCounts = Record<MessageStatus, number>
@@ -163,10 +165,12 @@ export class VoicemailStore {
   getState(): QueueState {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
+    const inactiveLaneCombiner = normalizeInactiveLaneCombiner(this.getSetting('inactive_lane_combiner'))
 
     return {
       mode: mode === 'ready' ? 'ready' : 'focus',
       muted,
+      inactiveLaneCombiner,
     }
   }
 
@@ -177,6 +181,11 @@ export class VoicemailStore {
 
   setMuted(muted: boolean): QueueState {
     this.setSetting('muted', String(muted))
+    return this.getState()
+  }
+
+  setInactiveLaneCombiner(combiner: InactiveLaneCombiner): QueueState {
+    this.setSetting('inactive_lane_combiner', combiner)
     return this.getState()
   }
 
@@ -312,6 +321,7 @@ export class VoicemailStore {
       INSERT OR IGNORE INTO schema_migrations (version) VALUES (${schemaVersion});
       INSERT OR IGNORE INTO settings (key, value) VALUES ('mode', 'focus');
       INSERT OR IGNORE INTO settings (key, value) VALUES ('muted', 'false');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('inactive_lane_combiner', 'none');
     `)
   }
 
@@ -366,4 +376,12 @@ function optionalString(value: unknown): string | undefined {
   }
 
   return String(value)
+}
+
+function normalizeInactiveLaneCombiner(value: string | undefined): InactiveLaneCombiner {
+  if (value === 'llm' || value === 'apfel') {
+    return value
+  }
+
+  return 'none'
 }

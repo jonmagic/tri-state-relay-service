@@ -110,6 +110,21 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
+    @objc private func useNoCombiner() {
+        model.setInactiveLaneCombiner("none")
+        refreshStatusItem()
+    }
+
+    @objc private func useLLMCombiner() {
+        model.setInactiveLaneCombiner("llm")
+        refreshStatusItem()
+    }
+
+    @objc private func useApfelCombiner() {
+        model.setInactiveLaneCombiner("apfel")
+        refreshStatusItem()
+    }
+
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
@@ -143,6 +158,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(menuItem("Reveal Source", action: #selector(revealSource), enabled: model.status.hasSourcePath))
         menu.addItem(menuItem("Copy Source", action: #selector(copySource), enabled: model.status.hasSource))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Inactive Combiner: \(model.status.inactiveLaneCombiner)", action: nil, keyEquivalent: ""))
+        menu.addItem(menuItem("Use Latest Only", action: #selector(useNoCombiner), enabled: model.status.inactiveLaneCombiner != "none"))
+        menu.addItem(menuItem("Use llm", action: #selector(useLLMCombiner), enabled: model.status.inactiveLaneCombiner != "llm"))
+        menu.addItem(menuItem("Use apfel", action: #selector(useApfelCombiner), enabled: model.status.inactiveLaneCombiner != "apfel"))
+        menu.addItem(.separator())
         menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
@@ -178,7 +199,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", sourcePath: nil, sourceURL: nil)
 
     init() {
         refresh()
@@ -251,6 +272,11 @@ final class MenuBarModel {
         refresh()
     }
 
+    func setInactiveLaneCombiner(_ combiner: String) {
+        runVoicemail("combiner", arguments: ["--tool", combiner])
+        refresh()
+    }
+
     func refresh() {
         status = loadStatus()
     }
@@ -262,11 +288,12 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
         let muted = json["muted"] as? Bool ?? false
+        let inactiveLaneCombiner = json["inactiveLaneCombiner"] as? String ?? "none"
         let queued = intValue(json["queueCount"])
         let counts = json["counts"] as? [String: Any] ?? [:]
         let speaking = intValue(counts["speaking"])
@@ -275,12 +302,17 @@ final class MenuBarModel {
         let cwd = source?["cwd"] as? String
         let url = source?["url"] as? String
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLaneCombiner: inactiveLaneCombiner, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
     private func runVoicemail(_ command: String) -> String {
-        runExecutable(named: "voicemail", arguments: [command])
+        runVoicemail(command, arguments: [])
+    }
+
+    @discardableResult
+    private func runVoicemail(_ command: String, arguments: [String]) -> String {
+        runExecutable(named: "voicemail", arguments: [command] + arguments)
     }
 
     @discardableResult
@@ -346,6 +378,7 @@ struct QueueStatus {
     let queued: Int
     let speaking: Int
     let heard: Int
+    let inactiveLaneCombiner: String
     let sourcePath: String?
     let sourceURL: String?
 

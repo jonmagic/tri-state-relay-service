@@ -52,6 +52,7 @@ function run(parsed: ParsedCommand): void {
     console.log(JSON.stringify({
       mode: state.mode,
       muted: state.muted,
+      inactiveLaneCombiner: state.inactiveLaneCombiner,
       counts,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
@@ -147,7 +148,24 @@ function run(parsed: ParsedCommand): void {
 
   if (parsed.command === 'state') {
     const state = store.getState()
-    console.log(`${state.mode}${state.muted ? ', muted' : ''}`)
+    console.log(`${state.mode}${state.muted ? ', muted' : ''}, inactive-lane-combiner=${state.inactiveLaneCombiner}`)
+    return
+  }
+
+  if (parsed.command === 'combiner') {
+    const requested = parsed.flags.tool
+
+    if (requested === undefined) {
+      console.log(store.getState().inactiveLaneCombiner)
+      return
+    }
+
+    if (requested !== 'none' && requested !== 'llm' && requested !== 'apfel') {
+      throw new Error('--tool must be one of: none, llm, apfel')
+    }
+
+    const state = store.setInactiveLaneCombiner(requested)
+    console.log(`inactive lane combiner set to ${state.inactiveLaneCombiner}`)
     return
   }
 
@@ -218,6 +236,8 @@ function printHelp(): void {
   voicemail source
   voicemail reveal-source
   voicemail copy-source
+  voicemail combiner
+  voicemail combiner --tool none|llm|apfel
   voicemail state
   voicemail status`)
 }

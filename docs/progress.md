@@ -25,6 +25,7 @@ Current slice:
 17. The menu bar app periodically refreshes queue state and processes one queued voicemail when ready and unmuted.
 18. `docs/prompts/combine-inactive-lane.md` defines the LLM prompt for collapsing inactive-lane updates into one pending message.
 19. `npm run eval:inactive-lane` compares `apfel` and `llm` against voicemail-composition fixtures with contract checks and an LLM judge.
+20. `voicemail combiner --tool none|llm|apfel` configures whether inactive lanes use latest-message-only behavior or CLI LLM combination.
 
 Roadmap gaps from the latest feature review:
 

@@ -20,6 +20,8 @@ voicemail replay-last
 voicemail source
 voicemail reveal-source
 voicemail copy-source
+voicemail combiner
+voicemail combiner --tool none|llm|apfel
 voicemail status
 ```
 
@@ -114,6 +116,21 @@ The suite runs `apfel` and `llm` against fixtures in
 an LLM judge prompt to score whether each candidate sounds like one useful
 voicemail instead of a log summary. Results are written to
 `evals/results/inactive-lane-results.json`.
+
+## Inactive-lane combiner setting
+
+Inactive-lane rollups are configurable:
+
+```sh
+voicemail combiner --tool none
+voicemail combiner --tool llm
+voicemail combiner --tool apfel
+```
+
+`none` is the default and works without any LLM tool. In that mode TSRS
+should avoid rollups and use latest-message-only behavior for inactive
+lanes. `llm` and `apfel` enable the prompt-driven combination workflow
+described in `docs/inactive-lane-combination.md`.
 
 ## Next slices
 

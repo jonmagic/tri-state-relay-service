@@ -11,13 +11,25 @@ secrets, private data, or file contents to the LLM.
 
 ## Tool preference
 
-Prefer `apfel` for local Apple Intelligence:
+The combiner is configured by the `inactive_lane_combiner` setting:
+
+```sh
+voicemail combiner --tool none
+voicemail combiner --tool llm
+voicemail combiner --tool apfel
+```
+
+`none` is the default and requires no LLM. When set to `none`, inactive
+lanes should not attempt a rollup; they should keep only the latest relevant
+message for the lane. Use an LLM only when the setting is `llm` or `apfel`.
+
+`apfel` uses local Apple Intelligence:
 
 ```sh
 apfel --system-file docs/prompts/combine-inactive-lane.md --max-tokens 160 --temperature 0
 ```
 
-Fallback to `llm` when needed:
+`llm` uses the configured `llm` CLI default model:
 
 ```sh
 llm --system "$(cat docs/prompts/combine-inactive-lane.md)"
@@ -32,7 +44,8 @@ npm run eval:inactive-lane
 Current baseline: `llm` passes the included fixtures more reliably than
 `apfel`. Keep both in the eval suite because local Apple Intelligence may
 improve, but prefer `llm` for inactive-lane combination until `apfel` passes
-the blocker, completion, and duplicate-update fixtures.
+the blocker, completion, and duplicate-update fixtures. Use `none` when no
+CLI LLM tool is configured or desired.
 
 ## Input shape
 
