@@ -235,7 +235,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
         }
-        menu.addItem(settingsMenuItem())
+        menu.addItem(menuItem("Settings...", action: #selector(openSettings), enabled: true))
         menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
@@ -250,30 +250,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         item.target = self
         item.isEnabled = enabled
         return item
-    }
-
-    private func settingsMenuItem() -> NSMenuItem {
-        let item = menuItem("Settings...", action: #selector(openSettings), enabled: true)
-        item.view = trailingIconMenuItemView(title: "Settings...", systemSymbolName: "gearshape")
-        return item
-    }
-
-    private func trailingIconMenuItemView(title: String, systemSymbolName: String) -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 28))
-
-        let label = NSTextField(labelWithString: title)
-        label.frame = NSRect(x: 0, y: 4, width: 210, height: 20)
-        label.font = NSFont.menuFont(ofSize: 0)
-        label.lineBreakMode = .byTruncatingTail
-
-        let imageView = NSImageView(frame: NSRect(x: 238, y: 5, width: 18, height: 18))
-        imageView.image = NSImage(systemSymbolName: systemSymbolName, accessibilityDescription: title)
-        imageView.contentTintColor = .labelColor
-        imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-
-        view.addSubview(label)
-        view.addSubview(imageView)
-        return view
     }
 
     private func lineMenuItems() -> [NSMenuItem] {
