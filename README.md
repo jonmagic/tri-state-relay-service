@@ -29,7 +29,7 @@ voicemail status
 
 ## Line shape
 
-This repository starts with the queue core and CLI before a menu bar UI. The invariant is more important than the surface: many producers can enqueue messages, but only the app-owned processor loop may speak.
+The invariant is more important than the surface: many producers can enqueue messages, but only the app-owned processor loop may speak.
 
 1. The CLI never calls `/usr/bin/say` directly.
 2. The app-owned processor loop claims and speaks ready messages through the locked processor path.
@@ -77,15 +77,17 @@ npm run build:macos
 open "dist/macos/Tri-State Relay Service.app"
 ```
 
-The first interactable app is a SwiftUI `MenuBarExtra` host that shells
-out to the Perry-built `voicemail` and `voicemail-processor` binaries.
-It exposes ready, focus, mute, unmute, clear, refresh, and quit controls.
-The app reads `voicemail status` JSON rather than scraping message text.
-It refreshes periodically and, when in ready mode and not muted, releases
-one queued voicemail through the app-owned processor path.
-It also exposes lifecycle controls for skipping the next queued message,
-replaying the last heard message, marking heard messages handled, and
-clearing heard messages.
+The menu bar app is an AppKit `NSStatusItem` host that shells out to the
+Perry-built `voicemail` and `voicemail-processor` binaries. The app reads
+`voicemail status` JSON rather than scraping message text. Right click
+opens line controls; left click plays one queued voicemail and makes that
+line active before speaking. When unmuted, the app keeps playing incoming
+messages on the active line. Other lines stay quiet and can be pulled from
+their line submenu.
+
+Each line submenu scopes lifecycle controls to that line: play next, skip
+next, clear queue, replay last, mark handled, and clear heard. Global
+controls cover focus, ready, mute, unmute, clear, refresh, and quit.
 Source controls can reveal the latest captured working directory or copy
 the latest captured working directory/URL without exposing message text.
 
@@ -148,13 +150,14 @@ voicemail line
 voicemail line "Tri-State Relay Service"
 ```
 
-The menu bar app shows the active line and queued lines in the
-right-click menu. When unmuted, the app keeps playing queued messages from
-the active line as they arrive. Messages from other lines remain queued
-until you switch lines or pull them manually.
+The menu bar app shows the active line and queued lines in the right-click
+menu. When unmuted, the app keeps playing queued messages from the active
+line as they arrive. Messages from other lines remain queued until you
+switch lines or pull them manually. Pulling a message from another line
+makes that line active.
 
 ## Next slices
 
-1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-2. Add inactive-line LLM combination using `docs/prompts/combine-inactive-line.md`.
-3. Add safe aggregate queue views that summarize producers, lines, priorities, and stale blockers without exposing message text.
+1. Add safe aggregate queue views that summarize producers, lines, priorities, and stale blockers without exposing message text.
+2. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
+3. Refine source controls so line submenus can reveal or copy source context for that specific line.
