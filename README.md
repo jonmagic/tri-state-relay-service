@@ -101,7 +101,22 @@ start of a meaningful slice, phase changes, blockers, requests for human
 input, and completion summaries. Do not enqueue raw terminal output,
 code, logs, secrets, private data, or long explanations.
 
+## LLM evaluation
+
+Inactive-lane voicemail combination has a manual evaluation suite:
+
+```sh
+npm run eval:inactive-lane
+```
+
+The suite runs `apfel` and `llm` against fixtures in
+`evals/inactive-lane-fixtures.json`, validates the JSON contract, and uses
+an LLM judge prompt to score whether each candidate sounds like one useful
+voicemail instead of a log summary. Results are written to
+`evals/results/inactive-lane-results.json`.
+
 ## Next slices
 
 1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-2. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+2. Add active project lanes and inactive-lane LLM combination using `docs/prompts/combine-inactive-lane.md`.
+3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.

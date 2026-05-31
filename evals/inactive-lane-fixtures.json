@@ -1,0 +1,117 @@
+[
+  {
+    "id": "routine-progress",
+    "description": "Routine progress should become one natural voicemail.",
+    "input": {
+      "activeProject": "Tri-State Relay Service",
+      "inactiveProject": "Hamzo",
+      "existingPendingMessage": null,
+      "incoming": [
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "I found the failing fixture."
+        },
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "I patched the parser path."
+        },
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "Tests are running now."
+        }
+      ]
+    },
+    "expect": {
+      "action": "replace",
+      "type": "update",
+      "priority": "normal",
+      "mustInclude": ["Hamzo", "tests"],
+      "mustAvoid": ["3 updates", "dashboard", "log"]
+    }
+  },
+  {
+    "id": "blocked-after-progress",
+    "description": "A blocker after progress should be promoted.",
+    "input": {
+      "activeProject": "Tri-State Relay Service",
+      "inactiveProject": "Hamzo",
+      "existingPendingMessage": "Hamzo update: tests are running after a parser patch.",
+      "incoming": [
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "The parser fix works locally."
+        },
+        {
+          "type": "blocked",
+          "priority": "high",
+          "message": "I need a decision on whether to preserve legacy behavior."
+        }
+      ]
+    },
+    "expect": {
+      "action": "promote",
+      "type": "blocked",
+      "priority": "high",
+      "mustInclude": ["Hamzo", "decision", "legacy"],
+      "mustAvoid": ["2 updates"]
+    }
+  },
+  {
+    "id": "completion-wins",
+    "description": "A completion should become the final point.",
+    "input": {
+      "activeProject": "Tri-State Relay Service",
+      "inactiveProject": "Spamurai",
+      "existingPendingMessage": null,
+      "incoming": [
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "I reproduced the queue count bug."
+        },
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "I fixed the status parser."
+        },
+        {
+          "type": "complete",
+          "priority": "normal",
+          "message": "Validation passed and the menu count now updates."
+        }
+      ]
+    },
+    "expect": {
+      "action": "replace",
+      "type": "complete",
+      "priority": "normal",
+      "mustInclude": ["Spamurai", "validation"],
+      "mustAvoid": ["3 updates", "Hamzo"]
+    }
+  },
+  {
+    "id": "duplicate-routine",
+    "description": "Repeated routine status can be dropped.",
+    "input": {
+      "activeProject": "Tri-State Relay Service",
+      "inactiveProject": "Brain",
+      "existingPendingMessage": "Brain update: indexing is running and I will report when it finishes.",
+      "incoming": [
+        {
+          "type": "update",
+          "priority": "normal",
+          "message": "Indexing is still running."
+        }
+      ]
+    },
+    "expect": {
+      "action": "drop",
+      "mustInclude": [],
+      "mustAvoid": ["urgent", "blocked"]
+    }
+  }
+]

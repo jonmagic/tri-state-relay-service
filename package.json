@@ -14,6 +14,7 @@
     "build": "tsc",
     "build:native": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/voicemail && perry compile src/processor.ts -o dist/native/voicemail-processor",
     "build:macos": "npm run build:native && mkdir -p dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS && cp src/macos/Info.plist dist/macos/Tri-State\\ Relay\\ Service.app/Contents/Info.plist && swiftc -parse-as-library src/macos/TriStateRelayService.swift -o dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/Tri-State\\ Relay\\ Service && cp dist/native/voicemail dist/native/voicemail-processor dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/",
+    "eval:inactive-lane": "node scripts/eval-inactive-lane.mjs",
     "perry:check": "perry check src/ --check-deps",
     "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
   },
