@@ -85,6 +85,20 @@ the latest captured working directory/URL without exposing message text.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
+## Dogfooding
+
+When developing TSRS, use the built native CLI to enqueue real progress
+messages:
+
+```sh
+./dist/native/voicemail --project "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+```
+
+Good dogfood messages are short, intentionally authored status updates:
+start of a meaningful slice, phase changes, blockers, requests for human
+input, and completion summaries. Do not enqueue raw terminal output,
+code, logs, secrets, private data, or long explanations.
+
 ## Next slices
 
 1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.

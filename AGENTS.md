@@ -7,9 +7,23 @@ Tri-State Relay Service is a local macOS agent voicemail queue. Agents are imple
 The agent communicates in two ways:
 
 - Use the CLI chat for summaries, changed files, validation results, risks, and commit-ready status.
-- Use macOS `say` or the future `voicemail` CLI for conversational moments: acknowledgements, next-step decisions, incremental progress updates, requests for feedback, completion summaries, and suggestions for the next thing to do.
+- Use the TSRS `voicemail` CLI heavily for conversational moments: acknowledgements, next-step decisions, incremental progress updates, requests for feedback, completion summaries, and suggestions for the next thing to do.
 
 Keep spoken messages brief and safe. Do not read code, secrets, logs, terminal output, file contents, private data, or long explanations aloud. If the CLI response includes sensitive or technical details, speak only a high-level summary.
+
+## Dogfooding TSRS
+
+When working in this repository, enqueue TSRS voicemails as part of normal agent flow so the app is continuously tested with real messages.
+
+Use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before dogfooding. Include source context when safe:
+
+```sh
+./dist/native/voicemail --project "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+```
+
+Send a voicemail when starting a meaningful slice, when switching phases, when blocked, when asking for human input, and when completing a slice. Keep messages intentionally authored and short. Do not enqueue raw command output, code, logs, secrets, private data, or long explanations.
+
+The menu bar app owns playback. Do not call `/usr/bin/say` directly from agent scripts or CLI code.
 
 ## Non-negotiables
 
