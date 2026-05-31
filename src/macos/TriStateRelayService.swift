@@ -215,8 +215,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private func showMenu() {
         let menu = NSMenu()
 
-        menu.addItem(NSMenuItem(title: model.status.title, action: nil, keyEquivalent: ""))
-        menu.addItem(.separator())
         for item in lineMenuItems() {
             menu.addItem(item)
         }
@@ -236,7 +234,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
         }
         menu.addItem(menuItem("Settings...", action: #selector(showSettingsWindow), enabled: true))
-        menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
 
