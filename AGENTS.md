@@ -15,7 +15,7 @@ Keep spoken messages brief and safe. Do not read code, secrets, logs, terminal o
 
 1. Do not estimate timelines unless the user explicitly asks for an estimate.
 2. Use red-green-refactor wherever practical.
-3. The CLI must never speak directly. Only the processor or app-owned playback path may invoke `/usr/bin/say`.
+3. The CLI must never speak directly. Only the app-owned processor loop may invoke the processor path that calls `/usr/bin/say`.
 4. Preserve the single-writer invariant for claiming and speaking messages.
 5. Focus mode is the safe default. Ready mode releases one voicemail, then returns to focus.
 6. Reject or scrub unsafe message input rather than speaking arbitrary terminal output.
@@ -31,7 +31,7 @@ Use these local skills when their trigger matches the work:
 
 ## Product rules
 
-Many agents may enqueue messages, but only one app-owned playback path may speak. The CLI submits and inspects voicemail; it does not invoke `/usr/bin/say`.
+Many agents may enqueue messages, but only the app-owned processor loop may speak through the locked processor path. The CLI submits and inspects voicemail; it does not invoke `/usr/bin/say`.
 
 Start with these message states:
 
@@ -73,7 +73,7 @@ Grow toward these boundaries only as features need them:
 - `src/storage/`: SQLite schema, migrations, persistence, and transactions.
 - `src/cli.ts`: argument parsing and command dispatch only.
 - `src/processor.ts`: claim-next-and-speak flow and `/usr/bin/say` integration.
-- `src/app/`: future menu bar app shell and platform adapters.
+- `src/app/`: app-owned processor loop, future menu bar app shell, and platform adapters.
 - `docs/`: decisions, progress, and agent misses.
 - `tests/`: unit and integration tests for queue behavior.
 
@@ -82,7 +82,7 @@ Keep dependencies flowing inward:
 - `src/core/**` must not import storage, CLI, processor, app, or macOS-specific APIs.
 - `src/storage/**` may import `src/core/**`.
 - `src/processor/**` may import storage and platform speech adapters.
-- UI and platform adapters consume queue APIs rather than owning queue rules.
+- UI and platform adapters consume queue APIs and the locked processor path rather than owning queue rules.
 
 ## Milestone spine
 
@@ -97,9 +97,9 @@ Use this order unless there is a strong reason to change it:
 7. Perry-compatible native binary builds and storage runtime compatibility.
 8. Source-context metadata: session, app, cwd, and URL.
 9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
-10. Menu bar app shell with queue count and ready/focus/mute controls.
+10. App-owned processor loop.
 11. Replay last, skip current, mark handled, and clear heard.
-12. Launchd-friendly daemon mode.
+12. Menu bar app shell with queue count and ready/focus/mute controls.
 13. Source actions: reveal cwd, copy cwd, activate source app.
 14. Terminal-specific focus adapters where reliable.
 

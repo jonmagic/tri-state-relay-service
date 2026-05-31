@@ -17,10 +17,10 @@ voicemail clear
 
 ## Project shape
 
-This repository starts with the queue core and CLI before a menu bar UI. The invariant is more important than the surface: many producers can enqueue messages, but only the processor may speak.
+This repository starts with the queue core and CLI before a menu bar UI. The invariant is more important than the surface: many producers can enqueue messages, but only the app-owned processor loop may speak.
 
 1. The CLI never calls `/usr/bin/say` directly.
-2. `voicemail-processor` is the app-owned path that claims and speaks one ready message.
+2. The app-owned processor loop claims and speaks ready messages through the locked processor path.
 3. The SQLite store owns message state and persistent mode.
 4. Focus mode is the safe default.
 5. Ready mode releases exactly one voicemail, then returns to focus.
@@ -62,7 +62,6 @@ By default, TSRS stores its database at `~/Library/Application Support/Tri-State
 
 ## Next slices
 
-1. Add a launchd-friendly daemon loop.
-2. Add the first menu bar wrapper for ready, focus, replay last, mute, and queue status.
-3. Add source-context actions for opening or revealing captured project paths.
-4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+1. Add the first menu bar wrapper for ready, focus, replay last, mute, and queue status.
+2. Add source-context actions for opening or revealing captured project paths.
+3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
