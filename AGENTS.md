@@ -73,7 +73,7 @@ Grow toward these boundaries only as features need them:
 - `src/storage/`: SQLite schema, migrations, persistence, and transactions.
 - `src/cli.ts`: argument parsing and command dispatch only.
 - `src/processor.ts`: claim-next-and-speak flow and `/usr/bin/say` integration.
-- `src/app/`: app-owned processor loop, future menu bar app shell, and platform adapters.
+- `src/app/`: app-owned processor loop, menu-bar-facing queue controller, future menu bar app shell, and platform adapters.
 - `docs/`: decisions, progress, and agent misses.
 - `tests/`: unit and integration tests for queue behavior.
 
@@ -99,7 +99,7 @@ Use this order unless there is a strong reason to change it:
 9. Safe aggregate queue views by producer, project, priority, age, and status without exposing message text.
 10. App-owned processor loop.
 11. Replay last, skip current, mark handled, and clear heard.
-12. Menu bar app shell with queue count and ready/focus/mute controls.
+12. Menu bar UI shell wiring around app queue controller and processor loop.
 13. Source actions: reveal cwd, copy cwd, activate source app.
 14. Terminal-specific focus adapters where reliable.
 

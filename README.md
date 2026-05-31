@@ -63,5 +63,6 @@ By default, TSRS stores its database at `~/Library/Application Support/Tri-State
 ## Next slices
 
 1. Add the first menu bar wrapper for ready, focus, replay last, mute, and queue status.
-2. Add source-context actions for opening or revealing captured project paths.
-3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+2. Add menu bar UI shell wiring around the app queue controller and processor loop.
+3. Add source-context actions for opening or revealing captured project paths.
+4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.

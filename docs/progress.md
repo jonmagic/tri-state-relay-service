@@ -15,10 +15,11 @@ Current slice:
 7. `voicemail-processor` owns the `/usr/bin/say` path, marks successful playback as `heard`, and marks speech failures as `failed`.
 8. Processor execution uses a SQLite-backed single-writer lock before claiming messages.
 9. `src/app/processor-loop.ts` provides the app-owned processor loop for the future menu bar app.
+10. `src/app/controller.ts` provides menu-bar-facing queue status and ready/focus/mute/unmute/clear controls without exposing message text.
 
 Roadmap gaps from the latest feature review:
 
 1. The roadmap should include safe aggregate queue views for producer/project/priority/staleness patterns without exposing message text.
 2. Perry guidance should live in a library skill with references, scripts, and templates rather than identity or voice notes.
 
-Recommended next slice: add the first menu bar wrapper for ready, focus, replay last, mute, and queue status.
+Recommended next slice: add menu bar UI shell wiring around the app queue controller and processor loop.

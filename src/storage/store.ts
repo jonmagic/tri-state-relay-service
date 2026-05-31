@@ -12,6 +12,8 @@ export interface QueueState {
   muted: boolean
 }
 
+export type QueueCounts = Record<MessageStatus, number>
+
 const schemaVersion = 1
 
 export class VoicemailStore {
@@ -69,6 +71,29 @@ export class VoicemailStore {
     `)
 
     return select.all(limit).map(mapVoicemail)
+  }
+
+  countByStatus(): QueueCounts {
+    const counts: QueueCounts = {
+      queued: 0,
+      speaking: 0,
+      heard: 0,
+      handled: 0,
+      skipped: 0,
+      expired: 0,
+      failed: 0,
+    }
+    const rows = this.database.prepare(`
+      SELECT status, COUNT(*) AS count
+      FROM voicemails
+      GROUP BY status
+    `).all() as Array<{ status: MessageStatus, count: number }>
+
+    for (const row of rows) {
+      counts[row.status] = Number(row.count)
+    }
+
+    return counts
   }
 
   clear(): number {
