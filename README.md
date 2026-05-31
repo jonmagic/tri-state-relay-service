@@ -13,6 +13,10 @@ voicemail-processor
 voicemail mute
 voicemail unmute
 voicemail clear
+voicemail clear-heard
+voicemail skip-next
+voicemail mark-handled
+voicemail replay-last
 voicemail status
 ```
 
@@ -70,12 +74,14 @@ The first interactable app is a SwiftUI `MenuBarExtra` host that shells
 out to the Perry-built `voicemail` and `voicemail-processor` binaries.
 It exposes ready, focus, mute, unmute, clear, refresh, and quit controls.
 The app reads `voicemail status` JSON rather than scraping message text.
+It also exposes lifecycle controls for skipping the next queued message,
+replaying the last heard message, marking heard messages handled, and
+clearing heard messages.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Next slices
 
 1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-2. Add replay last, skip current, mark handled, and clear heard controls.
-3. Add source-context actions for opening or revealing captured project paths.
-4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
+2. Add source-context actions for opening or revealing captured project paths.
+3. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.

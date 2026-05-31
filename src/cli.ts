@@ -85,6 +85,29 @@ function run(parsed: ParsedCommand): void {
     return
   }
 
+  if (parsed.command === 'clear-heard') {
+    console.log(`cleared ${store.clearHeard()} heard voicemails`)
+    return
+  }
+
+  if (parsed.command === 'skip-next') {
+    const skipped = store.skipNextQueued()
+    console.log(skipped === undefined ? 'no queued voicemail to skip' : `skipped #${skipped.id}`)
+    return
+  }
+
+  if (parsed.command === 'mark-handled') {
+    const handled = store.markLatestHeardHandled()
+    console.log(handled === undefined ? 'no heard voicemail to mark handled' : `handled #${handled.id}`)
+    return
+  }
+
+  if (parsed.command === 'replay-last') {
+    const replayed = store.replayLatestHeard()
+    console.log(replayed === undefined ? 'no heard voicemail to replay' : `queued #${replayed.id} for replay`)
+    return
+  }
+
   if (parsed.command === 'state') {
     const state = store.getState()
     console.log(`${state.mode}${state.muted ? ', muted' : ''}`)
@@ -151,6 +174,10 @@ function printHelp(): void {
   voicemail mute
   voicemail unmute
   voicemail clear
+  voicemail clear-heard
+  voicemail skip-next
+  voicemail mark-handled
+  voicemail replay-last
   voicemail state
   voicemail status`)
 }

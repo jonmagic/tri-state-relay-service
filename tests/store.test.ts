@@ -56,6 +56,27 @@ test('mute prevents ready mode from claiming voicemail', () => {
   store.close()
 })
 
+test('lifecycle controls skip replay handle and clear heard voicemails', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const queued = store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+
+  assert.equal(store.skipNextQueued()?.id, queued.id)
+  assert.equal(store.list()[0].status, 'skipped')
+
+  const heard = store.markStatus(queued.id, 'heard')
+  assert.equal(store.replayLatestHeard()?.id, heard.id)
+  assert.equal(store.list()[0].status, 'queued')
+
+  store.markStatus(queued.id, 'heard')
+  assert.equal(store.markLatestHeardHandled()?.status, 'handled')
+  assert.equal(store.list()[0].status, 'handled')
+
+  store.markStatus(queued.id, 'heard')
+  assert.equal(store.clearHeard(), 1)
+  assert.equal(store.list().length, 0)
+  store.close()
+})
+
 function temporaryDatabasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
 }

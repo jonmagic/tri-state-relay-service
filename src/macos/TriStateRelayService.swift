@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct TriStateRelayServiceApp: App {
-    @State private var status = QueueStatus(mode: "focus", muted: false, queued: 0)
+    @State private var status = QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0)
 
     var body: some Scene {
         MenuBarExtra(status.title, systemImage: status.systemImage) {
@@ -36,6 +36,26 @@ struct TriStateRelayServiceApp: App {
                 refresh()
             }
             .disabled(status.queued == 0)
+            Button("Skip Next") {
+                runVoicemail("skip-next")
+                refresh()
+            }
+            .disabled(status.queued == 0)
+            Button("Replay Last") {
+                runVoicemail("replay-last")
+                refresh()
+            }
+            .disabled(status.heard == 0)
+            Button("Mark Handled") {
+                runVoicemail("mark-handled")
+                refresh()
+            }
+            .disabled(status.heard == 0)
+            Button("Clear Heard") {
+                runVoicemail("clear-heard")
+                refresh()
+            }
+            .disabled(status.heard == 0)
             Button("Refresh Status") {
                 refresh()
             }
@@ -62,14 +82,16 @@ struct TriStateRelayServiceApp: App {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, heard: 0)
         }
 
         let mode = json["mode"] as? String ?? "focus"
         let muted = json["muted"] as? Bool ?? false
         let queued = json["queueCount"] as? Int ?? 0
+        let counts = json["counts"] as? [String: Int] ?? [:]
+        let heard = counts["heard"] ?? 0
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, heard: heard)
     }
 
     @discardableResult
@@ -110,6 +132,7 @@ struct QueueStatus {
     let mode: String
     let muted: Bool
     let queued: Int
+    let heard: Int
 
     var title: String {
         if muted {

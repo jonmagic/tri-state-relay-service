@@ -105,6 +105,27 @@ export class VoicemailStore {
     return Number(result.changes)
   }
 
+  clearHeard(): number {
+    const result = this.database.prepare(`
+      DELETE FROM voicemails
+      WHERE status = 'heard'
+    `).run()
+
+    return Number(result.changes)
+  }
+
+  skipNextQueued(): Voicemail | undefined {
+    return this.markFirstMatchingStatus('queued', 'skipped')
+  }
+
+  markLatestHeardHandled(): Voicemail | undefined {
+    return this.markLatestMatchingStatus('heard', 'handled')
+  }
+
+  replayLatestHeard(): Voicemail | undefined {
+    return this.markLatestMatchingStatus('heard', 'queued')
+  }
+
   getState(): QueueState {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
@@ -172,6 +193,46 @@ export class VoicemailStore {
     }
 
     return mapVoicemail(row)
+  }
+
+  private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus): Voicemail | undefined {
+    const row = this.database.prepare(`
+      UPDATE voicemails
+      SET status = ?, updated_at = ?
+      WHERE id = (
+        SELECT id
+        FROM voicemails
+        WHERE status = ?
+        ORDER BY
+          CASE priority
+            WHEN 'high' THEN 0
+            WHEN 'normal' THEN 1
+            ELSE 2
+          END,
+          created_at ASC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(to, new Date().toISOString(), from)
+
+    return row === undefined ? undefined : mapVoicemail(row)
+  }
+
+  private markLatestMatchingStatus(from: MessageStatus, to: MessageStatus): Voicemail | undefined {
+    const row = this.database.prepare(`
+      UPDATE voicemails
+      SET status = ?, updated_at = ?
+      WHERE id = (
+        SELECT id
+        FROM voicemails
+        WHERE status = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(to, new Date().toISOString(), from)
+
+    return row === undefined ? undefined : mapVoicemail(row)
   }
 
   acquireProcessorLock(owner: string): boolean {
