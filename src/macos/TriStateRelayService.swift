@@ -235,7 +235,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
         }
-        menu.addItem(menuItem("Settings...", action: #selector(openSettings), enabled: true))
+        menu.addItem(menuItem("Configure...", action: #selector(openSettings), enabled: true))
         menu.addItem(menuItem("Refresh Status", action: #selector(refresh), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
