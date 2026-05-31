@@ -31,6 +31,7 @@ Current state:
 23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 24. Left-click playback makes the line it pulls from active before speaking.
 25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and speech command templates.
+26. The menu bar app registers global hotkeys: Control-Option-Command-Space plays the current line, and Control-Option-Command-V opens the menu.
 
 Roadmap gaps from the latest feature review:
 

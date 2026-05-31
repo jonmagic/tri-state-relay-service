@@ -1,12 +1,17 @@
 import AppKit
+import Carbon.HIToolbox
 
 @main
 final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
+    private static weak var sharedDelegate: TriStateRelayServiceApp?
+
     private let model = MenuBarModel()
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var playbackRefreshTimer: Timer?
     private var settingsWindowController: SettingsWindowController?
+    private var playCurrentLineHotKey: EventHotKeyRef?
+    private var openMenuHotKey: EventHotKeyRef?
 
     static func main() {
         let app = NSApplication.shared
@@ -17,6 +22,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.sharedDelegate = self
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
@@ -31,10 +37,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             self?.refreshStatusItem()
             self?.schedulePlaybackRefresh()
         }
+        registerGlobalHotKeys()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        unregisterGlobalHotKeys()
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -242,6 +250,18 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         statusItem.menu = nil
     }
 
+    private func playCurrentLineFromHotKey() {
+        model.playActiveLine()
+        refreshStatusItem()
+        schedulePlaybackRefresh()
+    }
+
+    private func showMenuFromHotKey() {
+        model.refresh()
+        refreshStatusItem()
+        showMenu()
+    }
+
     private func menuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -337,6 +357,77 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             if self.model.status.speaking == 0 {
                 timer.invalidate()
             }
+        }
+    }
+
+    private func registerGlobalHotKeys() {
+        let eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                event,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotKeyID
+            )
+
+            guard status == noErr else {
+                return status
+            }
+
+            DispatchQueue.main.async {
+                switch hotKeyID.id {
+                case 1:
+                    TriStateRelayServiceApp.sharedDelegate?.playCurrentLineFromHotKey()
+                case 2:
+                    TriStateRelayServiceApp.sharedDelegate?.showMenuFromHotKey()
+                default:
+                    break
+                }
+            }
+
+            return noErr
+        }, 1, [eventSpec], nil, nil)
+
+        let modifiers = UInt32(cmdKey | optionKey | controlKey)
+        playCurrentLineHotKey = registerHotKey(keyCode: UInt32(kVK_Space), modifiers: modifiers, id: 1, label: "Control-Option-Command-Space")
+        openMenuHotKey = registerHotKey(keyCode: UInt32(kVK_ANSI_V), modifiers: modifiers, id: 2, label: "Control-Option-Command-V")
+    }
+
+    private func registerHotKey(keyCode: UInt32, modifiers: UInt32, id: UInt32, label: String) -> EventHotKeyRef? {
+        var hotKey = EventHotKeyRef?.none
+        let status = RegisterEventHotKey(
+            keyCode,
+            modifiers,
+            EventHotKeyID(signature: fourCharCode("TSRS"), id: id),
+            GetApplicationEventTarget(),
+            0,
+            &hotKey
+        )
+
+        if status != noErr {
+            NSLog("TSRS failed to register global hotkey \(label): \(status)")
+        }
+
+        return hotKey
+    }
+
+    private func unregisterGlobalHotKeys() {
+        if let playCurrentLineHotKey {
+            UnregisterEventHotKey(playCurrentLineHotKey)
+        }
+
+        if let openMenuHotKey {
+            UnregisterEventHotKey(openMenuHotKey)
+        }
+    }
+
+    private func fourCharCode(_ value: String) -> OSType {
+        value.utf8.reduce(0) { code, character in
+            (code << 8) + OSType(character)
         }
     }
 }

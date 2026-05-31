@@ -158,6 +158,11 @@ line as they arrive. Messages from other lines remain queued until you
 switch lines or pull them manually. Pulling a message from another line
 makes that line active.
 
+Global hotkeys:
+
+- `Control` + `Option` + `Command` + `Space`: play the current line.
+- `Control` + `Option` + `Command` + `V`: open the menu.
+
 ## Next slices
 
 1. Add safe aggregate queue views that summarize producers, lines, priorities, and stale blockers without exposing message text.
