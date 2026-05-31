@@ -26,8 +26,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         refreshStatusItem()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.model.refresh()
+            self?.model.playActiveLane()
             self?.refreshStatusItem()
+            self?.schedulePlaybackRefresh()
         }
     }
 
@@ -110,6 +111,15 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
+    @objc private func selectLane(_ sender: NSMenuItem) {
+        guard let project = sender.representedObject as? String else {
+            return
+        }
+
+        model.setActiveLane(project)
+        refreshStatusItem()
+    }
+
     @objc private func useNoCombiner() {
         model.setInactiveLaneCombiner("none")
         refreshStatusItem()
@@ -143,6 +153,13 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(NSMenuItem(title: model.status.title, action: nil, keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Active Lane: \(model.status.activeLaneTitle)", action: nil, keyEquivalent: ""))
+        for lane in model.status.lanes {
+            let item = menuItem("Use \(lane.project) (\(lane.queued) queued)", action: #selector(selectLane(_:)), enabled: lane.project != model.status.activeProject)
+            item.representedObject = lane.project
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(menuItem("Play Next", action: #selector(ready), enabled: model.status.canPlayFromMenu))
         menu.addItem(menuItem("Focus", action: #selector(focus), enabled: model.status.mode != "focus"))
@@ -199,7 +216,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", activeProject: nil, lanes: [], sourcePath: nil, sourceURL: nil)
 
     init() {
         refresh()
@@ -215,6 +232,23 @@ final class MenuBarModel {
 
         runVoicemail("ready")
         runProcessorAsync()
+        refresh()
+    }
+
+    func playActiveLane() {
+        let currentStatus = loadStatus()
+
+        guard
+            !currentStatus.muted,
+            currentStatus.speaking == 0,
+            let activeProject = currentStatus.activeProject,
+            currentStatus.queuedCount(for: activeProject) > 0
+        else {
+            status = currentStatus
+            return
+        }
+
+        runProcessorAsync(project: activeProject)
         refresh()
     }
 
@@ -277,6 +311,11 @@ final class MenuBarModel {
         refresh()
     }
 
+    func setActiveLane(_ project: String) {
+        runVoicemail("lane", arguments: ["--project", project])
+        refresh()
+    }
+
     func refresh() {
         status = loadStatus()
     }
@@ -288,21 +327,23 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLaneCombiner: "none", activeProject: nil, lanes: [], sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
         let muted = json["muted"] as? Bool ?? false
         let inactiveLaneCombiner = json["inactiveLaneCombiner"] as? String ?? "none"
+        let activeProject = json["activeProject"] as? String
         let queued = intValue(json["queueCount"])
         let counts = json["counts"] as? [String: Any] ?? [:]
         let speaking = intValue(counts["speaking"])
         let heard = intValue(counts["heard"])
+        let lanes = parseLanes(json["lanes"])
         let source = json["source"] as? [String: Any]
         let cwd = source?["cwd"] as? String
         let url = source?["url"] as? String
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLaneCombiner: inactiveLaneCombiner, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLaneCombiner: inactiveLaneCombiner, activeProject: activeProject, lanes: lanes, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
@@ -322,6 +363,10 @@ final class MenuBarModel {
 
     private func runProcessorAsync() {
         runExecutableAsync(named: "voicemail-processor", arguments: [])
+    }
+
+    private func runProcessorAsync(project: String) {
+        runExecutableAsync(named: "voicemail-processor", arguments: ["--project", project])
     }
 
     private func runExecutable(named name: String, arguments: [String]) -> String {
@@ -379,6 +424,8 @@ struct QueueStatus {
     let speaking: Int
     let heard: Int
     let inactiveLaneCombiner: String
+    let activeProject: String?
+    let lanes: [ProjectLane]
     let sourcePath: String?
     let sourceURL: String?
 
@@ -392,6 +439,14 @@ struct QueueStatus {
 
     var canPlayFromMenu: Bool {
         !muted && queued > 0
+    }
+
+    var activeLaneTitle: String {
+        activeProject ?? "None"
+    }
+
+    func queuedCount(for project: String) -> Int {
+        lanes.first { $0.project == project }?.queued ?? 0
     }
 
     var title: String {
@@ -427,6 +482,13 @@ struct QueueStatus {
     }
 }
 
+struct ProjectLane {
+    let project: String
+    let queued: Int
+    let heard: Int
+    let failed: Int
+}
+
 private func intValue(_ value: Any?) -> Int {
     if let int = value as? Int {
         return int
@@ -437,4 +499,23 @@ private func intValue(_ value: Any?) -> Int {
     }
 
     return 0
+}
+
+private func parseLanes(_ value: Any?) -> [ProjectLane] {
+    guard let rows = value as? [[String: Any]] else {
+        return []
+    }
+
+    return rows.compactMap { row in
+        guard let project = row["project"] as? String else {
+            return nil
+        }
+
+        return ProjectLane(
+            project: project,
+            queued: intValue(row["queued"]),
+            heard: intValue(row["heard"]),
+            failed: intValue(row["failed"]),
+        )
+    }
 }

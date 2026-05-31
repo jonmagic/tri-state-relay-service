@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { processOneVoicemail, processOneVoicemailWithLock, type SpeechResult } from '../src/processor.ts'
+import { processOneProjectVoicemail, processOneVoicemail, processOneVoicemailWithLock, type SpeechResult } from '../src/processor.ts'
 import { VoicemailStore } from '../src/storage/store.ts'
 
 test('processor marks one ready voicemail heard after successful speech', () => {
@@ -97,6 +97,23 @@ test('processor lock is released after processing', () => {
   assert.equal(result.status, 'heard')
   assert.equal(store.acquireProcessorLock('next-processor'), true)
   store.releaseProcessorLock('next-processor')
+  store.close()
+})
+
+test('processor can claim one voicemail from a specific active lane', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.enqueue({ project: 'Other', message: 'Other lane update.' })
+  const active = store.enqueue({ project: 'Brain', message: 'Active lane update.' })
+  const spoken: string[] = []
+
+  const result = processOneProjectVoicemail(store, 'Brain', (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  })
+
+  assert.deepEqual(result, { status: 'heard', exitCode: 0, voicemailId: active.id })
+  assert.deepEqual(spoken, ['Brain. Active lane update.'])
+  assert.equal(store.list().find((voicemail) => voicemail.project === 'Other')?.status, 'queued')
   store.close()
 })
 

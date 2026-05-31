@@ -66,6 +66,21 @@ test('inactive lane combiner setting defaults to none and can be configured', ()
   store.close()
 })
 
+test('active lane setting and project lane counts are persisted', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.enqueue({ project: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ project: 'Brain', message: 'The second update is ready.' })
+  store.enqueue({ project: 'TSRS', message: 'The app is ready.' })
+  store.markStatus(3, 'heard')
+
+  assert.equal(store.setActiveProject('Brain').activeProject, 'Brain')
+  assert.deepEqual(store.projectLanes(), [
+    { project: 'Brain', queued: 2, heard: 0, failed: 0 },
+    { project: 'TSRS', queued: 0, heard: 1, failed: 0 },
+  ])
+  store.close()
+})
+
 test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const queued = store.enqueue({ project: 'Brain', message: 'The plan is ready.' })

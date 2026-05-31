@@ -20,6 +20,8 @@ voicemail replay-last
 voicemail source
 voicemail reveal-source
 voicemail copy-source
+voicemail lane
+voicemail lane --project "Tri-State Relay Service"
 voicemail combiner
 voicemail combiner --tool none|llm|apfel
 voicemail status
@@ -131,6 +133,20 @@ voicemail combiner --tool apfel
 should avoid rollups and use latest-message-only behavior for inactive
 lanes. `llm` and `apfel` enable the prompt-driven combination workflow
 described in `docs/inactive-lane-combination.md`.
+
+## Project lanes
+
+TSRS tracks an active project lane:
+
+```sh
+voicemail lane
+voicemail lane --project "Tri-State Relay Service"
+```
+
+The menu bar app shows the active lane and queued project lanes in the
+right-click menu. When unmuted, the app keeps playing queued messages from
+the active lane as they arrive. Messages from other lanes remain queued
+until you switch lanes or pull them manually.
 
 ## Next slices
 

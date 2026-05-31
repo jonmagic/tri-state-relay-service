@@ -12,9 +12,17 @@ export interface QueueState {
   mode: PlaybackMode
   muted: boolean
   inactiveLaneCombiner: InactiveLaneCombiner
+  activeProject?: string
 }
 
 export type QueueCounts = Record<MessageStatus, number>
+
+export interface ProjectLane {
+  project: string
+  queued: number
+  heard: number
+  failed: number
+}
 
 export interface SourceContext {
   id: number
@@ -107,6 +115,28 @@ export class VoicemailStore {
     return counts
   }
 
+  projectLanes(): ProjectLane[] {
+    const rows = this.database.prepare(`
+      SELECT
+        project,
+        SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+        SUM(CASE WHEN status = 'heard' THEN 1 ELSE 0 END) AS heard,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+      FROM voicemails
+      WHERE status IN ('queued', 'heard', 'failed')
+      GROUP BY project
+      HAVING queued > 0 OR heard > 0 OR failed > 0
+      ORDER BY queued DESC, heard DESC, failed DESC, project ASC
+    `).all() as Array<{ project: string, queued: number, heard: number, failed: number }>
+
+    return rows.map((row) => ({
+      project: row.project,
+      queued: Number(row.queued),
+      heard: Number(row.heard),
+      failed: Number(row.failed),
+    }))
+  }
+
   latestSourceContext(): SourceContext | undefined {
     const row = this.database.prepare(`
       SELECT id, project, session, app, cwd, url
@@ -166,11 +196,13 @@ export class VoicemailStore {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
     const inactiveLaneCombiner = normalizeInactiveLaneCombiner(this.getSetting('inactive_lane_combiner'))
+    const activeProject = this.getSetting('active_project')
 
     return {
       mode: mode === 'ready' ? 'ready' : 'focus',
       muted,
       inactiveLaneCombiner,
+      activeProject,
     }
   }
 
@@ -186,6 +218,17 @@ export class VoicemailStore {
 
   setInactiveLaneCombiner(combiner: InactiveLaneCombiner): QueueState {
     this.setSetting('inactive_lane_combiner', combiner)
+    return this.getState()
+  }
+
+  setActiveProject(project: string): QueueState {
+    const normalized = project.trim()
+
+    if (normalized === '') {
+      throw new Error('active project cannot be empty')
+    }
+
+    this.setSetting('active_project', normalized)
     return this.getState()
   }
 
@@ -220,6 +263,39 @@ export class VoicemailStore {
     }
 
     this.setMode('focus')
+    return mapVoicemail(row)
+  }
+
+  claimNextForProject(project: string): Voicemail | undefined {
+    const state = this.getState()
+
+    if (state.muted) {
+      return undefined
+    }
+
+    const row = this.database.prepare(`
+      UPDATE voicemails
+      SET status = 'speaking', updated_at = ?
+      WHERE id = (
+        SELECT id
+        FROM voicemails
+        WHERE status = 'queued' AND project = ?
+        ORDER BY
+          CASE priority
+            WHEN 'high' THEN 0
+            WHEN 'normal' THEN 1
+            ELSE 2
+          END,
+          created_at ASC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(new Date().toISOString(), project)
+
+    if (row === undefined) {
+      return undefined
+    }
+
     return mapVoicemail(row)
   }
 

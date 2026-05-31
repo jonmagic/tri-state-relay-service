@@ -48,15 +48,18 @@ function run(parsed: ParsedCommand): void {
     const state = store.getState()
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
+    const lanes = store.projectLanes()
 
     console.log(JSON.stringify({
       mode: state.mode,
       muted: state.muted,
       inactiveLaneCombiner: state.inactiveLaneCombiner,
+      activeProject: state.activeProject,
       counts,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
       source,
+      lanes,
     }))
     return
   }
@@ -148,7 +151,21 @@ function run(parsed: ParsedCommand): void {
 
   if (parsed.command === 'state') {
     const state = store.getState()
-    console.log(`${state.mode}${state.muted ? ', muted' : ''}, inactive-lane-combiner=${state.inactiveLaneCombiner}`)
+    console.log(`${state.mode}${state.muted ? ', muted' : ''}, active-lane=${state.activeProject ?? 'none'}, inactive-lane-combiner=${state.inactiveLaneCombiner}`)
+    return
+  }
+
+  if (parsed.command === 'lane') {
+    const requested = parsed.flags.project
+
+    if (requested === undefined) {
+      const state = store.getState()
+      console.log(state.activeProject ?? 'none')
+      return
+    }
+
+    const state = store.setActiveProject(requested)
+    console.log(`active lane set to ${state.activeProject}`)
     return
   }
 
@@ -236,6 +253,8 @@ function printHelp(): void {
   voicemail source
   voicemail reveal-source
   voicemail copy-source
+  voicemail lane
+  voicemail lane --project "Tri-State Relay Service"
   voicemail combiner
   voicemail combiner --tool none|llm|apfel
   voicemail state
