@@ -52,6 +52,7 @@ function run(parsed: ParsedCommand): void {
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
     const lines = store.lineSummaries()
+    const overview = store.queueOverview()
 
     console.log(JSON.stringify({
       mode: state.mode,
@@ -63,6 +64,7 @@ function run(parsed: ParsedCommand): void {
       counts,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
+      overview,
       source,
       lines,
     }))

@@ -238,6 +238,56 @@ test('latest source context omits message text and prefers newest metadata', () 
   store.close()
 })
 
+test('queue overview summarizes priority producer and stale blockers without message text', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.enqueue({
+    line: 'Brain',
+    message: 'Secret planning text.',
+    priority: 'high',
+    type: 'blocked',
+    session: 'brain-agent',
+  })
+  store.enqueue({
+    line: 'TSRS',
+    message: 'Private status text.',
+    priority: 'normal',
+    app: 'Ghostty',
+  })
+  store.enqueue({
+    line: 'Unknown',
+    message: 'Another private message.',
+    priority: 'low',
+  })
+  store.markStatus(2, 'heard')
+  store.markStatus(3, 'failed')
+  store.database.prepare(`
+    UPDATE voicemails
+    SET created_at = '2026-05-31T14:00:00.000Z'
+    WHERE id = 1
+  `).run()
+
+  const overview = store.queueOverview({ now: new Date('2026-05-31T15:00:00.000Z') })
+
+  assert.deepEqual(overview.byPriority, [
+    { priority: 'high', count: 1 },
+    { priority: 'normal', count: 1 },
+    { priority: 'low', count: 1 },
+  ])
+  assert.deepEqual(overview.byProducer, [
+    { producer: 'Ghostty', count: 1 },
+    { producer: 'brain-agent', count: 1 },
+    { producer: 'unknown', count: 1 },
+  ])
+  assert.deepEqual(overview.staleBlockers, {
+    count: 1,
+    oldestCreatedAt: '2026-05-31T14:00:00.000Z',
+    thresholdMinutes: 15,
+  })
+  assert.equal(JSON.stringify(overview).includes('Secret planning text.'), false)
+  assert.equal(JSON.stringify(overview).includes('Private status text.'), false)
+  store.close()
+})
+
 function temporaryDatabasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
 }

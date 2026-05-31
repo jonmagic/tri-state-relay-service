@@ -158,6 +158,11 @@ line as they arrive. Messages from other lines remain queued until you
 switch lines or pull them manually. Pulling a message from another line
 makes that line active.
 
+`voicemail status` includes a text-free `overview` with priority counts,
+producer counts, and stale high-priority blockers. The overview is safe for
+menu and automation use because it omits voicemail message text and source
+paths.
+
 Global hotkeys:
 
 - `Control` + `Option` + `Command` + `Space`: play the current line.
@@ -165,6 +170,6 @@ Global hotkeys:
 
 ## Next slices
 
-1. Add safe aggregate queue views that summarize producers, lines, priorities, and stale blockers without exposing message text.
+1. Render the safe aggregate queue overview in the menu bar app.
 2. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
 3. Refine source controls so line submenus can reveal or copy source context for that specific line.

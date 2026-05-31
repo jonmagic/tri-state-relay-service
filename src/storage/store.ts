@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import Database from 'better-sqlite3'
 
 import { commandIsEnabled, defaultInactiveLineCombinerCommand, defaultSpeechCommand, resetBlankCommand } from '../core/command-template.ts'
-import { normalizeVoicemail, type MessageStatus, type MessageType, type NewVoicemail, type NewVoicemailInput, type Priority, type Voicemail } from '../core/message.ts'
+import { normalizeVoicemail, priorities, type MessageStatus, type MessageType, type NewVoicemail, type NewVoicemailInput, type Priority, type Voicemail } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
 export type InactiveLineCombiner = 'none' | 'custom'
@@ -25,6 +25,36 @@ export interface LineSummary {
   queued: number
   heard: number
   failed: number
+}
+
+export interface QueueOverviewItem {
+  count: number
+}
+
+export interface PriorityOverviewItem extends QueueOverviewItem {
+  priority: Priority
+}
+
+export interface ProducerOverviewItem extends QueueOverviewItem {
+  producer: string
+}
+
+export interface StaleBlockerOverview {
+  count: number
+  thresholdMinutes: number
+  oldestCreatedAt?: string
+}
+
+export interface QueueOverviewOptions {
+  now?: Date
+  staleBlockerAgeMinutes?: number
+  limit?: number
+}
+
+export interface QueueOverview {
+  byPriority: PriorityOverviewItem[]
+  byProducer: ProducerOverviewItem[]
+  staleBlockers: StaleBlockerOverview
 }
 
 export interface SourceContext {
@@ -57,6 +87,8 @@ export interface InactiveLineCombineResult {
 export type InactiveLineCombinerFunction = (input: InactiveLineCombineInput) => InactiveLineCombineResult | undefined
 
 const schemaVersion = 1
+const defaultQueueOverviewLimit = 10
+export const defaultStaleBlockerAgeMinutes = 15
 
 export class VoicemailStore {
   readonly path: string
@@ -227,6 +259,73 @@ export class VoicemailStore {
       heard: Number(row.heard),
       failed: Number(row.failed),
     }))
+  }
+
+  queueOverview(options: QueueOverviewOptions = {}): QueueOverview {
+    const limit = options.limit ?? defaultQueueOverviewLimit
+    const staleBlockerAgeMinutes = options.staleBlockerAgeMinutes ?? defaultStaleBlockerAgeMinutes
+    const now = options.now ?? new Date()
+    const staleBefore = new Date(now.getTime() - staleBlockerAgeMinutes * 60 * 1000).toISOString()
+    const byPriority = this.priorityOverview()
+    const byProducer = this.producerOverview(limit)
+    const staleBlockers = this.staleBlockerOverview(staleBefore, staleBlockerAgeMinutes)
+
+    return {
+      byPriority,
+      byProducer,
+      staleBlockers,
+    }
+  }
+
+  private priorityOverview(): PriorityOverviewItem[] {
+    const rows = this.database.prepare(`
+      SELECT priority, COUNT(*) AS count
+      FROM voicemails
+      WHERE status IN ('queued', 'heard', 'failed')
+      GROUP BY priority
+    `).all() as Array<{ priority: Priority, count: number }>
+    const counts = new Map(rows.map((row) => [row.priority, Number(row.count)]))
+
+    return [...priorities]
+      .reverse()
+      .map((priority) => ({ priority, count: counts.get(priority) ?? 0 }))
+      .filter((item) => item.count > 0)
+  }
+
+  private producerOverview(limit: number): ProducerOverviewItem[] {
+    const rows = this.database.prepare(`
+      SELECT
+        COALESCE(session, app, 'unknown') AS producer,
+        COUNT(*) AS count
+      FROM voicemails
+      WHERE status IN ('queued', 'heard', 'failed')
+      GROUP BY producer
+      ORDER BY count DESC, producer ASC
+      LIMIT ?
+    `).all(limit) as Array<{ producer: string, count: number }>
+
+    return rows.map((row) => ({
+      producer: row.producer,
+      count: Number(row.count),
+    }))
+  }
+
+  private staleBlockerOverview(staleBefore: string, thresholdMinutes: number): StaleBlockerOverview {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS count, MIN(created_at) AS oldestCreatedAt
+      FROM voicemails
+      WHERE status IN ('queued', 'heard')
+        AND priority = 'high'
+        AND type IN ('blocked', 'needs-input')
+        AND created_at <= ?
+    `).get(staleBefore) as { count: number, oldestCreatedAt: string | null }
+    const count = Number(row.count)
+
+    return {
+      count,
+      thresholdMinutes,
+      oldestCreatedAt: count > 0 && row.oldestCreatedAt !== null ? row.oldestCreatedAt : undefined,
+    }
   }
 
   latestSourceContext(): SourceContext | undefined {

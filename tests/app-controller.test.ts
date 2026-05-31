@@ -21,6 +21,10 @@ test('app controller reports menu bar queue status without message text', () => 
   assert.equal(status.attentionCount, 2)
   assert.equal(status.canPlay, false)
   assert.equal(status.counts.queued, 2)
+  assert.deepEqual(status.overview.byPriority, [
+    { priority: 'high', count: 1 },
+    { priority: 'normal', count: 1 },
+  ])
   assert.equal(JSON.stringify(status).includes('The plan is ready.'), false)
   store.close()
 })

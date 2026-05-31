@@ -1,9 +1,10 @@
-import type { QueueCounts, QueueState, VoicemailStore } from '../storage/store.ts'
+import type { QueueCounts, QueueOverview, QueueState, VoicemailStore } from '../storage/store.ts'
 
 export interface AppQueueStatus {
   mode: QueueState['mode']
   muted: boolean
   counts: QueueCounts
+  overview: QueueOverview
   queueCount: number
   attentionCount: number
   canPlay: boolean
@@ -19,11 +20,13 @@ export class AppQueueController {
   status(): AppQueueStatus {
     const state = this.store.getState()
     const counts = this.store.countByStatus()
+    const overview = this.store.queueOverview()
 
     return {
       mode: state.mode,
       muted: state.muted,
       counts,
+      overview,
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
       canPlay: state.mode === 'ready' && !state.muted && counts.queued > 0,
