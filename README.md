@@ -51,6 +51,7 @@ Build native Perry binaries:
 
 ```sh
 npm run build:native
+./dist/native/tri-state-relay-service
 ```
 
 Perry currently compiles the CLI and processor entrypoints, but the
@@ -58,11 +59,17 @@ native runtime requires Perry-compatible dependencies. The SQLite store
 uses `better-sqlite3`, which is covered by the Perry dependency check and
 native runtime smoke test.
 
+The first interactable app is `dist/native/tri-state-relay-service`. It
+creates a Perry tray/menu bar item with ready, focus, mute, unmute, and
+clear controls backed by the app shell. It uses Perry's accessory
+activation policy so it can live as a menu bar utility without a Dock
+icon.
+
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Next slices
 
-1. Add an actual AppKit or Perry-native menu bar host for the native adapter.
+1. Add automatic menu refresh while the app is running.
 2. Add replay last, skip current, mark handled, and clear heard controls.
 3. Add source-context actions for opening or revealing captured project paths.
 4. Add safe aggregate queue views that summarize producers, projects, priorities, and stale blockers without exposing message text.
