@@ -19,6 +19,7 @@ Current slice:
 11. `src/app/menu-bar-shell.ts` composes queue controls and the processor loop for future native macOS adapters.
 12. `src/app/native-menu-bar-adapter.ts` maps shell snapshots and actions into a safe native menu render contract.
 13. `src/macos/TriStateRelayService.swift` builds an interactable SwiftUI `MenuBarExtra` app around the Perry-built CLI and processor binaries.
+14. `voicemail status` exposes JSON queue state for the app without scraping message text.
 
 Roadmap gaps from the latest feature review:
 

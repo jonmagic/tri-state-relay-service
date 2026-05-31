@@ -56,10 +56,18 @@ struct TriStateRelayServiceApp: App {
     }
 
     private func loadStatus() -> QueueStatus {
-        let output = runVoicemail("list")
-        let queued = output.components(separatedBy: "\n").filter { $0.contains("[queued]") }.count
-        let muted = output.contains("muted=true")
-        let mode = output.contains("mode=ready") ? "ready" : "focus"
+        let output = runVoicemail("status")
+
+        guard
+            let data = output.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return QueueStatus(mode: "focus", muted: false, queued: 0)
+        }
+
+        let mode = json["mode"] as? String ?? "focus"
+        let muted = json["muted"] as? Bool ?? false
+        let queued = json["queueCount"] as? Int ?? 0
 
         return QueueStatus(mode: mode, muted: muted, queued: queued)
     }

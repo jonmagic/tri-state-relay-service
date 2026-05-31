@@ -13,6 +13,7 @@ voicemail-processor
 voicemail mute
 voicemail unmute
 voicemail clear
+voicemail status
 ```
 
 ## Project shape
@@ -68,6 +69,7 @@ open "dist/macos/Tri-State Relay Service.app"
 The first interactable app is a SwiftUI `MenuBarExtra` host that shells
 out to the Perry-built `voicemail` and `voicemail-processor` binaries.
 It exposes ready, focus, mute, unmute, clear, refresh, and quit controls.
+The app reads `voicemail status` JSON rather than scraping message text.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/voicemail.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 

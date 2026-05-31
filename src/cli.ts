@@ -33,9 +33,26 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'list') {
+    const state = store.getState()
+    console.log(`mode=${state.mode} muted=${state.muted}`)
+
     for (const voicemail of store.list()) {
       console.log(`#${voicemail.id} [${voicemail.status}] [${voicemail.priority}] ${voicemail.project}: ${voicemail.message}`)
     }
+    return
+  }
+
+  if (parsed.command === 'status') {
+    const state = store.getState()
+    const counts = store.countByStatus()
+
+    console.log(JSON.stringify({
+      mode: state.mode,
+      muted: state.muted,
+      counts,
+      queueCount: counts.queued,
+      attentionCount: counts.queued + counts.heard + counts.failed,
+    }))
     return
   }
 
@@ -134,5 +151,6 @@ function printHelp(): void {
   voicemail mute
   voicemail unmute
   voicemail clear
-  voicemail state`)
+  voicemail state
+  voicemail status`)
 }
