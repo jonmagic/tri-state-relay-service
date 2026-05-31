@@ -23,6 +23,10 @@ voicemail combiner --tool apfel
 lines should not attempt a rollup; they should keep only the latest relevant
 message for the line. Use an LLM only when the setting is `llm` or `apfel`.
 
+The Node CLI path can invoke `llm` and `apfel`. The Perry native CLI must
+fall back to latest-message-only behavior until native child-process handling
+is reliable enough for multi-message LLM combination.
+
 `apfel` uses local Apple Intelligence:
 
 ```sh

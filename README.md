@@ -21,7 +21,7 @@ voicemail source
 voicemail reveal-source
 voicemail copy-source
 voicemail line
-voicemail line --line "Tri-State Relay Service"
+voicemail line "Tri-State Relay Service"
 voicemail combiner
 voicemail combiner --tool none|llm|apfel
 voicemail status
@@ -134,13 +134,18 @@ should avoid rollups and use latest-message-only behavior for inactive
 lines. `llm` and `apfel` enable the prompt-driven combination workflow
 described in `docs/inactive-line-combination.md`.
 
+Current implementation note: the Node CLI path can invoke `llm` and
+`apfel` for combination. The Perry native CLI falls back to latest-only
+behavior even when a combiner is selected, because native child-process
+handling is not reliable enough for multi-message LLM combination yet.
+
 ## Lines
 
 TSRS tracks an active line:
 
 ```sh
 voicemail line
-voicemail line --line "Tri-State Relay Service"
+voicemail line "Tri-State Relay Service"
 ```
 
 The menu bar app shows the active line and queued lines in the

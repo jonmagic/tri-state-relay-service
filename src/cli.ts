@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
+import { basename, join } from 'node:path'
 
-import { VoicemailStore } from './storage/store.ts'
+import { messageTypes, priorities } from './core/message.ts'
+import { type InactiveLineCombineInput, type InactiveLineCombineResult, VoicemailStore } from './storage/store.ts'
 
 interface ParsedCommand {
   command: string
+  args: string[]
   flags: Record<string, string>
 }
 
@@ -19,7 +22,7 @@ try {
 
 function run(parsed: ParsedCommand): void {
   if (parsed.command === 'enqueue') {
-    const voicemail = store.enqueue({
+    const voicemail = store.enqueueWithLinePolicy({
       line: requiredFlag(parsed.flags, 'line'),
       message: requiredFlag(parsed.flags, 'message'),
       type: parsed.flags.type,
@@ -28,9 +31,9 @@ function run(parsed: ParsedCommand): void {
       app: parsed.flags.app,
       cwd: parsed.flags.cwd,
       url: parsed.flags.url,
-    })
+    }, inactiveLineCombiner())
 
-    console.log(`queued #${voicemail.id} ${voicemail.line}: ${voicemail.message}`)
+    console.log(voicemail === undefined ? 'dropped inactive line update' : `queued #${voicemail.id} ${voicemail.line}: ${voicemail.message}`)
     return
   }
 
@@ -156,7 +159,7 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'line') {
-    const requested = parsed.flags.line
+    const requested = parsed.args[0] ?? parsed.flags.line
 
     if (requested === undefined) {
       const state = store.getState()
@@ -192,15 +195,39 @@ function run(parsed: ParsedCommand): void {
 
 function parseArgs(args: string[]): ParsedCommand {
   if (args.length === 0) {
-    return { command: 'help', flags: {} }
+    return { command: 'help', args: [], flags: {} }
   }
 
   if (!args[0].startsWith('--')) {
     const [command, ...rest] = args
-    return { command, flags: parseFlags(rest) }
+    const parsed = parseCommandArgs(rest)
+    return { command, args: parsed.args, flags: parsed.flags }
   }
 
-  return { command: 'enqueue', flags: parseFlags(args) }
+  return { command: 'enqueue', args: [], flags: parseFlags(args) }
+}
+
+function parseCommandArgs(args: string[]): { args: string[], flags: Record<string, string> } {
+  const positional: string[] = []
+  const flagArgs: string[] = []
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+
+    if (arg.startsWith('--')) {
+      flagArgs.push(arg)
+      const value = args[index + 1]
+
+      if (value !== undefined && !value.startsWith('--')) {
+        flagArgs.push(value)
+        index += 1
+      }
+    } else {
+      positional.push(arg)
+    }
+  }
+
+  return { args: positional, flags: parseFlags(flagArgs) }
 }
 
 function parseFlags(args: string[]): Record<string, string> {
@@ -254,9 +281,122 @@ function printHelp(): void {
   voicemail reveal-source
   voicemail copy-source
   voicemail line
-  voicemail line --line "Tri-State Relay Service"
+  voicemail line "Tri-State Relay Service"
   voicemail combiner
   voicemail combiner --tool none|llm|apfel
   voicemail state
   voicemail status`)
+}
+
+function inactiveLineCombiner(): ((input: InactiveLineCombineInput) => InactiveLineCombineResult | undefined) | undefined {
+  const tool = store.getState().inactiveLineCombiner
+
+  if (tool === 'none') {
+    return undefined
+  }
+
+  return (input) => combineInactiveLine(tool, input)
+}
+
+function combineInactiveLine(tool: 'llm' | 'apfel', input: InactiveLineCombineInput): InactiveLineCombineResult | undefined {
+  if (!canUseExternalCombiner()) {
+    return latestOnlyFallback(input)
+  }
+
+  const inputJson = JSON.stringify(input)
+  const helperResult = runCombinerHelper(tool, inputJson)
+
+  if (helperResult !== undefined) {
+    return parseCombineResult(helperResult) ?? latestOnlyFallback(input)
+  }
+
+  function canUseExternalCombiner(): boolean {
+    const executable = process.argv[1]
+
+    return executable !== undefined && basename(executable) !== 'voicemail'
+  }
+
+  return latestOnlyFallback(input)
+}
+
+function runCombinerHelper(tool: 'llm' | 'apfel', inputJson: string): string | undefined {
+  const helperPath = join(process.cwd(), 'scripts', 'combine-inactive-line.mjs')
+  const result = spawnSync('node', [helperPath, tool, inputJson], {
+    encoding: 'utf8',
+  })
+
+  if (result.status === 0 && result.stdout.trim() !== '') {
+    return result.stdout
+  }
+
+  return undefined
+}
+
+function parseCombineResult(output: string): InactiveLineCombineResult | undefined {
+  const json = extractJson(output)
+
+  if (json === undefined) {
+    return undefined
+  }
+
+  let value: Partial<InactiveLineCombineResult>
+
+  try {
+    value = JSON.parse(json) as Partial<InactiveLineCombineResult>
+  } catch {
+    return undefined
+  }
+
+  if (
+    (value.action === 'drop' || value.action === 'replace' || value.action === 'promote')
+    && typeof value.message === 'string'
+    && value.message.trim() !== ''
+    && value.message.length <= 160
+    && messageTypes.includes(value.type as never)
+    && priorities.includes(value.priority as never)
+  ) {
+    return {
+      action: value.action,
+      type: value.type,
+      priority: value.priority,
+      message: value.message,
+    } as InactiveLineCombineResult
+  }
+
+  return undefined
+}
+
+function latestOnlyFallback(input: InactiveLineCombineInput): InactiveLineCombineResult {
+  const latest = lastItem(input.incoming)
+
+  if (latest === undefined) {
+    return {
+      action: 'drop',
+      type: 'update',
+      priority: 'normal',
+      message: `${input.inactiveLine} has no new updates.`,
+    }
+  }
+
+  return {
+    action: 'replace',
+    type: latest.type,
+    priority: latest.priority,
+    message: latest.message,
+  }
+}
+
+function lastItem<T>(items: T[]): T | undefined {
+  return items.length === 0 ? undefined : items[items.length - 1]
+}
+
+function extractJson(output: string): string | undefined {
+  const start = output.indexOf('{')
+  const end = output.lastIndexOf('}')
+
+  if (start >= 0 && end > start) {
+    return output.slice(start, end + 1)
+  }
+
+  return undefined
 }

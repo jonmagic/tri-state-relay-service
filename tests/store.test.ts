@@ -81,6 +81,68 @@ test('active line setting and line counts are persisted', () => {
   store.close()
 })
 
+test('inactive line without combiner keeps only latest queued message', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.setActiveLine('TSRS')
+  store.enqueueWithLinePolicy({ line: 'Brain', message: 'First inactive update.' })
+  const latest = store.enqueueWithLinePolicy({ line: 'Brain', message: 'Latest inactive update.' })
+
+  assert.equal(latest?.message, 'Latest inactive update.')
+  assert.deepEqual(store.list().map((voicemail) => voicemail.message), ['Latest inactive update.'])
+  store.close()
+})
+
+test('inactive line with combiner replaces queued messages with one voicemail', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.setActiveLine('TSRS')
+  store.setInactiveLineCombiner('llm')
+  store.enqueueWithLinePolicy({ line: 'Brain', message: 'I found the issue.' }, () => ({
+    action: 'replace',
+    type: 'update',
+    priority: 'normal',
+    message: 'Brain update: I found the issue.',
+  }))
+
+  const combined = store.enqueueWithLinePolicy({ line: 'Brain', type: 'blocked', priority: 'high', message: 'I need input.' }, (input) => {
+    assert.equal(input.activeLine, 'TSRS')
+    assert.equal(input.inactiveLine, 'Brain')
+    assert.deepEqual(input.incoming.map((message) => message.message), ['Brain update: I found the issue.', 'I need input.'])
+
+    return {
+      action: 'promote',
+      type: 'blocked',
+      priority: 'high',
+      message: 'Brain is blocked and needs input.',
+    }
+  })
+
+  assert.equal(combined?.message, 'Brain is blocked and needs input.')
+  assert.deepEqual(store.list().map((voicemail) => voicemail.message), ['Brain is blocked and needs input.'])
+  store.close()
+})
+
+test('inactive line combiner drop preserves existing pending voicemail', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  store.setActiveLine('TSRS')
+  store.setInactiveLineCombiner('llm')
+  const existing = store.enqueueWithLinePolicy({ line: 'Brain', message: 'Indexing is running.' }, () => ({
+    action: 'replace',
+    type: 'update',
+    priority: 'normal',
+    message: 'Brain update: indexing is running.',
+  }))
+  const dropped = store.enqueueWithLinePolicy({ line: 'Brain', message: 'Indexing is still running.' }, () => ({
+    action: 'drop',
+    type: 'update',
+    priority: 'normal',
+    message: 'Brain update: indexing is still running.',
+  }))
+
+  assert.equal(dropped?.id, existing?.id)
+  assert.deepEqual(store.list().map((voicemail) => voicemail.message), ['Brain update: indexing is running.'])
+  store.close()
+})
+
 test('lifecycle controls skip replay handle and clear heard voicemails', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })

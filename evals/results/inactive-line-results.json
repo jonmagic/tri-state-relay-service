@@ -162,14 +162,14 @@
         "action": "drop",
         "type": "update",
         "priority": "low",
-        "message": "Brain update: indexing is still running and I will report when it finishes."
+        "message": "Brain update: indexing is still running."
       }
     },
     "judge": {
-      "score": 9,
+      "score": 7,
       "verdict": "keep",
-      "reason": "The candidate text is concise, accurately reflects the source message, and adheres to all evaluation criteria. It effectively communicates the action and status without unnecessary details or errors."
+      "reason": "Brief reason."
     },
-    "candidateText": "{\"action\":\"drop\",\"type\":\"update\",\"priority\":\"low\",\"message\":\"Brain update: indexing is still running and I will report when it finishes.\"}"
+    "candidateText": "```json\n{\"action\":\"drop\",\"type\":\"update\",\"priority\":\"low\",\"message\":\"Brain update: indexing is still running.\"}\n```"
   }
 ]

@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import Database from 'better-sqlite3'
 
-import { normalizeVoicemail, type MessageStatus, type NewVoicemailInput, type Voicemail } from '../core/message.ts'
+import { normalizeVoicemail, type MessageStatus, type MessageType, type NewVoicemail, type NewVoicemailInput, type Priority, type Voicemail } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
 export type InactiveLineCombiner = 'none' | 'llm' | 'apfel'
@@ -33,6 +33,26 @@ export interface SourceContext {
   url?: string
 }
 
+export interface InactiveLineCombineInput {
+  activeLine?: string
+  inactiveLine: string
+  existingPendingMessage?: string
+  incoming: Array<{
+    type: MessageType
+    priority: Priority
+    message: string
+  }>
+}
+
+export interface InactiveLineCombineResult {
+  action: 'drop' | 'replace' | 'promote'
+  type: MessageType
+  priority: Priority
+  message: string
+}
+
+export type InactiveLineCombinerFunction = (input: InactiveLineCombineInput) => InactiveLineCombineResult | undefined
+
 const schemaVersion = 1
 
 export class VoicemailStore {
@@ -52,6 +72,55 @@ export class VoicemailStore {
 
   enqueue(input: NewVoicemailInput): Voicemail {
     const voicemail = normalizeVoicemail(input)
+    return this.insertVoicemail(voicemail)
+  }
+
+  enqueueWithLinePolicy(input: NewVoicemailInput, combine?: InactiveLineCombinerFunction): Voicemail | undefined {
+    const voicemail = normalizeVoicemail(input)
+    const state = this.getState()
+
+    if (state.activeLine === undefined || voicemail.line === state.activeLine) {
+      return this.insertVoicemail(voicemail)
+    }
+
+    if (state.inactiveLineCombiner === 'none' || combine === undefined) {
+      this.deleteQueuedForLine(voicemail.line)
+      return this.insertVoicemail(voicemail)
+    }
+
+    const existing = this.queuedForLine(voicemail.line)
+    const combined = combine({
+      activeLine: state.activeLine,
+      inactiveLine: voicemail.line,
+      existingPendingMessage: lastItem(existing)?.message,
+      incoming: [
+        ...existing.map((item) => ({
+          type: item.type,
+          priority: item.priority,
+          message: item.message,
+        })),
+        {
+          type: voicemail.type,
+          priority: voicemail.priority,
+          message: voicemail.message,
+        },
+      ],
+    })
+
+    if (combined === undefined || combined.action === 'drop') {
+      return lastItem(existing)
+    }
+
+    this.deleteQueuedForLine(voicemail.line)
+    return this.insertVoicemail({
+      ...voicemail,
+      message: combined.message,
+      type: combined.type,
+      priority: combined.priority,
+    })
+  }
+
+  private insertVoicemail(voicemail: NewVoicemail): Voicemail {
     const now = new Date().toISOString()
     const insert = this.database.prepare(`
       INSERT INTO voicemails (
@@ -72,6 +141,26 @@ export class VoicemailStore {
       now,
       now,
     ))
+  }
+
+  private queuedForLine(line: string): Voicemail[] {
+    const select = this.database.prepare(`
+      SELECT *
+      FROM voicemails
+      WHERE line = ? AND status = 'queued'
+      ORDER BY created_at ASC
+    `)
+
+    return select.all(line).map(mapVoicemail)
+  }
+
+  private deleteQueuedForLine(line: string): number {
+    const result = this.database.prepare(`
+      DELETE FROM voicemails
+      WHERE line = ? AND status = 'queued'
+    `).run(line)
+
+    return Number(result.changes)
   }
 
   list(limit = 20): Voicemail[] {
@@ -460,4 +549,8 @@ function normalizeInactiveLineCombiner(value: string | undefined): InactiveLineC
   }
 
   return 'none'
+}
+
+function lastItem<T>(items: T[]): T | undefined {
+  return items.length === 0 ? undefined : items[items.length - 1]
 }
