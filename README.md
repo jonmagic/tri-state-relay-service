@@ -105,9 +105,9 @@ lines stay quiet and can be pulled from their line submenu.
 
 Both macOS profiles are packaged from the CLI-only native build and do not
 bundle or launch the legacy processor. The App Store-safe profile keeps terminal
-enqueueing disabled and hides external speech and inactive-line combiner command
-templates. Playback is claimed and spoken by the app with AVFoundation speech
-using a natural available English voice when possible.
+enqueueing disabled and hides external inactive-line combiner command templates.
+Playback is claimed and spoken by the app with AVFoundation speech using the
+configured native voice.
 
 Before claiming a relay for speech, the app checks whether the default input
 device appears to be actively captured by another app. When microphone capture
@@ -183,11 +183,9 @@ The command is parsed into argv without a shell. Placeholders such as
 Pipes, redirects, command substitution, and shell expansion are intentionally
 unsupported.
 
-In the direct profile, the Speech tab configures the command used by the
-processor to speak one relay. The default is `/usr/bin/say <message>`.
-`/usr/bin/say` ships with macOS, so no extra install is required. In the App
-Store-safe profile, external speech command templates are unavailable and the
-app speaks relays with native AVFoundation APIs.
+The Settings window has a Voice tab for choosing the native AVFoundation voice
+used by the menu bar app. Speech command templates are legacy
+processor/terminal compatibility settings and are not exposed in the app.
 
 ## Lines
 

@@ -470,7 +470,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: MenuBarModel
     private let onSave: () -> Void
     private let combinerTextView = NSTextView()
-    private let speechTextView = NSTextView()
+    private let voicePopUpButton = NSPopUpButton()
 
     init(model: MenuBarModel, onSave: @escaping () -> Void) {
         self.model = model
@@ -482,8 +482,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner and speech command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
 #else
         tabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
-        tabView.addTabViewItem(Self.tabItem(label: "Speech", textView: speechTextView))
 #endif
+        tabView.addTabViewItem(Self.voiceTabItem(popUpButton: voicePopUpButton))
 
         let saveButton = NSButton(title: "Save", target: nil, action: nil)
         saveButton.frame = NSRect(x: 608, y: 12, width: 88, height: 28)
@@ -525,22 +525,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func save() {
 #if APP_STORE
-        reload()
-        onSave()
+        model.saveVoiceSetting(voiceIdentifier: selectedVoiceIdentifier())
 #else
         model.saveSettings(
             inactiveLineCombinerCommand: combinerTextView.string,
-            speechCommand: speechTextView.string
+            voiceIdentifier: selectedVoiceIdentifier()
         )
+#endif
         reload()
         onSave()
-#endif
     }
 
     private func reload() {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
-        speechTextView.string = settings.speechCommand
+        reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
     }
 
     private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
@@ -584,6 +583,48 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         item.view = container
         return item
     }
+
+    private static func voiceTabItem(popUpButton: NSPopUpButton) -> NSTabViewItem {
+        let label = NSTextField(labelWithString: "Native speech voice")
+        label.frame = NSRect(x: 16, y: 332, width: 672, height: 24)
+
+        let help = NSTextField(labelWithString: "Choose the voice TSRS uses for spoken relays. Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
+        help.frame = NSRect(x: 16, y: 272, width: 672, height: 48)
+        help.lineBreakMode = .byWordWrapping
+
+        popUpButton.frame = NSRect(x: 16, y: 300, width: 320, height: 28)
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
+        container.addSubview(label)
+        container.addSubview(popUpButton)
+        container.addSubview(help)
+
+        let item = NSTabViewItem(identifier: "Voice")
+        item.label = "Voice"
+        item.view = container
+        return item
+    }
+
+    private func reloadVoiceMenu(selectedIdentifier: String?) {
+        voicePopUpButton.removeAllItems()
+
+        for voice in availableRelayVoices() {
+            voicePopUpButton.addItem(withTitle: "\(voice.name) (\(voice.language))")
+            voicePopUpButton.lastItem?.representedObject = voice.identifier
+        }
+
+        if
+            let selectedIdentifier,
+            let item = voicePopUpButton.itemArray.first(where: { $0.representedObject as? String == selectedIdentifier }) {
+            voicePopUpButton.select(item)
+        } else {
+            voicePopUpButton.selectItem(at: 0)
+        }
+    }
+
+    private func selectedVoiceIdentifier() -> String {
+        voicePopUpButton.selectedItem?.representedObject as? String ?? defaultSpeechVoiceIdentifier
+    }
 }
 
 final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
@@ -592,7 +633,6 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
     private let synthesizer = AVSpeechSynthesizer()
-    private let voice = preferredRelayVoice()
 
     init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
         self.model = model
@@ -622,7 +662,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         currentId = claim.id
 
         let utterance = AVSpeechUtterance(string: claim.text)
-        utterance.voice = voice
+        utterance.voice = preferredRelayVoice(identifier: model.loadSettings().speechVoiceIdentifier)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1
         synthesizer.speak(utterance)
@@ -705,9 +745,47 @@ struct DefaultInputCaptureSensor: InputCaptureSensing {
     }
 }
 
-private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
-    let voices = AVSpeechSynthesisVoice.speechVoices()
-    let preferredNames = ["Samantha", "Ava", "Susan", "Tom", "Allison"]
+private let defaultSpeechVoiceIdentifier = "com.apple.voice.compact.en-US.Samantha"
+
+private func availableRelayVoices() -> [AVSpeechSynthesisVoice] {
+    AVSpeechSynthesisVoice.speechVoices()
+        .filter { $0.language.hasPrefix("en") && !noveltyVoiceIdentifiers.contains($0.identifier) }
+        .sorted { left, right in
+            if left.language == "en-US", right.language != "en-US" {
+                return true
+            }
+
+            if left.language != "en-US", right.language == "en-US" {
+                return false
+            }
+
+            return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+        }
+}
+
+private func preferredRelayVoice(identifier: String?) -> AVSpeechSynthesisVoice? {
+    let voices = availableRelayVoices()
+
+    if let identifier, let voice = voices.first(where: { $0.identifier == identifier }) {
+        return voice
+    }
+
+    let preferredIdentifiers = [
+        defaultSpeechVoiceIdentifier,
+        "com.apple.voice.premium.en-US.Samantha",
+        "com.apple.voice.enhanced.en-US.Samantha",
+        "com.apple.voice.compact.en-US.Ava",
+        "com.apple.voice.premium.en-US.Ava",
+        "com.apple.voice.enhanced.en-US.Ava",
+    ]
+
+    for identifier in preferredIdentifiers {
+        if let voice = voices.first(where: { $0.identifier == identifier }) {
+            return voice
+        }
+    }
+
+    let preferredNames = ["Samantha", "Ava", "Allison", "Susan", "Tom"]
 
     for name in preferredNames {
         if let voice = voices.first(where: { $0.name == name && $0.language.hasPrefix("en") }) {
@@ -715,13 +793,37 @@ private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
         }
     }
 
-    if let enhancedVoice = voices.first(where: { $0.language.hasPrefix("en") && $0.quality == .enhanced }) {
+    if let enhancedVoice = voices.first(where: { $0.quality == .enhanced && $0.name != "Alex" }) {
         return enhancedVoice
     }
 
-    return AVSpeechSynthesisVoice(language: Locale.current.identifier)
+    if let nonAlexEnglishVoice = voices.first(where: { $0.name != "Alex" }) {
+        return nonAlexEnglishVoice
+    }
+
+    return AVSpeechSynthesisVoice(identifier: defaultSpeechVoiceIdentifier)
         ?? AVSpeechSynthesisVoice(language: "en-US")
 }
+
+private let noveltyVoiceIdentifiers = Set([
+    "com.apple.speech.synthesis.voice.Albert",
+    "com.apple.speech.synthesis.voice.BadNews",
+    "com.apple.speech.synthesis.voice.Bahh",
+    "com.apple.speech.synthesis.voice.Bells",
+    "com.apple.speech.synthesis.voice.Boing",
+    "com.apple.speech.synthesis.voice.Bubbles",
+    "com.apple.speech.synthesis.voice.Cellos",
+    "com.apple.speech.synthesis.voice.Deranged",
+    "com.apple.speech.synthesis.voice.GoodNews",
+    "com.apple.speech.synthesis.voice.Hysterical",
+    "com.apple.speech.synthesis.voice.Junior",
+    "com.apple.speech.synthesis.voice.Organ",
+    "com.apple.speech.synthesis.voice.Princess",
+    "com.apple.speech.synthesis.voice.Ralph",
+    "com.apple.speech.synthesis.voice.Trinoids",
+    "com.apple.speech.synthesis.voice.Whisper",
+    "com.apple.speech.synthesis.voice.Zarvox",
+])
 
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
@@ -867,11 +969,16 @@ final class MenuBarModel {
         store.loadSettings()
     }
 
-    func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
+    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String) {
         store.saveSettings(
             inactiveLineCombinerCommand: inactiveLineCombinerCommand,
-            speechCommand: speechCommand
+            voiceIdentifier: voiceIdentifier
         )
+        refresh()
+    }
+
+    func saveVoiceSetting(voiceIdentifier: String) {
+        store.saveVoiceIdentifier(voiceIdentifier)
         refresh()
     }
 
@@ -1065,7 +1172,7 @@ struct LineSource {
 
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
-    let speechCommand: String
+    let speechVoiceIdentifier: String?
 }
 
 final class NativeRelayStore {
@@ -1087,7 +1194,7 @@ final class NativeRelayStore {
             let settings = loadRawSettings(database)
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
-                speechCommand: speechCommand(settings)
+                speechVoiceIdentifier: speechVoiceIdentifier(settings)
             )
         } ?? defaultSettings()
     }
@@ -1140,14 +1247,26 @@ final class NativeRelayStore {
         }
     }
 
-    func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
+    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String) {
         guard profile != "app-store" else {
+            saveVoiceIdentifier(voiceIdentifier)
             return
         }
 
         write { database in
             setSetting(database, key: "inactive_line_combiner_command", value: resetBlankCommand(inactiveLineCombinerCommand, fallback: defaultInactiveLineCombinerCommand))
-            setSetting(database, key: "speech_command", value: resetBlankCommand(speechCommand, fallback: defaultSpeechCommand))
+            setSetting(database, key: "speech_voice_identifier", value: voiceIdentifier)
+        }
+    }
+
+    func saveVoiceIdentifier(_ voiceIdentifier: String) {
+        guard availableRelayVoices().contains(where: { $0.identifier == voiceIdentifier }) else {
+            NSLog("TSRS native store rejected unavailable voice identifier: \(voiceIdentifier)")
+            return
+        }
+
+        write { database in
+            setSetting(database, key: "speech_voice_identifier", value: voiceIdentifier)
         }
     }
 
@@ -1684,12 +1803,14 @@ final class NativeRelayStore {
         return settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
     }
 
-    private func speechCommand(_ settings: [String: String]) -> String {
-        if profile == "app-store" {
-            return appStoreUnavailableCommand("speech")
+    private func speechVoiceIdentifier(_ settings: [String: String]) -> String? {
+        let identifier = settings["speech_voice_identifier"] ?? defaultSpeechVoiceIdentifier
+
+        if availableRelayVoices().contains(where: { $0.identifier == identifier }) {
+            return identifier
         }
 
-        return settings["speech_command"] ?? defaultSpeechCommand
+        return defaultSpeechVoiceIdentifier
     }
 }
 
@@ -1709,7 +1830,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", speechCommand: "/usr/bin/say <message>")
+    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier)
 }
 
 private func playbackMode(_ value: String?) -> String {
