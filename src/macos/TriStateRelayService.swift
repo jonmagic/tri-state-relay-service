@@ -660,7 +660,7 @@ private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
 
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
-    private let storeReader = NativeRelayStoreReader(profile: distributionProfile)
+    private let store = NativeRelayStore(profile: distributionProfile)
 
     init() {
         refresh()
@@ -677,7 +677,7 @@ final class MenuBarModel {
         if let line = currentStatus.nextQueuedLine {
             setActiveLine(line)
         } else {
-            runRelay("ready")
+            store.setMode("ready")
         }
         refresh()
     }
@@ -703,68 +703,68 @@ final class MenuBarModel {
     }
 
     func focus() {
-        runRelay("focus")
+        store.setMode("focus")
         refresh()
     }
 
     func mute() {
-        runRelay("mute")
+        store.setMuted(true)
         refresh()
     }
 
     func unmute() {
-        runRelay("unmute")
+        store.setMuted(false)
         refresh()
     }
 
     func clear() {
-        runRelay("clear")
+        store.clear()
         refresh()
     }
 
     func clear(line: String) {
-        runRelay("clear-line", arguments: ["--line", line])
+        store.clearQueued(line: line)
         refresh()
     }
 
     func skipNext() {
-        runRelay("skip-next")
+        store.skipNextQueued()
         refresh()
     }
 
     func skipNext(line: String) {
-        runRelay("skip-next", arguments: ["--line", line])
+        store.skipNextQueued(line: line)
         refresh()
     }
 
     func replayLast() {
-        runRelay("replay-last")
+        store.replayLatestHeard()
         playNext()
     }
 
     func replayLast(line: String) {
-        runRelay("replay-last", arguments: ["--line", line])
+        store.replayLatestHeard(line: line)
         setActiveLine(line)
         playActiveLine()
     }
 
     func markHandled() {
-        runRelay("acknowledge")
+        store.markLatestHeardHandled()
         refresh()
     }
 
     func markHandled(line: String) {
-        runRelay("acknowledge", arguments: ["--line", line])
+        store.markLatestHeardHandled(line: line)
         refresh()
     }
 
     func clearHeard() {
-        runRelay("clear-delivered")
+        store.clearHeard()
         refresh()
     }
 
     func clearHeard(line: String) {
-        runRelay("clear-delivered", arguments: ["--line", line])
+        store.clearHeard(line: line)
         refresh()
     }
 
@@ -780,52 +780,33 @@ final class MenuBarModel {
     }
 
     func setActiveLine(_ line: String) {
-        runRelay("line", arguments: [line])
+        store.setActiveLine(line)
         refresh()
     }
 
     func claimNextForNativeSpeech(line: String? = nil) -> NativeSpeechClaim? {
-        var arguments: [String] = []
-
-        if let line {
-            arguments = ["--line", line]
-        }
-
-        let output = runRelay("app-claim-next", arguments: arguments)
-
-        guard
-            let data = output.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let id = json["id"] as? Int,
-            let text = json["text"] as? String
-        else {
-            return nil
-        }
-
-        return NativeSpeechClaim(id: id, text: text)
+        store.claimNextForNativeSpeech(line: line)
     }
 
     func markNativeSpeechHeard(id: Int) {
-        runRelay("app-mark-heard", arguments: ["--id", String(id)])
+        store.markNativeSpeechHeard(id: id)
         refresh()
     }
 
     func markNativeSpeechFailed(id: Int) {
-        runRelay("app-mark-failed", arguments: ["--id", String(id)])
+        store.markNativeSpeechFailed(id: id)
         refresh()
     }
 
     func loadSettings() -> SettingsSnapshot {
-        storeReader.loadSettings()
+        store.loadSettings()
     }
 
     func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
-        runRelay("settings", arguments: [
-            "--combiner-command",
-            inactiveLineCombinerCommand,
-            "--speech-command",
-            speechCommand,
-        ])
+        store.saveSettings(
+            inactiveLineCombinerCommand: inactiveLineCombinerCommand,
+            speechCommand: speechCommand
+        )
         refresh()
     }
 
@@ -834,79 +815,7 @@ final class MenuBarModel {
     }
 
     private func loadStatus() -> QueueStatus {
-        storeReader.loadStatus()
-    }
-
-    @discardableResult
-    private func runRelay(_ command: String) -> String {
-        runRelay(command, arguments: [])
-    }
-
-    @discardableResult
-    private func runRelay(_ command: String, arguments: [String]) -> String {
-        runExecutable(named: "relay", arguments: [command] + arguments)
-    }
-
-    private func runExecutable(named name: String, arguments: [String]) -> String {
-        guard let executableURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .appendingPathComponent(name)
-        else {
-            return "missing app executable URL"
-        }
-        let process = Process()
-        let output = Pipe()
-
-        process.executableURL = executableURL
-        process.arguments = arguments
-        process.environment = processEnvironment(for: name)
-        process.standardOutput = output
-        process.standardError = output
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return error.localizedDescription
-        }
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    @discardableResult
-    private func runExecutableAsync(named name: String, arguments: [String]) -> Process? {
-        guard let executableURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .appendingPathComponent(name)
-        else {
-            return nil
-        }
-        let process = Process()
-
-        process.executableURL = executableURL
-        process.arguments = arguments
-        process.environment = processEnvironment(for: name)
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            return process
-        } catch {
-            return nil
-        }
-    }
-
-    private func processEnvironment(for name: String) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
-        environment["TSRS_DISTRIBUTION_PROFILE"] = distributionProfile
-
-        if name == "relay" {
-            environment["TSRS_PROCESSOR_AUTH"] = "app-owned-processor"
-        }
-
-        return environment
+        store.loadStatus()
     }
 
     private func revealNativeSource(_ path: String?) {
@@ -930,6 +839,17 @@ final class MenuBarModel {
 struct NativeSpeechClaim {
     let id: Int
     let text: String
+}
+
+struct NativeRelay {
+    let id: Int
+    let line: String
+    let message: String
+    let type: String
+    let priority: String
+    let status: String
+    let createdAt: String
+    let updatedAt: String
 }
 
 struct QueueStatus {
@@ -1083,8 +1003,15 @@ struct SettingsSnapshot {
     let speechCommand: String
 }
 
-final class NativeRelayStoreReader {
+final class NativeRelayStore {
     private let profile: String
+    private let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        return formatter
+    }()
 
     init(profile: String) {
         self.profile = profile
@@ -1118,6 +1045,138 @@ final class NativeRelayStoreReader {
         } ?? defaultStatus()
     }
 
+    func setMode(_ mode: String) {
+        guard mode == "ready" || mode == "focus" else {
+            NSLog("TSRS native store rejected invalid mode: \(mode)")
+            return
+        }
+
+        write { database in
+            setSetting(database, key: "mode", value: mode)
+        }
+    }
+
+    func setMuted(_ muted: Bool) {
+        write { database in
+            setSetting(database, key: "muted", value: String(muted))
+        }
+    }
+
+    func setActiveLine(_ line: String) {
+        let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else {
+            NSLog("TSRS native store rejected empty active line")
+            return
+        }
+
+        write { database in
+            setSetting(database, key: "active_line", value: normalized)
+        }
+    }
+
+    func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
+        guard profile != "app-store" else {
+            return
+        }
+
+        write { database in
+            setSetting(database, key: "inactive_line_combiner_command", value: resetBlankCommand(inactiveLineCombinerCommand, fallback: defaultInactiveLineCombinerCommand))
+            setSetting(database, key: "speech_command", value: resetBlankCommand(speechCommand, fallback: defaultSpeechCommand))
+        }
+    }
+
+    func clear() {
+        write { database in
+            execute(database, """
+                DELETE FROM relays
+                WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
+            """)
+        }
+    }
+
+    func clearHeard(line: String? = nil) {
+        write { database in
+            execute(database, """
+                DELETE FROM relays
+                WHERE status = 'heard' AND (? IS NULL OR line = ?)
+            """, [line, line])
+        }
+    }
+
+    func clearQueued(line: String) {
+        write { database in
+            execute(database, """
+                DELETE FROM relays
+                WHERE status = 'queued' AND line = ?
+            """, [line])
+        }
+    }
+
+    func skipNextQueued(line: String? = nil) {
+        write { database in
+            _ = markFirstMatchingStatus(database, from: "queued", to: "skipped", line: line)
+        }
+    }
+
+    func markLatestHeardHandled(line: String? = nil) {
+        write { database in
+            _ = markLatestMatchingStatus(database, from: "heard", to: "handled", line: line)
+        }
+    }
+
+    func replayLatestHeard(line: String? = nil) {
+        write { database in
+            _ = markLatestMatchingStatus(database, from: "heard", to: "queued", line: line)
+        }
+    }
+
+    func claimNextForNativeSpeech(line: String? = nil) -> NativeSpeechClaim? {
+        writeResult { database in
+            failStaleSpeaking(database)
+            let relay: NativeRelay?
+
+            if let line {
+                relay = claimNextForLine(database, line: line)
+            } else {
+                let settings = loadRawSettings(database)
+                if let activeLine = settings["active_line"], queuedCount(database, line: activeLine) > 0 {
+                    relay = claimNextForLine(database, line: activeLine)
+                } else {
+                    relay = claimNextForSpeech(database)
+                }
+            }
+
+            guard let relay else {
+                return nil
+            }
+
+            return NativeSpeechClaim(
+                id: relay.id,
+                text: spokenText(relay, includeLine: shouldPrefixSpokenLine(database, line: relay.line))
+            )
+        }
+    }
+
+    func markNativeSpeechHeard(id: Int) {
+        write { database in
+            guard let relay = markStatus(database, id: id, status: "heard") else {
+                NSLog("TSRS native store could not mark missing relay heard: \(id)")
+                return
+            }
+
+            recordSpokenLine(database, line: relay.line)
+        }
+    }
+
+    func markNativeSpeechFailed(id: Int) {
+        write { database in
+            if markStatus(database, id: id, status: "failed") == nil {
+                NSLog("TSRS native store could not mark missing relay failed: \(id)")
+            }
+        }
+    }
+
     private func withDatabase<T>(_ read: (OpaquePointer) -> T?) -> T? {
         var database: OpaquePointer?
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
@@ -1135,6 +1194,39 @@ final class NativeRelayStoreReader {
         }
 
         return read(database)
+    }
+
+    private func write(_ mutation: (OpaquePointer) -> Void) {
+        _ = withWriteDatabase { database in
+            mutation(database)
+            return true
+        }
+    }
+
+    private func writeResult<T>(_ mutation: (OpaquePointer) -> T?) -> T? {
+        withWriteDatabase(mutation)
+    }
+
+    private func withWriteDatabase<T>(_ mutation: (OpaquePointer) -> T?) -> T? {
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+
+        guard sqlite3_open_v2(databasePath(), &database, flags, nil) == SQLITE_OK, let database else {
+            if let database {
+                NSLog("TSRS native store write open failed: \(sqliteError(database))")
+                sqlite3_close(database)
+            } else {
+                NSLog("TSRS native store write open failed")
+            }
+            return nil
+        }
+
+        sqlite3_busy_timeout(database, 2_000)
+        defer {
+            sqlite3_close(database)
+        }
+
+        return mutation(database)
     }
 
     private func loadRawSettings(_ database: OpaquePointer) -> [String: String] {
@@ -1241,7 +1333,7 @@ final class NativeRelayStoreReader {
         return sources
     }
 
-    private func query(_ database: OpaquePointer, _ sql: String, row: (OpaquePointer) -> Void) {
+    private func query(_ database: OpaquePointer, _ sql: String, _ values: [String?] = [], row: (OpaquePointer) -> Void) {
         var statement: OpaquePointer?
 
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
@@ -1255,8 +1347,259 @@ final class NativeRelayStoreReader {
             sqlite3_finalize(statement)
         }
 
+        bind(values, to: statement)
+
         while sqlite3_step(statement) == SQLITE_ROW {
             row(statement)
+        }
+    }
+
+    private func execute(_ database: OpaquePointer, _ sql: String, _ values: [String?] = []) {
+        var statement: OpaquePointer?
+
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            NSLog("TSRS native store prepare failed: \(sqliteError(database))")
+            if let statement {
+                sqlite3_finalize(statement)
+            }
+            return
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        bind(values, to: statement)
+        let result = sqlite3_step(statement)
+
+        if result != SQLITE_DONE {
+            NSLog("TSRS native store execute failed: \(sqliteError(database))")
+        }
+    }
+
+    private func returningRelay(_ database: OpaquePointer, _ sql: String, _ values: [String?]) -> NativeRelay? {
+        var statement: OpaquePointer?
+
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            NSLog("TSRS native store returning prepare failed: \(sqliteError(database))")
+            if let statement {
+                sqlite3_finalize(statement)
+            }
+            return nil
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        bind(values, to: statement)
+
+        switch sqlite3_step(statement) {
+        case SQLITE_ROW:
+            return mapRelay(statement)
+        case SQLITE_DONE:
+            return nil
+        default:
+            NSLog("TSRS native store returning step failed: \(sqliteError(database))")
+            return nil
+        }
+    }
+
+    private func setSetting(_ database: OpaquePointer, key: String, value: String) {
+        execute(database, """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, [key, value])
+    }
+
+    private func queuedCount(_ database: OpaquePointer, line: String) -> Int {
+        var count = 0
+        query(database, """
+            SELECT COUNT(*) AS count
+            FROM relays
+            WHERE status = 'queued' AND line = ?
+        """, [line]) { statement in
+            count = Int(sqlite3_column_int(statement, 0))
+        }
+        return count
+    }
+
+    private func claimNextForSpeech(_ database: OpaquePointer) -> NativeRelay? {
+        let settings = loadRawSettings(database)
+
+        guard settings["muted"] != "true", playbackMode(settings["mode"]) == "ready" else {
+            return nil
+        }
+
+        let relay = returningRelay(database, """
+            UPDATE relays
+            SET status = 'speaking', updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = 'queued'
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [nowString()])
+
+        if relay != nil {
+            setSetting(database, key: "mode", value: "focus")
+        }
+
+        return relay
+    }
+
+    private func claimNextForLine(_ database: OpaquePointer, line: String) -> NativeRelay? {
+        let settings = loadRawSettings(database)
+
+        guard settings["muted"] != "true" else {
+            return nil
+        }
+
+        return returningRelay(database, """
+            UPDATE relays
+            SET status = 'speaking', updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = 'queued' AND line = ?
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [nowString(), line])
+    }
+
+    private func markFirstMatchingStatus(_ database: OpaquePointer, from: String, to: String, line: String?) -> NativeRelay? {
+        returningRelay(database, """
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = ? AND (? IS NULL OR line = ?)
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [to, nowString(), from, line, line])
+    }
+
+    private func markLatestMatchingStatus(_ database: OpaquePointer, from: String, to: String, line: String?) -> NativeRelay? {
+        returningRelay(database, """
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = ? AND (? IS NULL OR line = ?)
+              ORDER BY updated_at DESC, id DESC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [to, nowString(), from, line, line])
+    }
+
+    private func markStatus(_ database: OpaquePointer, id: Int, status: String) -> NativeRelay? {
+        returningRelay(database, """
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [status, nowString(), String(id)])
+    }
+
+    private func failStaleSpeaking(_ database: OpaquePointer) {
+        let staleBefore = nowString(addingMilliseconds: -60_000)
+        execute(database, """
+            UPDATE relays
+            SET status = 'failed', updated_at = ?
+            WHERE status = 'speaking' AND updated_at <= ?
+        """, [nowString(), staleBefore])
+    }
+
+    private func recordSpokenLine(_ database: OpaquePointer, line: String) {
+        let escapedLine = line
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        setSetting(database, key: "last_spoken_line", value: "{\"line\":\"\(escapedLine)\",\"spokenAt\":\"\(nowString())\"}")
+    }
+
+    private func shouldPrefixSpokenLine(_ database: OpaquePointer, line: String) -> Bool {
+        guard
+            let value = loadRawSettings(database)["last_spoken_line"],
+            let data = value.data(using: .utf8),
+            let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let lastLine = parsed["line"] as? String,
+            let spokenAt = parsed["spokenAt"] as? String
+        else {
+            return true
+        }
+
+        if lastLine != line {
+            return true
+        }
+
+        guard let date = timestampFormatter.date(from: spokenAt) else {
+            return true
+        }
+
+        return Date().timeIntervalSince(date) >= 60
+    }
+
+    private func spokenText(_ relay: NativeRelay, includeLine: Bool) -> String {
+        let linePrefix = includeLine ? "\(relay.line). " : ""
+        let typePrefix = relay.type == "update" ? "" : "\(relay.type). "
+        return "\(linePrefix)\(typePrefix)\(relay.message)"
+    }
+
+    private func nowString(addingMilliseconds milliseconds: TimeInterval = 0) -> String {
+        timestampFormatter.string(from: Date(timeIntervalSinceNow: milliseconds / 1000))
+    }
+
+    private func mapRelay(_ statement: OpaquePointer) -> NativeRelay {
+        NativeRelay(
+            id: Int(sqlite3_column_int(statement, 0)),
+            line: columnString(statement, 1) ?? "",
+            message: columnString(statement, 2) ?? "",
+            type: columnString(statement, 3) ?? "update",
+            priority: columnString(statement, 4) ?? "normal",
+            status: columnString(statement, 5) ?? "queued",
+            createdAt: columnString(statement, 6) ?? "",
+            updatedAt: columnString(statement, 7) ?? ""
+        )
+    }
+
+    private func bind(_ values: [String?], to statement: OpaquePointer) {
+        for (index, value) in values.enumerated() {
+            let position = Int32(index + 1)
+
+            if let value {
+                sqlite3_bind_text(statement, position, value, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(statement, position)
+            }
         }
     }
 
@@ -1325,6 +1668,20 @@ private func commandIsEnabled(_ template: String) -> Bool {
 
     return !commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
+
+private func resetBlankCommand(_ value: String, fallback: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : value
+}
+
+private func sqliteError(_ database: OpaquePointer) -> String {
+    guard let message = sqlite3_errmsg(database) else {
+        return "unknown SQLite error"
+    }
+
+    return String(cString: message)
+}
+
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 private func appStoreUnavailableCommand(_ feature: String) -> String {
     "# External \(feature) command execution is unavailable in the App Store-safe profile."

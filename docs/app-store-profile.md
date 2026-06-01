@@ -22,7 +22,7 @@ The App Store-safe profile:
 
 1. Uses app-owned AVFoundation speech for relay playback.
 2. Uses the same CLI-only native app packaging as the direct build and does not build, bundle, or launch `relay-processor`.
-3. Requires `TSRS_PROCESSOR_AUTH=app-owned-processor` for app-only claim and mark helper commands.
+3. Uses native Swift SQLite access for app-owned queue controls and speech state.
 4. Masks external speech and inactive-line combiner command templates.
 5. Has no CLI source command surface.
 6. Performs line-scoped app source actions with `NSWorkspace` and `NSPasteboard`.
@@ -44,8 +44,8 @@ product capability.
 For App Store-safe profile builds, CLI-based terminal enqueueing remains
 disabled. When `TSRS_DISTRIBUTION_PROFILE=app-store`, terminal
 `relay --line ... --message ...` enqueueing is rejected. The App Store-safe app
-can still use app-authorized helper commands to claim and update relays during
-local builds, but this is not a sandboxing commitment.
+can still use native Swift SQLite access to claim and update relays during local
+builds, but this is not a sandboxing commitment.
 
 A sandboxed App Store app should not assume it can use the direct profile's
 default database path:

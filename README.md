@@ -87,25 +87,18 @@ npm run build:macos:app-store
 open "dist/macos-app-store/Tri-State Relay Service.app"
 ```
 
-The direct profile is an AppKit `NSStatusItem` host that shells out to the
-Perry-built `relay` binary for queue controls while owning playback
-in Swift with AVFoundation speech. The app reads menu status and settings
-directly from SQLite without scraping message text, while queue mutations and
-app-authorized speech claims still go through the bundled `relay` helper. Right
+The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue
+controls, speech claims, and playback in Swift. The app reads and mutates the
+local SQLite queue directly without scraping or exposing message text. Right
 click opens line controls; left click selects the next queued line for playback.
 When unmuted, the app keeps playing incoming relays on the active line. Other
 lines stay quiet and can be pulled from their line submenu.
 
 Both macOS profiles are packaged from the CLI-only native build and do not
-bundle or launch the legacy processor. The App Store-safe profile is built
-with `TSRS_DISTRIBUTION_PROFILE=app-store` for helper calls. Playback is
-claimed through a constrained helper command and spoken by the app with
-AVFoundation speech using a natural available English voice when possible. The
-App Store-safe settings UI hides external speech and inactive-line combiner
-command templates. The
-constrained app helper commands require `TSRS_PROCESSOR_AUTH=app-owned-processor`,
-so direct terminal use cannot claim or mutate playback state through those
-app-only commands.
+bundle or launch the legacy processor. The App Store-safe profile keeps terminal
+enqueueing disabled and hides external speech and inactive-line combiner command
+templates. Playback is claimed and spoken by the app with AVFoundation speech
+using a natural available English voice when possible.
 
 The profile also exposes a capability seam through `relay settings`. The
 App Store-safe profile reports native speech, line-scoped source actions, no
@@ -115,10 +108,9 @@ terminal enqueue, and line-scoped source action capabilities. No purchase flow
 or StoreKit behavior is implemented yet. `relay status` also reports the active
 profile and capabilities for automation and diagnostics.
 
-The app injects `TSRS_PROCESSOR_AUTH=app-owned-processor` only for constrained
-app helper commands that claim or update playback state. This keeps normal CLI
-usage as a queue and control interface while preserving the app-owned speech
-path.
+Normal CLI usage remains the queue and automation interface for agents, while
+the menu bar app owns interactive queue controls and speech state through native
+SQLite access.
 
 Each line submenu scopes lifecycle controls to that line: play next, skip
 next, clear queue, replay last, acknowledge last, clear delivered, and source
@@ -212,9 +204,8 @@ Global hotkeys:
 
 ## Next slices
 
-1. Move queue mutations and app-authorized speech claim helpers into Swift/Xcode
-   and native macOS APIs while keeping the standard `relay` CLI for agent
-   integrations.
+1. Move more app code into a standard Xcode/Swift project structure while
+   keeping the standard `relay` CLI for agent integrations.
 2. Add signing and notarization packaging for the direct-download app.
 3. Add terminal-specific focus adapters where reliable.
 

@@ -56,7 +56,7 @@ Current state additions:
 8. `relay` is the CLI/native binary.
 9. `relay settings` exposes a capability seam for direct versus App Store-safe behavior, including the one-line free-tier placeholder.
 10. `relay status` exposes the active profile and capabilities for diagnostics.
-11. App-only native playback helper commands require app authorization before claiming or mutating playback state.
+11. App-only native playback helper commands originally required app authorization before claiming or mutating playback state.
 12. The CLI source command surface was removed; source actions live in line submenus.
 13. Documentation now describes profile differences, unavailable App Store-safe features, storage/enqueueing caveats, and an App Review note draft.
 14. `docs/app-store-profile.md` records the App Store-safe profile contract and makes CLI enqueueing a direct-profile capability until a sandbox storage architecture is explicitly chosen.
@@ -76,7 +76,7 @@ Distribution direction update:
 3. App Store-safe profile work remains useful as native/safety hardening, but it should not block direct-download Pro features.
 4. The app should still move toward Swift/Xcode and native macOS APIs wherever practical, reducing dependence on Perry-built app helper behavior over time.
 
-Recommended next slice: direct-download signing/notarization packaging or Swift/Xcode migration of the next app helper surface.
+Recommended next slice: direct-download signing/notarization packaging or Swift/Xcode project migration.
 
 Swift migration update:
 
@@ -85,5 +85,6 @@ Swift migration update:
 3. Both macOS app profiles package only the CLI helper binary, `relay`.
 4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.
 5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to `relay status` or `relay settings`.
+6. The macOS app now mutates queue state and claims/marks speech relays directly through Swift SQLite instead of shelling out to app-only helper commands.
 
-Recommended next Swift migration slice: move queue mutations and app-authorized speech claim/mark helpers behind a native Swift storage boundary.
+Recommended next Swift migration slice: move the native app toward a standard Xcode/Swift project structure and keep the CLI as the agent integration surface.
