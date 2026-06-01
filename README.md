@@ -74,6 +74,10 @@ npm run build:macos
 open "dist/macos/Tri-State Relay Service.app"
 ```
 
+The macOS app is built through
+`src/macos/TriStateRelayService.xcodeproj`; the npm build wrapper still builds
+and bundles the Perry-built `relay` CLI for agent integrations.
+
 The primary distribution direction is a signed and notarized direct-download
 Mac app with a standard bundled or installable `relay` CLI. Future Pro
 licensing should use a direct-download license-key flow rather than StoreKit
@@ -86,6 +90,11 @@ Build the App Store-safe profile:
 npm run build:macos:app-store
 open "dist/macos-app-store/Tri-State Relay Service.app"
 ```
+
+The App Store-safe profile passes the `APP_STORE` Swift compilation condition
+through xcodebuild. The direct profile is the primary dogfooding and
+distribution path. Signing/notarization should copy and sign the bundled
+`relay` helper before sealing the app bundle.
 
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue
 controls, speech claims, and playback in Swift. The app reads and mutates the
@@ -210,9 +219,8 @@ Global hotkeys:
 
 ## Next slices
 
-1. Move more app code into a standard Xcode/Swift project structure while
-   keeping the standard `relay` CLI for agent integrations.
-2. Add signing and notarization packaging for the direct-download app.
+1. Add signing and notarization packaging for the direct-download app.
+2. Split the native app into smaller Swift files under the Xcode project.
 3. Add terminal-specific focus adapters where reliable.
 
 ## App Review note draft

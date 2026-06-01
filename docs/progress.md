@@ -86,5 +86,6 @@ Swift migration update:
 4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.
 5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to `relay status` or `relay settings`.
 6. The macOS app now mutates queue state and claims/marks speech relays directly through Swift SQLite instead of shelling out to app-only helper commands.
+7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj`, with npm scripts still bundling the Perry-built `relay` CLI.
 
-Recommended next Swift migration slice: move the native app toward a standard Xcode/Swift project structure and keep the CLI as the agent integration surface.
+Recommended next slice: add direct-download signing/notarization packaging, then split the native app into smaller Swift files under the Xcode project.

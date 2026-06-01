@@ -15,8 +15,8 @@
     "build:native:cli": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/relay",
     "build:native": "npm run build:native:cli && perry compile src/processor.ts -o dist/native/relay-processor",
     "build:macos": "npm run build:macos:direct",
-    "build:macos:direct": "npm run build:native:cli && rm -rf dist/macos/Tri-State\\ Relay\\ Service.app && mkdir -p dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS && cp src/macos/Info.plist dist/macos/Tri-State\\ Relay\\ Service.app/Contents/Info.plist && swiftc -parse-as-library src/macos/TriStateRelayService.swift -o dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/Tri-State\\ Relay\\ Service && cp dist/native/relay dist/macos/Tri-State\\ Relay\\ Service.app/Contents/MacOS/",
-    "build:macos:app-store": "npm run build:native:cli && rm -rf dist/macos-app-store/Tri-State\\ Relay\\ Service.app && mkdir -p dist/macos-app-store/Tri-State\\ Relay\\ Service.app/Contents/MacOS && cp src/macos/Info.plist dist/macos-app-store/Tri-State\\ Relay\\ Service.app/Contents/Info.plist && swiftc -parse-as-library -D APP_STORE src/macos/TriStateRelayService.swift -o dist/macos-app-store/Tri-State\\ Relay\\ Service.app/Contents/MacOS/Tri-State\\ Relay\\ Service && cp dist/native/relay dist/macos-app-store/Tri-State\\ Relay\\ Service.app/Contents/MacOS/",
+    "build:macos:direct": "node scripts/build-macos.mjs direct",
+    "build:macos:app-store": "node scripts/build-macos.mjs app-store",
     "eval:inactive-line": "node scripts/eval-inactive-line.mjs",
     "perry:check": "perry check src/ --check-deps",
     "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
