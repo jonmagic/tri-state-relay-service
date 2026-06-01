@@ -2,39 +2,6 @@
 
 Tri-State Relay Service is a local macOS agent relay queue. Agents are implementation partners building a safe, quiet coordination layer for many agent sessions sharing one speaker.
 
-## Agent communication updates
-
-Use the CLI chat for summaries, changed files, validation results, risks, and commit-ready status.
-
-Use short spoken/status updates for moments when the human benefits from ambient awareness without reading the terminal.
-
-Send an update when:
-
-1. Starting a meaningful work slice.
-2. Switching phases, such as from investigation to implementation.
-3. Beginning a long-running validation or build.
-4. Getting blocked or needing human input.
-5. Completing a slice with a useful outcome.
-6. Suggesting the next concrete step.
-
-When in doubt, enqueue the short update. Follow-up explanations such as "what's next?" or "ELI5" still benefit from TSRS when they summarize current project direction or close a work slice, even if the chat response itself is brief.
-
-Keep updates brief, intentional, and human-authored. Say what is happening or what changed, not raw details. Do not include code, logs, terminal output, file contents, secrets, private data, or long explanations.
-
-Use TSRS as the transport when available. In this repository, use `./dist/native/relay` when it exists, falling back to `./dist/native/relay` for older builds; otherwise use `npm run build:native` before sending an update:
-
-Choose TSRS line names from the agent's current working directory, not from
-the topic being researched. In this repository the line is `Tri-State Relay
-Service`; an agent working from `~/Brain` should use `Brain` even when it is
-researching TSRS. Mention cross-project targets in the message text instead
-of changing the line.
-
-```sh
-./dist/native/relay --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
-```
-
-Use `--type complete` for completion updates and `--priority high` only when the message needs prompt human attention. Include `--cwd` when safe so source context can be revealed later. The TSRS app owns playback; do not call `/usr/bin/say` directly.
-
 ## Non-negotiables
 
 1. Do not estimate timelines unless the user explicitly asks for an estimate.
