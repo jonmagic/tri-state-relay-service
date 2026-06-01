@@ -26,6 +26,10 @@ When an implementation milestone is complete, validated, and not blocked, commit
 it without waiting for another prompt. Keep unrelated changes in separate
 commits, and call out any remaining uncommitted work or risks in the handoff.
 
+For app-visible macOS changes, rebuild the direct app, quit and reopen that
+rebuilt app, verify the running process points at the rebuilt bundle, and say so
+explicitly in the handoff.
+
 ## Product rules
 
 Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`.
