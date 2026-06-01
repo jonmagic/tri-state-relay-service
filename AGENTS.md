@@ -20,6 +20,12 @@ Use these local skills when their trigger matches the work:
 - `.github/skills/perry/SKILL.md` for Perry library usage, spoken update constraints, and interaction safety.
 - `.github/skills/improvement-loop/SKILL.md` when an agent makes a mistake, misses a requirement, overreaches, or after any significant task.
 
+## Milestone commits
+
+When an implementation milestone is complete, validated, and not blocked, commit
+it without waiting for another prompt. Keep unrelated changes in separate
+commits, and call out any remaining uncommitted work or risks in the handoff.
+
 ## Product rules
 
 Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`.
