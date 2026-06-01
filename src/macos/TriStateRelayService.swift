@@ -267,7 +267,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func playCurrentLineFromHotKey() {
-        model.refresh()
+        model.ready()
+        nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
