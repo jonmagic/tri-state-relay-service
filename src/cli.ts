@@ -51,11 +51,15 @@ function run(parsed: ParsedCommand): void {
     const state = store.getState()
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
-    const lineSources = Object.fromEntries(store.latestSourceContextsByLine().map((source) => [source.line, source]))
+    const lineSources: Record<string, ReturnType<VoicemailStore['latestSourceContext']>> = {}
+
+    for (const lineSource of store.latestSourceContextsByLine()) {
+      lineSources[lineSource.line] = lineSource
+    }
     const lines = store.lineSummaries()
     const overview = store.queueOverview()
 
-    console.log(JSON.stringify({
+    const status = {
       mode: state.mode,
       muted: state.muted,
       inactiveLineCombiner: state.inactiveLineCombiner,
@@ -67,9 +71,14 @@ function run(parsed: ParsedCommand): void {
       attentionCount: counts.queued + counts.heard + counts.failed,
       overview,
       source,
-      lineSources,
       lines,
-    }))
+    }
+
+    if (Object.keys(lineSources).length > 0) {
+      Object.assign(status, { lineSources })
+    }
+
+    console.log(JSON.stringify(status))
     return
   }
 

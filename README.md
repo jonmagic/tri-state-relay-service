@@ -86,6 +86,10 @@ line active before speaking. When unmuted, the app keeps playing incoming
 messages on the active line. Other lines stay quiet and can be pulled from
 their line submenu.
 
+The processor binary refuses direct terminal launches unless the app injects
+`TSRS_PROCESSOR_AUTH=app-owned-processor`. This keeps the CLI as a queue and
+control interface while preserving the app-owned speech path.
+
 Each line submenu scopes lifecycle controls to that line: play next, skip
 next, clear queue, replay last, mark handled, and clear heard. Global controls cover mute, unmute, settings, refresh, and quit.
 Source controls can reveal the latest captured working directory or copy
@@ -182,5 +186,5 @@ Global hotkeys:
 
 ## Next slices
 
-1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
+1. Replace per-click processor launches with one app-supervised processor loop.
 2. Add terminal-specific focus adapters where reliable.

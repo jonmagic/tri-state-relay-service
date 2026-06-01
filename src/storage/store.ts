@@ -89,6 +89,13 @@ export type InactiveLineCombinerFunction = (input: InactiveLineCombineInput) => 
 const schemaVersion = 1
 const defaultQueueOverviewLimit = 10
 export const defaultStaleBlockerAgeMinutes = 15
+const defaultProcessorLockTtlMs = 60_000
+
+export interface ProcessorLockOptions {
+  now?: Date
+  ttlMs?: number
+  isOwnerAlive?: (owner: string) => boolean
+}
 
 export class VoicemailStore {
   readonly path: string
@@ -348,19 +355,21 @@ export class VoicemailStore {
   latestSourceContextsByLine(): SourceContext[] {
     const rows = this.database.prepare(`
       SELECT id, line, session, app, cwd, url
-      FROM (
-        SELECT
-          id,
-          line,
-          session,
-          app,
-          cwd,
-          url,
-          ROW_NUMBER() OVER (PARTITION BY line ORDER BY created_at DESC, id DESC) AS row_number
-        FROM voicemails
-        WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
+      FROM voicemails AS source
+      WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
+        AND id = (
+          SELECT id
+          FROM voicemails AS candidate
+          WHERE candidate.line = source.line
+            AND (
+              candidate.cwd IS NOT NULL
+              OR candidate.url IS NOT NULL
+              OR candidate.app IS NOT NULL
+              OR candidate.session IS NOT NULL
+            )
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
       )
-      WHERE row_number = 1
       ORDER BY line ASC
     `).all()
 
@@ -585,20 +594,35 @@ export class VoicemailStore {
     return row === undefined ? undefined : mapVoicemail(row)
   }
 
-  acquireProcessorLock(owner: string): boolean {
-    const result = this.database.prepare(`
-      INSERT OR IGNORE INTO settings (key, value)
-      VALUES ('processor_lock', ?)
-    `).run(owner)
+  acquireProcessorLock(owner: string, options: ProcessorLockOptions = {}): boolean {
+    const now = options.now ?? new Date()
+    const ttlMs = options.ttlMs ?? defaultProcessorLockTtlMs
+    const isOwnerAlive = options.isOwnerAlive ?? processorOwnerIsAlive
+    const lock = JSON.stringify({ owner, acquiredAt: now.toISOString() })
+    const current = this.getSetting('processor_lock')
 
-    return Number(result.changes) === 1
+    if (current !== undefined && processorLockIsLive(current, now, ttlMs, isOwnerAlive)) {
+      return false
+    }
+
+    this.database.prepare(`
+      INSERT INTO settings (key, value)
+      VALUES ('processor_lock', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(lock)
+
+    return true
   }
 
   releaseProcessorLock(owner: string): void {
     this.database.prepare(`
       DELETE FROM settings
-      WHERE key = 'processor_lock' AND value = ?
-    `).run(owner)
+      WHERE key = 'processor_lock'
+        AND (
+          value = ?
+          OR (json_valid(value) AND json_extract(value, '$.owner') = ?)
+        )
+    `).run(owner, owner)
   }
 
   private migrate(): void {
@@ -742,6 +766,56 @@ function optionalString(value: unknown): string | undefined {
 
 function lastItem<T>(items: T[]): T | undefined {
   return items.length === 0 ? undefined : items[items.length - 1]
+}
+
+function processorLockIsLive(
+  value: string,
+  now: Date,
+  ttlMs: number,
+  isOwnerAlive: (owner: string) => boolean,
+): boolean {
+  const lock = parseProcessorLock(value)
+
+  if (lock === undefined) {
+    return true
+  }
+
+  const acquiredAt = Date.parse(lock.acquiredAt)
+
+  if (Number.isNaN(acquiredAt) || now.getTime() - acquiredAt > ttlMs) {
+    return false
+  }
+
+  return isOwnerAlive(lock.owner)
+}
+
+function parseProcessorLock(value: string): { owner: string, acquiredAt: string } | undefined {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+
+    if (typeof parsed.owner === 'string' && typeof parsed.acquiredAt === 'string') {
+      return { owner: parsed.owner, acquiredAt: parsed.acquiredAt }
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
+
+function processorOwnerIsAlive(owner: string): boolean {
+  const match = /^processor:(\d+)$/.exec(owner)
+
+  if (match === null) {
+    return true
+  }
+
+  try {
+    process.kill(Number(match[1]), 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function escapeSql(value: string): string {

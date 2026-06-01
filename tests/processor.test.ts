@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { processOneLineVoicemail, processOneVoicemail, processOneVoicemailWithLock, type SpeechResult } from '../src/processor.ts'
+import { appProcessorAuthorization, appProcessorAuthorizationEnv, processOneLineVoicemail, processOneVoicemail, processOneVoicemailWithLock, processorIsAppAuthorized, type SpeechResult } from '../src/processor.ts'
 import { VoicemailStore } from '../src/storage/store.ts'
 
 test('processor marks one ready voicemail heard after successful speech', () => {
@@ -113,6 +113,30 @@ test('processor lock is released after processing', () => {
   store.close()
 })
 
+test('processor lock keeps live owners and reclaims stale or dead owners', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const now = new Date('2026-05-31T19:00:00.000Z')
+
+  assert.equal(store.acquireProcessorLock('processor:123', {
+    now,
+    isOwnerAlive: () => true,
+  }), true)
+  assert.equal(store.acquireProcessorLock('processor:456', {
+    now: new Date('2026-05-31T19:00:10.000Z'),
+    isOwnerAlive: () => true,
+  }), false)
+  assert.equal(store.acquireProcessorLock('processor:456', {
+    now: new Date('2026-05-31T19:00:10.000Z'),
+    isOwnerAlive: () => false,
+  }), true)
+  assert.equal(store.acquireProcessorLock('processor:789', {
+    now: new Date('2026-05-31T19:02:00.000Z'),
+    isOwnerAlive: () => true,
+  }), true)
+  store.releaseProcessorLock('processor:789')
+  store.close()
+})
+
 test('processor can claim one voicemail from a specific active line', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   store.enqueue({ line: 'Other', message: 'Other line update.' })
@@ -128,6 +152,12 @@ test('processor can claim one voicemail from a specific active line', () => {
   assert.deepEqual(spoken, ['Brain. Active line update.'])
   assert.equal(store.list().find((voicemail) => voicemail.line === 'Other')?.status, 'queued')
   store.close()
+})
+
+test('processor main entrypoint requires app authorization', () => {
+  assert.equal(processorIsAppAuthorized({}), false)
+  assert.equal(processorIsAppAuthorized({ [appProcessorAuthorizationEnv]: 'wrong' }), false)
+  assert.equal(processorIsAppAuthorized({ [appProcessorAuthorizationEnv]: appProcessorAuthorization }), true)
 })
 
 function temporaryDatabasePath(): string {

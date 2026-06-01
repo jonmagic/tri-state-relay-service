@@ -19,6 +19,13 @@ export interface ProcessOneResult {
 
 export type SpeakVoicemail = (text: string) => SpeechResult
 
+export const appProcessorAuthorization = 'app-owned-processor'
+export const appProcessorAuthorizationEnv = 'TSRS_PROCESSOR_AUTH'
+
+export function processorIsAppAuthorized(env: Record<string, string | undefined> = process.env): boolean {
+  return env[appProcessorAuthorizationEnv] === appProcessorAuthorization
+}
+
 export function processOneVoicemailWithLock(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
@@ -99,6 +106,12 @@ function lineArg(args: string[]): string | undefined {
 
 if (isMainModule()) {
   const store = new VoicemailStore()
+
+  if (!processorIsAppAuthorized()) {
+    console.error('voicemail-processor can only be launched by the TSRS app')
+    store.close()
+    process.exit(1)
+  }
 
   try {
     const line = lineArg(process.argv.slice(2))

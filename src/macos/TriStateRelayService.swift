@@ -30,7 +30,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-
         refreshStatusItem()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.model.playActiveLine()
@@ -817,6 +816,7 @@ final class MenuBarModel {
 
         process.executableURL = executableURL
         process.arguments = arguments
+        process.environment = processEnvironment(for: name)
         process.standardOutput = output
         process.standardError = output
 
@@ -831,25 +831,38 @@ final class MenuBarModel {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    private func runExecutableAsync(named name: String, arguments: [String]) {
+    @discardableResult
+    private func runExecutableAsync(named name: String, arguments: [String]) -> Process? {
         guard let executableURL = Bundle.main.executableURL?
             .deletingLastPathComponent()
             .appendingPathComponent(name)
         else {
-            return
+            return nil
         }
         let process = Process()
 
         process.executableURL = executableURL
         process.arguments = arguments
+        process.environment = processEnvironment(for: name)
         process.standardOutput = Pipe()
         process.standardError = Pipe()
 
         do {
             try process.run()
+            return process
         } catch {
-            return
+            return nil
         }
+    }
+
+    private func processEnvironment(for name: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+
+        if name == "voicemail-processor" {
+            environment["TSRS_PROCESSOR_AUTH"] = "app-owned-processor"
+        }
+
+        return environment
     }
 }
 
