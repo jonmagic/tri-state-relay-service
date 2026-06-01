@@ -10,6 +10,7 @@ export interface NativeMenuBarItem {
 
 export interface NativeMenuBarRenderModel {
   title: string
+  overview: string[]
   items: NativeMenuBarItem[]
 }
 
@@ -48,6 +49,7 @@ export function renderModel(snapshot: MenuBarSnapshot): NativeMenuBarRenderModel
 
   return {
     title: snapshot.title,
+    overview: overviewLines(status),
     items: [
       { id: 'ready', label: 'Ready', enabled: status.mode !== 'ready' },
       { id: 'focus', label: 'Focus', enabled: status.mode !== 'focus' },
@@ -56,4 +58,16 @@ export function renderModel(snapshot: MenuBarSnapshot): NativeMenuBarRenderModel
       { id: 'clear', label: 'Clear Queue', enabled: status.attentionCount > 0 },
     ],
   }
+}
+
+function overviewLines(status: MenuBarSnapshot['status']): string[] {
+  const staleBlockers = status.overview.staleBlockers.count > 0
+    ? [`Stale blockers: ${status.overview.staleBlockers.count}`]
+    : []
+
+  return [
+    ...status.overview.byPriority.map((item) => `Priority: ${item.priority} ${item.count}`),
+    ...status.overview.byProducer.map((item) => `Producer: ${item.producer} ${item.count}`),
+    ...staleBlockers,
+  ]
 }

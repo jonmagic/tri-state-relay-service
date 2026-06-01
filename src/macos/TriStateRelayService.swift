@@ -226,6 +226,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         for item in lineMenuItems() {
             menu.addItem(item)
         }
+        for item in overviewMenuItems() {
+            menu.addItem(item)
+        }
         if model.status.hasSource {
             menu.addItem(.separator())
 
@@ -248,6 +251,27 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    private func overviewMenuItems() -> [NSMenuItem] {
+        let items = model.status.overviewItems
+
+        if items.isEmpty {
+            return []
+        }
+
+        var menuItems = [NSMenuItem.separator()]
+        let overview = NSMenuItem(title: "Overview", action: nil, keyEquivalent: "")
+        overview.isEnabled = false
+        menuItems.append(overview)
+
+        for item in items {
+            let menuItem = NSMenuItem(title: item, action: nil, keyEquivalent: "")
+            menuItem.isEnabled = false
+            menuItems.append(menuItem)
+        }
+
+        return menuItems
     }
 
     private func playCurrentLineFromHotKey() {
@@ -530,7 +554,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], sourcePath: nil, sourceURL: nil)
 
     init() {
         refresh()
@@ -693,7 +717,7 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
@@ -705,11 +729,12 @@ final class MenuBarModel {
         let speaking = intValue(counts["speaking"])
         let heard = intValue(counts["heard"])
         let lines = parseLines(json["lines"])
+        let overviewItems = parseOverviewItems(json["overview"])
         let source = json["source"] as? [String: Any]
         let cwd = source?["cwd"] as? String
         let url = source?["url"] as? String
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, overviewItems: overviewItems, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
@@ -792,6 +817,7 @@ struct QueueStatus {
     let inactiveLineCombiner: String
     let activeLine: String?
     let lines: [LineSummary]
+    let overviewItems: [String]
     let sourcePath: String?
     let sourceURL: String?
 
@@ -905,4 +931,39 @@ private func parseLines(_ value: Any?) -> [LineSummary] {
             failed: intValue(row["failed"]),
         )
     }
+}
+
+private func parseOverviewItems(_ value: Any?) -> [String] {
+    guard let overview = value as? [String: Any] else {
+        return []
+    }
+
+    let priorities = overview["byPriority"] as? [[String: Any]] ?? []
+    let producers = overview["byProducer"] as? [[String: Any]] ?? []
+    let staleBlockers = overview["staleBlockers"] as? [String: Any] ?? [:]
+    var items: [String] = []
+
+    for priority in priorities {
+        guard let name = priority["priority"] as? String else {
+            continue
+        }
+
+        items.append("Priority \(name): \(intValue(priority["count"]))")
+    }
+
+    for producer in producers {
+        guard let name = producer["producer"] as? String else {
+            continue
+        }
+
+        items.append("Producer \(name): \(intValue(producer["count"]))")
+    }
+
+    let staleCount = intValue(staleBlockers["count"])
+
+    if staleCount > 0 {
+        items.append("Stale blockers: \(staleCount)")
+    }
+
+    return items
 }

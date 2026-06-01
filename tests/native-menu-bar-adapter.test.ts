@@ -20,6 +20,10 @@ test('native menu bar render model exposes safe title and controls', () => {
   const model = renderModel(shell.ready())
 
   assert.equal(model.title, 'TSRS ready (1)')
+  assert.deepEqual(model.overview, [
+    'Priority: normal 1',
+    'Producer: unknown 1',
+  ])
   assert.equal(JSON.stringify(model).includes('Do not render this message text.'), false)
   assert.deepEqual(model.items, [
     { id: 'ready', label: 'Ready', enabled: false },
