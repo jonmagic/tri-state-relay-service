@@ -102,6 +102,11 @@ export interface SpokenLineState {
   spokenAt: string
 }
 
+export interface StaleSpeakingOptions {
+  now?: Date
+  ttlMs?: number
+}
+
 export class VoicemailStore {
   readonly path: string
   readonly database: Database.Database
@@ -115,6 +120,16 @@ export class VoicemailStore {
 
   close(): void {
     this.database.close()
+  }
+
+  queuedCountForLine(line: string): number {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM voicemails
+      WHERE status = 'queued' AND line = ?
+    `).get(line) as { count: number }
+
+    return Number(row.count)
   }
 
   enqueue(input: NewVoicemailInput): Voicemail {
@@ -597,6 +612,19 @@ export class VoicemailStore {
     }
 
     return mapVoicemail(row)
+  }
+
+  failStaleSpeaking(options: StaleSpeakingOptions = {}): number {
+    const now = options.now ?? new Date()
+    const ttlMs = options.ttlMs ?? 60_000
+    const staleBefore = new Date(now.getTime() - ttlMs).toISOString()
+    const result = this.database.prepare(`
+      UPDATE voicemails
+      SET status = 'failed', updated_at = ?
+      WHERE status = 'speaking' AND updated_at <= ?
+    `).run(now.toISOString(), staleBefore)
+
+    return Number(result.changes)
   }
 
   private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Voicemail | undefined {

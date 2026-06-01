@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { appProcessorAuthorization, appProcessorAuthorizationEnv, processOneLineVoicemail, processOneVoicemail, processOneVoicemailWithLock, processorIsAppAuthorized, type SpeechResult } from '../src/processor.ts'
+import { appProcessorAuthorization, appProcessorAuthorizationEnv, processOneAppLoopVoicemailWithLock, processOneLineVoicemail, processOneVoicemail, processOneVoicemailWithLock, processorIsAppAuthorized, type SpeechResult } from '../src/processor.ts'
 import { VoicemailStore } from '../src/storage/store.ts'
 
 test('processor marks one ready voicemail heard after successful speech', () => {
@@ -145,6 +145,61 @@ test('processor lock is released after processing', () => {
   assert.equal(result.status, 'heard')
   assert.equal(store.acquireProcessorLock('next-processor'), true)
   store.releaseProcessorLock('next-processor')
+  store.close()
+})
+
+test('app loop prefers the current active line and follows line changes', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const firstBrain = store.enqueue({ line: 'Brain', message: 'Brain first.' })
+  const tsrs = store.enqueue({ line: 'TSRS', message: 'TSRS update.' })
+  const secondBrain = store.enqueue({ line: 'Brain', message: 'Brain second.' })
+  const spoken: string[] = []
+
+  store.setActiveLine('Brain')
+  assert.deepEqual(processOneAppLoopVoicemailWithLock(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  }), { status: 'heard', exitCode: 0, voicemailId: firstBrain.id })
+
+  store.setActiveLine('TSRS')
+  assert.deepEqual(processOneAppLoopVoicemailWithLock(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  }), { status: 'heard', exitCode: 0, voicemailId: tsrs.id })
+
+  store.setMode('ready')
+  assert.deepEqual(processOneAppLoopVoicemailWithLock(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  }), { status: 'heard', exitCode: 0, voicemailId: secondBrain.id })
+
+  assert.deepEqual(spoken, [
+    'Brain. Brain first.',
+    'TSRS. TSRS update.',
+    'Brain. Brain second.',
+  ])
+  store.close()
+})
+
+test('app loop fails stale speaking rows before claiming the next voicemail', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const stale = store.enqueue({ line: 'Brain', message: 'Stale speaking.' })
+  const queued = store.enqueue({ line: 'Brain', message: 'Fresh update.' })
+  const spoken: string[] = []
+  store.markStatus(stale.id, 'speaking')
+  store.database.prepare(`
+    UPDATE voicemails
+    SET updated_at = '2026-05-31T19:00:00.000Z'
+    WHERE id = ?
+  `).run(stale.id)
+  store.setActiveLine('Brain')
+
+  assert.deepEqual(processOneAppLoopVoicemailWithLock(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  }), { status: 'heard', exitCode: 0, voicemailId: queued.id })
+  assert.equal(store.list().find((voicemail) => voicemail.id === stale.id)?.status, 'failed')
+  assert.deepEqual(spoken, ['Brain. Fresh update.'])
   store.close()
 })
 

@@ -7,6 +7,8 @@ import { buildCommandInvocation } from './core/command-template.ts'
 import { spokenText } from './core/message.ts'
 import { VoicemailStore } from './storage/store.ts'
 
+const speechTimeoutMs = 30_000
+
 export interface SpeechResult {
   status: number | null
 }
@@ -38,6 +40,17 @@ export function processOneVoicemailWithLock(store: VoicemailStore, speak?: Speak
   } finally {
     store.releaseProcessorLock(owner)
   }
+}
+
+export function processOneAppLoopVoicemailWithLock(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
+  store.failStaleSpeaking()
+  const activeLine = store.getState().activeLine
+
+  if (activeLine !== undefined && store.queuedCountForLine(activeLine) > 0) {
+    return processOneLineVoicemailWithLock(store, activeLine, speak)
+  }
+
+  return processOneVoicemailWithLock(store, speak)
 }
 
 export function processOneVoicemail(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
@@ -81,7 +94,7 @@ function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<Vo
 }
 
 export function speakWithSay(text: string): SpeechResult {
-  return spawnSync('/usr/bin/say', [text], { stdio: 'ignore' })
+  return spawnSync('/usr/bin/say', [text], { stdio: 'ignore', timeout: speechTimeoutMs })
 }
 
 function configuredSpeaker(store: VoicemailStore): SpeakVoicemail {
@@ -92,7 +105,7 @@ function configuredSpeaker(store: VoicemailStore): SpeakVoicemail {
       return { status: 1 }
     }
 
-    return spawnSync(invocation.command, invocation.args, { stdio: 'ignore' })
+    return spawnSync(invocation.command, invocation.args, { stdio: 'ignore', timeout: speechTimeoutMs })
   }
 }
 
@@ -106,6 +119,14 @@ function lineArg(args: string[]): string | undefined {
   return args[index + 1]
 }
 
+function hasArg(args: string[], arg: string): boolean {
+  return args.includes(arg)
+}
+
+function appLoopParentIsAlive(): boolean {
+  return process.ppid > 1
+}
+
 if (isMainModule()) {
   const store = new VoicemailStore()
 
@@ -116,13 +137,30 @@ if (isMainModule()) {
   }
 
   try {
-    const line = lineArg(process.argv.slice(2))
-    const result = line === undefined
-      ? processOneVoicemailWithLock(store)
-      : processOneLineVoicemailWithLock(store, line)
-    process.exitCode = result.exitCode
-  } finally {
+    const args = process.argv.slice(2)
+
+    if (hasArg(args, '--app-loop')) {
+      const interval = setInterval(() => {
+        if (!appLoopParentIsAlive()) {
+          clearInterval(interval)
+          store.close()
+          process.exit(0)
+        }
+
+        processOneAppLoopVoicemailWithLock(store)
+      }, 1000)
+      processOneAppLoopVoicemailWithLock(store)
+    } else {
+      const line = lineArg(args)
+      const result = line === undefined
+        ? processOneVoicemailWithLock(store)
+        : processOneLineVoicemailWithLock(store, line)
+      process.exitCode = result.exitCode
+      store.close()
+    }
+  } catch (error) {
     store.close()
+    throw error
   }
 }
 

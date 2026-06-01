@@ -9,6 +9,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var playbackRefreshTimer: Timer?
+    private var processorLoop: Process?
+    private var processorLoopFailures = 0
+    private var lastProcessorLoopFailure: Date?
     private var settingsWindowController: SettingsWindowController?
     private var playCurrentLineHotKey: EventHotKeyRef?
     private var openMenuHotKey: EventHotKeyRef?
@@ -31,8 +34,10 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         refreshStatusItem()
+        startProcessorLoop()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.model.playActiveLine()
+            self?.model.refresh()
+            self?.startProcessorLoop()
             self?.refreshStatusItem()
             self?.schedulePlaybackRefresh()
         }
@@ -41,6 +46,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        processorLoop?.terminate()
         unregisterGlobalHotKeys()
     }
 
@@ -292,7 +298,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func playCurrentLineFromHotKey() {
-        model.playActiveLine()
+        model.refresh()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -301,6 +307,41 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.refresh()
         refreshStatusItem()
         showMenu()
+    }
+
+    private func startProcessorLoop() {
+        guard processorLoop == nil || processorLoop?.isRunning == false else {
+            return
+        }
+
+        let process = model.startProcessorLoop()
+        processorLoop = process
+        process?.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.processorLoopTerminated()
+            }
+        }
+    }
+
+    private func processorLoopTerminated() {
+        processorLoop = nil
+        let now = Date()
+
+        if let lastProcessorLoopFailure, now.timeIntervalSince(lastProcessorLoopFailure) > 30 {
+            processorLoopFailures = 0
+        }
+
+        processorLoopFailures += 1
+        lastProcessorLoopFailure = now
+
+        if processorLoopFailures > 3 {
+            NSLog("TSRS processor loop stopped after repeated failures")
+            return
+        }
+
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
+            self?.startProcessorLoop()
+        }
     }
 
     private func menuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
@@ -603,10 +644,8 @@ final class MenuBarModel {
 
         if let line = currentStatus.nextQueuedLine {
             setActiveLine(line)
-            runProcessorAsync(line: line)
         } else {
             runVoicemail("ready")
-            runProcessorAsync()
         }
         refresh()
     }
@@ -624,7 +663,6 @@ final class MenuBarModel {
             return
         }
 
-        runProcessorAsync(line: activeLine)
         refresh()
     }
 
@@ -721,6 +759,10 @@ final class MenuBarModel {
     func setActiveLine(_ line: String) {
         runVoicemail("line", arguments: [line])
         refresh()
+    }
+
+    func startProcessorLoop() -> Process? {
+        runExecutableAsync(named: "voicemail-processor", arguments: ["--app-loop"])
     }
 
     func loadSettings() -> SettingsSnapshot {

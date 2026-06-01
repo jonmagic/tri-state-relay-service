@@ -79,12 +79,12 @@ open "dist/macos/Tri-State Relay Service.app"
 ```
 
 The menu bar app is an AppKit `NSStatusItem` host that shells out to the
-Perry-built `voicemail` and `voicemail-processor` binaries. The app reads
-`voicemail status` JSON rather than scraping message text. Right click
-opens line controls; left click plays one queued voicemail and makes that
-line active before speaking. When unmuted, the app keeps playing incoming
-messages on the active line. Other lines stay quiet and can be pulled from
-their line submenu.
+Perry-built `voicemail` binary for queue controls and supervises one
+app-owned `voicemail-processor --app-loop` child for playback. The app reads
+`voicemail status` JSON rather than scraping message text. Right click opens
+line controls; left click selects the next queued line for playback. When
+unmuted, the processor loop keeps playing incoming messages on the active
+line. Other lines stay quiet and can be pulled from their line submenu.
 
 The processor binary refuses direct terminal launches unless the app injects
 `TSRS_PROCESSOR_AUTH=app-owned-processor`. This keeps the CLI as a queue and
@@ -186,5 +186,4 @@ Global hotkeys:
 
 ## Next slices
 
-1. Replace per-click processor launches with one app-supervised processor loop.
-2. Add terminal-specific focus adapters where reliable.
+1. Add terminal-specific focus adapters where reliable.
