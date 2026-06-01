@@ -5,10 +5,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { MenuBarAppShell, menuBarTitle, type MenuBarSnapshot } from '../src/app/menu-bar-shell.ts'
-import { VoicemailStore } from '../src/storage/store.ts'
+import { RelayStore } from '../src/storage/store.ts'
 
 test('menu bar shell exposes focus ready and mute snapshots', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const snapshots: MenuBarSnapshot[] = []
   const shell = new MenuBarAppShell(store, { onSnapshot: (snapshot) => snapshots.push(snapshot) })
   store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
@@ -28,7 +28,7 @@ test('menu bar shell exposes focus ready and mute snapshots', () => {
 })
 
 test('menu bar shell updates snapshot after app-owned processor loop runs', async () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const snapshots: MenuBarSnapshot[] = []
   const shell = new MenuBarAppShell(store, {
     maxIterations: 1,
@@ -47,7 +47,7 @@ test('menu bar shell updates snapshot after app-owned processor loop runs', asyn
 })
 
 test('menu bar title summarizes state without exposing message text', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const shell = new MenuBarAppShell(store)
   store.enqueue({ line: 'Brain', message: 'Secret-looking content should stay out of the title.' })
 
@@ -59,5 +59,5 @@ test('menu bar title summarizes state without exposing message text', () => {
 })
 
 function temporaryDatabasePath(): string {
-  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
+  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'relay.db')
 }

@@ -1,5 +1,12 @@
 import AppKit
+import AVFoundation
 import Carbon.HIToolbox
+
+#if APP_STORE
+let distributionProfile = "app-store"
+#else
+let distributionProfile = "direct"
+#endif
 
 @main
 final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
@@ -9,12 +16,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var playbackRefreshTimer: Timer?
-    private var processorLoop: Process?
-    private var processorLoopFailures = 0
-    private var lastProcessorLoopFailure: Date?
     private var settingsWindowController: SettingsWindowController?
     private var playCurrentLineHotKey: EventHotKeyRef?
     private var openMenuHotKey: EventHotKeyRef?
+    private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
+        self?.refreshStatusItem()
+    }
 
     static func main() {
         let app = NSApplication.shared
@@ -34,10 +41,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         refreshStatusItem()
-        startProcessorLoop()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.model.refresh()
-            self?.startProcessorLoop()
+            self?.nativePlayback.playNext()
             self?.refreshStatusItem()
             self?.schedulePlaybackRefresh()
         }
@@ -46,7 +52,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
-        processorLoop?.terminate()
         unregisterGlobalHotKeys()
     }
 
@@ -59,12 +64,14 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
 
         model.playNext()
+        nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
 
     @objc private func ready() {
         model.ready()
+        nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -96,6 +103,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     @objc private func replayLast() {
         model.replayLast()
+        nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -134,6 +142,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
 
         model.replayLast(line: line)
+        nativePlayback.playNext(line: line)
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -205,6 +214,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         model.setActiveLine(line)
         model.playActiveLine()
+        nativePlayback.playNext(line: line)
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -225,6 +235,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     @objc private func linePlayNext() {
         model.ready()
+        nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
     }
@@ -309,41 +320,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         showMenu()
     }
 
-    private func startProcessorLoop() {
-        guard processorLoop == nil || processorLoop?.isRunning == false else {
-            return
-        }
-
-        let process = model.startProcessorLoop()
-        processorLoop = process
-        process?.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.processorLoopTerminated()
-            }
-        }
-    }
-
-    private func processorLoopTerminated() {
-        processorLoop = nil
-        let now = Date()
-
-        if let lastProcessorLoopFailure, now.timeIntervalSince(lastProcessorLoopFailure) > 30 {
-            processorLoopFailures = 0
-        }
-
-        processorLoopFailures += 1
-        lastProcessorLoopFailure = now
-
-        if processorLoopFailures > 3 {
-            NSLog("TSRS processor loop stopped after repeated failures")
-            return
-        }
-
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
-            self?.startProcessorLoop()
-        }
-    }
-
     private func menuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -355,15 +331,15 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         let lines = model.status.menuLines
 
         if lines.isEmpty {
-            return [lineMenuItem(line: model.status.activeLineTitle, queued: 0, heard: 0, failed: 0)]
+            return [lineMenuItem(line: model.status.activeLineTitle, queued: 0, delivered: 0, failed: 0)]
         }
 
         return lines.map { line in
-            lineMenuItem(line: line.line, queued: line.queued, heard: line.heard, failed: line.failed)
+            lineMenuItem(line: line.line, queued: line.queued, delivered: line.heard, failed: line.failed)
         }
     }
 
-    private func lineMenuItem(line: String, queued: Int, heard: Int, failed: Int) -> NSMenuItem {
+    private func lineMenuItem(line: String, queued: Int, delivered: Int, failed: Int) -> NSMenuItem {
         let suffix = line == model.status.activeLine ? " ✓" : ""
         let item = NSMenuItem(title: "\(line) (\(queued) queued)\(suffix)", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
@@ -402,16 +378,16 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 submenu.addItem(clearQueue)
             }
 
-            if heard > 0 {
+            if delivered > 0 {
                 let replay = menuItem("Replay Last", action: #selector(replayLineLast(_:)), enabled: true)
                 replay.representedObject = line
                 submenu.addItem(replay)
 
-                let handled = menuItem("Mark Handled", action: #selector(markLineHandled(_:)), enabled: true)
+                let handled = menuItem("Acknowledge Last", action: #selector(markLineHandled(_:)), enabled: true)
                 handled.representedObject = line
                 submenu.addItem(handled)
 
-                let clearHeard = menuItem("Clear Heard", action: #selector(clearLineHeard(_:)), enabled: true)
+                let clearHeard = menuItem("Clear Delivered", action: #selector(clearLineHeard(_:)), enabled: true)
                 clearHeard.representedObject = line
                 submenu.addItem(clearHeard)
             }
@@ -542,8 +518,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let tabView = NSTabView(frame: NSRect(x: 0, y: 48, width: 720, height: 432))
         tabView.autoresizingMask = [.width, .height]
+#if APP_STORE
+        tabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner and speech command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
+#else
         tabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
         tabView.addTabViewItem(Self.tabItem(label: "Speech", textView: speechTextView))
+#endif
 
         let saveButton = NSButton(title: "Save", target: nil, action: nil)
         saveButton.frame = NSRect(x: 608, y: 12, width: 88, height: 28)
@@ -584,12 +564,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func save() {
+#if APP_STORE
+        reload()
+        onSave()
+#else
         model.saveSettings(
             inactiveLineCombinerCommand: combinerTextView.string,
             speechCommand: speechTextView.string
         )
         reload()
         onSave()
+#endif
     }
 
     private func reload() {
@@ -625,6 +610,93 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         item.view = container
         return item
     }
+
+    private static func readOnlyTabItem(label: String, message: String) -> NSTabViewItem {
+        let textField = NSTextField(labelWithString: message)
+        textField.frame = NSRect(x: 16, y: 320, width: 672, height: 48)
+        textField.lineBreakMode = .byWordWrapping
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
+        container.addSubview(textField)
+
+        let item = NSTabViewItem(identifier: label)
+        item.label = label
+        item.view = container
+        return item
+    }
+}
+
+final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
+    private let model: MenuBarModel
+    private let onChange: () -> Void
+    private var currentId: Int?
+    private let synthesizer = AVSpeechSynthesizer()
+    private let voice = preferredRelayVoice()
+
+    init(model: MenuBarModel, onChange: @escaping () -> Void) {
+        self.model = model
+        self.onChange = onChange
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func playNext(line: String? = nil) {
+        guard !synthesizer.isSpeaking else {
+            return
+        }
+
+        guard let claim = model.claimNextForNativeSpeech(line: line) else {
+            model.refresh()
+            onChange()
+            return
+        }
+
+        currentId = claim.id
+
+        let utterance = AVSpeechUtterance(string: claim.text)
+        utterance.voice = voice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        utterance.pitchMultiplier = 1
+        synthesizer.speak(utterance)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        guard let id = currentId else {
+            return
+        }
+
+        model.markNativeSpeechHeard(id: id)
+        currentId = nil
+        onChange()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        guard let id = currentId else {
+            return
+        }
+
+        model.markNativeSpeechFailed(id: id)
+        currentId = nil
+        onChange()
+    }
+}
+
+private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
+    let voices = AVSpeechSynthesisVoice.speechVoices()
+    let preferredNames = ["Samantha", "Ava", "Susan", "Tom", "Allison"]
+
+    for name in preferredNames {
+        if let voice = voices.first(where: { $0.name == name && $0.language.hasPrefix("en") }) {
+            return voice
+        }
+    }
+
+    if let enhancedVoice = voices.first(where: { $0.language.hasPrefix("en") && $0.quality == .enhanced }) {
+        return enhancedVoice
+    }
+
+    return AVSpeechSynthesisVoice(language: Locale.current.identifier)
+        ?? AVSpeechSynthesisVoice(language: "en-US")
 }
 
 final class MenuBarModel {
@@ -645,7 +717,7 @@ final class MenuBarModel {
         if let line = currentStatus.nextQueuedLine {
             setActiveLine(line)
         } else {
-            runVoicemail("ready")
+            runRelay("ready")
         }
         refresh()
     }
@@ -671,102 +743,130 @@ final class MenuBarModel {
     }
 
     func focus() {
-        runVoicemail("focus")
+        runRelay("focus")
         refresh()
     }
 
     func mute() {
-        runVoicemail("mute")
+        runRelay("mute")
         refresh()
     }
 
     func unmute() {
-        runVoicemail("unmute")
+        runRelay("unmute")
         refresh()
     }
 
     func clear() {
-        runVoicemail("clear")
+        runRelay("clear")
         refresh()
     }
 
     func clear(line: String) {
-        runVoicemail("clear-line", arguments: ["--line", line])
+        runRelay("clear-line", arguments: ["--line", line])
         refresh()
     }
 
     func skipNext() {
-        runVoicemail("skip-next")
+        runRelay("skip-next")
         refresh()
     }
 
     func skipNext(line: String) {
-        runVoicemail("skip-next", arguments: ["--line", line])
+        runRelay("skip-next", arguments: ["--line", line])
         refresh()
     }
 
     func replayLast() {
-        runVoicemail("replay-last")
+        runRelay("replay-last")
         playNext()
     }
 
     func replayLast(line: String) {
-        runVoicemail("replay-last", arguments: ["--line", line])
+        runRelay("replay-last", arguments: ["--line", line])
         setActiveLine(line)
         playActiveLine()
     }
 
     func markHandled() {
-        runVoicemail("mark-handled")
+        runRelay("acknowledge")
         refresh()
     }
 
     func markHandled(line: String) {
-        runVoicemail("mark-handled", arguments: ["--line", line])
+        runRelay("acknowledge", arguments: ["--line", line])
         refresh()
     }
 
     func clearHeard() {
-        runVoicemail("clear-heard")
+        runRelay("clear-delivered")
         refresh()
     }
 
     func clearHeard(line: String) {
-        runVoicemail("clear-heard", arguments: ["--line", line])
+        runRelay("clear-delivered", arguments: ["--line", line])
         refresh()
     }
 
     func revealSource() {
-        runVoicemail("reveal-source")
+        revealNativeSource(status.sourcePath)
         refresh()
     }
 
     func revealSource(line: String) {
-        runVoicemail("reveal-source", arguments: ["--line", line])
+        revealNativeSource(status.lineSources[line]?.path)
         refresh()
     }
 
     func copySource() {
-        runVoicemail("copy-source")
+        copyNativeSource(status.sourcePath ?? status.sourceURL)
         refresh()
     }
 
     func copySource(line: String) {
-        runVoicemail("copy-source", arguments: ["--line", line])
+        let source = status.lineSources[line]
+        copyNativeSource(source?.path ?? source?.url)
         refresh()
     }
 
     func setActiveLine(_ line: String) {
-        runVoicemail("line", arguments: [line])
+        runRelay("line", arguments: [line])
         refresh()
     }
 
-    func startProcessorLoop() -> Process? {
-        runExecutableAsync(named: "voicemail-processor", arguments: ["--app-loop"])
+    func claimNextForNativeSpeech(line: String? = nil) -> NativeSpeechClaim? {
+        var arguments: [String] = []
+
+        if let line {
+            arguments = ["--line", line]
+        }
+
+        let output = runRelay("app-claim-next", arguments: arguments)
+
+        guard
+            let data = output.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let id = json["id"] as? Int,
+            let text = json["text"] as? String
+        else {
+            return nil
+        }
+
+        return NativeSpeechClaim(id: id, text: text)
+    }
+
+    func markNativeSpeechHeard(id: Int) {
+        runRelay("app-mark-heard", arguments: ["--id", String(id)])
+        refresh()
+    }
+
+    func markNativeSpeechFailed(id: Int) {
+        runRelay("app-mark-failed", arguments: ["--id", String(id)])
+        refresh()
     }
 
     func loadSettings() -> SettingsSnapshot {
-        let output = runVoicemail("settings")
+        let output = runRelay("settings")
 
         guard
             let data = output.data(using: .utf8),
@@ -782,7 +882,7 @@ final class MenuBarModel {
     }
 
     func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
-        runVoicemail("settings", arguments: [
+        runRelay("settings", arguments: [
             "--combiner-command",
             inactiveLineCombinerCommand,
             "--speech-command",
@@ -796,7 +896,7 @@ final class MenuBarModel {
     }
 
     private func loadStatus() -> QueueStatus {
-        let output = runVoicemail("status")
+        let output = runRelay("status")
 
         guard
             let data = output.data(using: .utf8),
@@ -824,26 +924,13 @@ final class MenuBarModel {
     }
 
     @discardableResult
-    private func runVoicemail(_ command: String) -> String {
-        runVoicemail(command, arguments: [])
+    private func runRelay(_ command: String) -> String {
+        runRelay(command, arguments: [])
     }
 
     @discardableResult
-    private func runVoicemail(_ command: String, arguments: [String]) -> String {
-        runExecutable(named: "voicemail", arguments: [command] + arguments)
-    }
-
-    @discardableResult
-    private func runProcessor() -> String {
-        runExecutable(named: "voicemail-processor", arguments: [])
-    }
-
-    private func runProcessorAsync() {
-        runExecutableAsync(named: "voicemail-processor", arguments: [])
-    }
-
-    private func runProcessorAsync(line: String) {
-        runExecutableAsync(named: "voicemail-processor", arguments: ["--line", line])
+    private func runRelay(_ command: String, arguments: [String]) -> String {
+        runExecutable(named: "relay", arguments: [command] + arguments)
     }
 
     private func runExecutable(named name: String, arguments: [String]) -> String {
@@ -899,13 +986,36 @@ final class MenuBarModel {
 
     private func processEnvironment(for name: String) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
+        environment["TSRS_DISTRIBUTION_PROFILE"] = distributionProfile
 
-        if name == "voicemail-processor" {
+        if name == "relay" {
             environment["TSRS_PROCESSOR_AUTH"] = "app-owned-processor"
         }
 
         return environment
     }
+
+    private func revealNativeSource(_ path: String?) {
+        guard let path else {
+            return
+        }
+
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    private func copyNativeSource(_ value: String?) {
+        guard let value else {
+            return
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+struct NativeSpeechClaim {
+    let id: Int
+    let text: String
 }
 
 struct QueueStatus {

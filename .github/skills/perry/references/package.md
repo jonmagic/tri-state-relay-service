@@ -17,8 +17,8 @@ Useful commands:
 ```sh
 perry check src/
 perry check src/ --check-deps
-perry compile src/cli.ts -o dist/native/voicemail
-perry compile src/processor.ts -o dist/native/voicemail-processor
+perry compile src/cli.ts -o dist/native/relay
+perry compile src/processor.ts -o dist/native/relay-processor
 perry doctor
 perry --print-api-manifest=json
 ```

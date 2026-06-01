@@ -2,31 +2,31 @@
 
 ## 2026-05-30
 
-Started the repository from the Brain plan in `Daily Lines/2026-05-30/01 agent voicemail speech queue.md`.
+Started the repository from the Brain seed plan for the agent relay queue.
 
 Current state:
 
 1. Agent-first line guide and local skills are in place.
 2. TypeScript strict-mode line skeleton is in place.
 3. SQLite-backed queue core uses `better-sqlite3` and supports enqueue, list, clear, focus, ready, mute, unmute, and claim-next-for-speech.
-4. Ready mode claims exactly one queued voicemail and returns to focus.
-5. The CLI accepts the v0 `voicemail --line ... --message ...` contract.
+4. Ready mode claims exactly one queued relay and returns to focus.
+5. The CLI accepts the v0 `relay --line ... --message ...` contract.
 6. Perry is documented as a local library and wired into package scripts for dependency compatibility checks and native binary builds.
-7. `voicemail-processor` owns the `/usr/bin/say` path, marks successful playback as `heard`, and marks speech failures as `failed`.
+7. The legacy relay processor owns the `/usr/bin/say` path, marks successful playback as `heard`, and marks speech failures as `failed`.
 8. Processor execution uses a SQLite-backed single-writer lock before claiming messages.
 9. `src/app/processor-loop.ts` provides the app-owned processor loop for the menu bar app.
 10. `src/app/controller.ts` provides menu-bar-facing queue status and ready/focus/mute/unmute/clear controls without exposing message text.
 11. `src/app/menu-bar-shell.ts` composes queue controls and the processor loop for future native macOS adapters.
 12. `src/app/native-menu-bar-adapter.ts` maps shell snapshots and actions into a safe native menu render contract.
 13. `src/macos/TriStateRelayService.swift` builds an interactable AppKit `NSStatusItem` app around the Perry-built CLI and processor binaries.
-14. `voicemail status` exposes JSON queue state for the app without scraping message text.
+14. `relay status` exposes JSON queue state for the app without scraping message text.
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
 16. The CLI and menu bar app support source actions for revealing the latest captured cwd and copying the latest cwd or URL.
-17. The menu bar app periodically refreshes queue state and processes one queued voicemail when ready and unmuted.
+17. The menu bar app periodically refreshes queue state and processes one queued relay when ready and unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
-19. `npm run eval:inactive-line` compares `apfel` and `llm` against voicemail-composition fixtures with contract checks and an LLM judge.
-20. `voicemail combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
-21. `voicemail line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
+19. `npm run eval:inactive-line` compares `apfel` and `llm` against relay-composition fixtures with contract checks and an LLM judge.
+20. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
+21. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
 22. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the Node CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
 23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 24. Left-click playback makes the line it pulls from active before speaking.
@@ -40,3 +40,50 @@ Roadmap gaps from the latest feature review:
 3. Shell-out app actions should eventually move behind a native library boundary or direct Swift/Perry bridge.
 
 Recommended next slice: safe aggregate queue views.
+
+## 2026-06-01
+
+Executed the App Store handoff slice from `Daily Projects/2026-05-31/06 tri-state relay service app store handoff plan.md`.
+
+Current state additions:
+
+1. `TSRS_DISTRIBUTION_PROFILE` supports `direct` and `app-store` behavior.
+2. `npm run build:macos:direct` builds the direct-download profile with `relay`.
+3. `npm run build:macos:app-store` builds the App Store-safe profile with `relay`.
+4. App Store-safe playback uses app-owned AVFoundation speech and avoids external speech command templates.
+5. App Store-safe settings hide external combiner and speech command template editors.
+6. App Store-safe source actions use native `NSWorkspace` and `NSPasteboard` APIs instead of CLI `open` or `pbcopy` commands.
+7. External inactive-line combiner execution is direct-profile only; App Store-safe mode reports it unavailable and uses latest-only inactive-line behavior.
+8. `relay` is the CLI/native binary.
+9. `relay settings` exposes a capability seam for direct versus App Store-safe behavior, including the one-line free-tier placeholder.
+10. `relay status` exposes the active profile and capabilities for diagnostics.
+11. App-only native playback helper commands require app authorization before claiming or mutating playback state.
+12. In App Store-safe mode, terminal `relay reveal-source` and `relay copy-source` refuse to shell out and leave source actions to the native app.
+13. Documentation now describes profile differences, unavailable App Store-safe features, storage/enqueueing caveats, and an App Review note draft.
+14. `docs/app-store-profile.md` records the App Store-safe profile contract and makes CLI enqueueing a direct-profile capability until a sandbox storage architecture is explicitly chosen.
+
+Agent miss captured:
+
+1. A prior agent stopped mid-slice without validation or completion.
+2. The missing primitive was profile-specific exit criteria in repository guidance.
+3. `AGENTS.md` now requires direct and App Store-safe profile builds plus bundle inspection for profile changes.
+
+Recommended next slice: decide the App Store-safe enqueue/storage architecture before sandboxing or StoreKit work.
+
+Distribution direction update:
+
+1. The primary path is now a signed and notarized direct-download Mac app with a standard local `relay` CLI.
+2. Future Pro features should use an external license-key flow, likely Paddle, Lemon Squeezy, or Stripe, rather than StoreKit unless the App Store becomes a primary target again.
+3. App Store-safe profile work remains useful as native/safety hardening, but it should not block direct-download Pro features.
+4. The app should still move toward Swift/Xcode and native macOS APIs wherever practical, reducing dependence on Perry-built app helper behavior over time.
+
+Recommended next slice: direct-download signing/notarization packaging or Swift/Xcode migration of the next app helper surface.
+
+Swift migration update:
+
+1. Direct and App Store-safe macOS app profiles now own playback in Swift through AVFoundation.
+2. The macOS app no longer launches or supervises the legacy relay processor loop.
+3. Both macOS app profiles package only the CLI helper binary, `relay`.
+4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.
+
+Recommended next Swift migration slice: replace `relay status`/settings helper calls with native Swift SQLite reads for menu state and settings.

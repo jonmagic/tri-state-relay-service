@@ -15,9 +15,9 @@ The combiner is configured by the `inactive_line_combiner_command` setting.
 Open Settings from the menu bar app, or use:
 
 ```sh
-voicemail combiner
-voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
-voicemail combiner --command none
+relay combiner
+relay combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+relay combiner --command none
 ```
 
 The default is a fully commented template that requires no LLM. When the

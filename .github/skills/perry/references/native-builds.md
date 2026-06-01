@@ -9,7 +9,8 @@ Recommended package scripts:
 {
   "scripts": {
     "perry:check": "perry check src/ --check-deps",
-    "build:native": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/voicemail && perry compile src/processor.ts -o dist/native/voicemail-processor"
+    "build:native:cli": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/relay",
+    "build:native": "npm run build:native:cli && perry compile src/processor.ts -o dist/native/relay-processor"
   }
 }
 ```

@@ -5,7 +5,7 @@ export interface CommandInvocation {
 
 export const defaultInactiveLineCombinerCommand = `# Inactive line combiner command.
 # Leave this commented to use latest-only inactive-line behavior.
-# The command must print a JSON object: {"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short voicemail"}
+# The command must print a JSON object: {"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short relay"}
 # Placeholders are inserted as single argv values, not shell-expanded.
 #
 # llm CLI: https://github.com/simonw/llm

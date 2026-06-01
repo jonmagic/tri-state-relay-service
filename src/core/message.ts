@@ -6,7 +6,7 @@ export type MessageType = typeof messageTypes[number]
 export type Priority = typeof priorities[number]
 export type MessageStatus = typeof messageStatuses[number]
 
-export interface NewVoicemailInput {
+export interface NewRelayInput {
   line?: string
   message: string
   type?: string
@@ -17,7 +17,7 @@ export interface NewVoicemailInput {
   url?: string
 }
 
-export interface NewVoicemail {
+export interface NewRelay {
   line: string
   message: string
   type: MessageType
@@ -28,7 +28,7 @@ export interface NewVoicemail {
   url?: string
 }
 
-export interface Voicemail extends NewVoicemail {
+export interface Relay extends NewRelay {
   id: number
   status: MessageStatus
   createdAt: string
@@ -43,7 +43,7 @@ const tokenPatterns = [
   /[A-Za-z0-9+/]{32,}={0,2}/,
 ]
 
-export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
+export function normalizeRelay(input: NewRelayInput): NewRelay {
   const line = normalizeRequiredText(input.line ?? '', 'line', 80)
   const message = normalizeRequiredText(input.message, 'message', maxMessageLength)
   const type = normalizeEnum(input.type ?? 'update', messageTypes, 'type')
@@ -55,26 +55,26 @@ export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
 
   rejectUnsafeMessage(message)
 
-  const voicemail: NewVoicemail = {
+  const relay: NewRelay = {
     line,
     message,
     type,
     priority,
   }
 
-  if (session !== undefined) voicemail.session = session
-  if (app !== undefined) voicemail.app = app
-  if (cwd !== undefined) voicemail.cwd = cwd
-  if (url !== undefined) voicemail.url = url
+  if (session !== undefined) relay.session = session
+  if (app !== undefined) relay.app = app
+  if (cwd !== undefined) relay.cwd = cwd
+  if (url !== undefined) relay.url = url
 
-  return voicemail
+  return relay
 }
 
-export function spokenText(voicemail: Pick<Voicemail, 'line' | 'type' | 'message'>, options: { includeLine?: boolean } = {}): string {
-  const typePrefix = voicemail.type === 'update' ? '' : `${voicemail.type}. `
-  const linePrefix = options.includeLine === false ? '' : `${voicemail.line}. `
+export function spokenText(relay: Pick<Relay, 'line' | 'type' | 'message'>, options: { includeLine?: boolean } = {}): string {
+  const typePrefix = relay.type === 'update' ? '' : `${relay.type}. `
+  const linePrefix = options.includeLine === false ? '' : `${relay.line}. `
 
-  return `${linePrefix}${typePrefix}${voicemail.message}`
+  return `${linePrefix}${typePrefix}${relay.message}`
 }
 
 function normalizeRequiredText(value: string, field: string, maxLength: number): string {

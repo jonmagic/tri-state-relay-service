@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
 
+import { processorIsAppAuthorized } from './core/app-authorization.ts'
+import { relayCapabilities } from './core/capabilities.ts'
 import { buildCommandInvocation, commandIsEnabled } from './core/command-template.ts'
-import { messageTypes, priorities } from './core/message.ts'
-import { type InactiveLineCombineInput, type InactiveLineCombineResult, VoicemailStore } from './storage/store.ts'
+import { distributionProfile, isAppStoreProfile } from './core/distribution-profile.ts'
+import { messageTypes, priorities, spokenText } from './core/message.ts'
+import { type InactiveLineCombineInput, type InactiveLineCombineResult, RelayStore } from './storage/store.ts'
 
 interface ParsedCommand {
   command: string
@@ -11,7 +14,8 @@ interface ParsedCommand {
   flags: Record<string, string>
 }
 
-const store = new VoicemailStore()
+const store = new RelayStore()
+const profile = distributionProfile()
 
 try {
   const parsed = parseArgs(process.argv.slice(2))
@@ -22,7 +26,11 @@ try {
 
 function run(parsed: ParsedCommand): void {
   if (parsed.command === 'enqueue') {
-    const voicemail = store.enqueueWithLinePolicy({
+    if (isAppStoreProfile()) {
+      throw new Error('terminal relay enqueueing is direct-profile-only until an App Store-safe storage model is chosen')
+    }
+
+    const relay = store.enqueueWithLinePolicy({
       line: requiredFlag(parsed.flags, 'line'),
       message: requiredFlag(parsed.flags, 'message'),
       type: parsed.flags.type,
@@ -33,25 +41,25 @@ function run(parsed: ParsedCommand): void {
       url: parsed.flags.url,
     }, inactiveLineCombiner())
 
-    console.log(voicemail === undefined ? 'dropped inactive line update' : `queued #${voicemail.id} ${voicemail.line}: ${voicemail.message}`)
+    console.log(relay === undefined ? 'dropped inactive line update' : `queued relay #${relay.id} ${relay.line}: ${relay.message}`)
     return
   }
 
   if (parsed.command === 'list') {
-    const state = store.getState()
+    const state = store.getState(profile)
     console.log(`mode=${state.mode} muted=${state.muted}`)
 
-    for (const voicemail of store.list()) {
-      console.log(`#${voicemail.id} [${voicemail.status}] [${voicemail.priority}] ${voicemail.line}: ${voicemail.message}`)
+    for (const relay of store.list()) {
+      console.log(`#${relay.id} [${relay.status}] [${relay.priority}] ${relay.line}: ${relay.message}`)
     }
     return
   }
 
   if (parsed.command === 'status') {
-    const state = store.getState()
+    const state = store.getState(profile)
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
-    const lineSources: Record<string, ReturnType<VoicemailStore['latestSourceContext']>> = {}
+    const lineSources: Record<string, ReturnType<RelayStore['latestSourceContext']>> = {}
 
     for (const lineSource of store.latestSourceContextsByLine()) {
       lineSources[lineSource.line] = lineSource
@@ -60,6 +68,7 @@ function run(parsed: ParsedCommand): void {
     const overview = store.queueOverview()
 
     const status = {
+      profile,
       mode: state.mode,
       muted: state.muted,
       inactiveLineCombiner: state.inactiveLineCombiner,
@@ -72,6 +81,7 @@ function run(parsed: ParsedCommand): void {
       overview,
       source,
       lines,
+      capabilities: relayCapabilities(profile),
     }
 
     if (Object.keys(lineSources).length > 0) {
@@ -84,7 +94,7 @@ function run(parsed: ParsedCommand): void {
 
   if (parsed.command === 'ready') {
     const state = store.setMode('ready')
-    console.log(state.muted ? 'ready queued, but muted is on' : 'ready for one voicemail')
+    console.log(state.muted ? 'release queued, but muted is on' : 'ready to release one relay')
     return
   }
 
@@ -107,36 +117,36 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'clear') {
-    console.log(`cleared ${store.clear()} voicemails`)
+    console.log(`cleared ${store.clear()} relays`)
     return
   }
 
-  if (parsed.command === 'clear-heard') {
-    console.log(`cleared ${store.clearHeard(parsed.flags.line)} heard voicemails`)
+  if (parsed.command === 'clear-heard' || parsed.command === 'clear-delivered') {
+    console.log(`cleared ${store.clearHeard(parsed.flags.line)} delivered relays`)
     return
   }
 
   if (parsed.command === 'skip-next') {
     const skipped = store.skipNextQueued(parsed.flags.line)
-    console.log(skipped === undefined ? 'no queued voicemail to skip' : `skipped #${skipped.id}`)
+    console.log(skipped === undefined ? 'no queued relay to skip' : `skipped relay #${skipped.id}`)
     return
   }
 
-  if (parsed.command === 'mark-handled') {
+  if (parsed.command === 'mark-handled' || parsed.command === 'acknowledge') {
     const handled = store.markLatestHeardHandled(parsed.flags.line)
-    console.log(handled === undefined ? 'no heard voicemail to mark handled' : `handled #${handled.id}`)
+    console.log(handled === undefined ? 'no delivered relay to mark handled' : `handled relay #${handled.id}`)
     return
   }
 
   if (parsed.command === 'replay-last') {
     const replayed = store.replayLatestHeard(parsed.flags.line)
-    console.log(replayed === undefined ? 'no heard voicemail to replay' : `queued #${replayed.id} for replay`)
+    console.log(replayed === undefined ? 'no delivered relay to replay' : `queued relay #${replayed.id} for replay`)
     return
   }
 
   if (parsed.command === 'clear-line') {
     const line = requiredFlag(parsed.flags, 'line')
-    console.log(`cleared ${store.clearQueued(line)} queued voicemails from ${line}`)
+    console.log(`cleared ${store.clearQueued(line)} queued relays from ${line}`)
     return
   }
 
@@ -147,6 +157,11 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'reveal-source') {
+    if (isAppStoreProfile()) {
+      console.log('native app source reveal is unavailable from the CLI in the App Store-safe profile')
+      return
+    }
+
     const source = store.latestSourceContext(parsed.flags.line)
 
     if (source?.cwd === undefined) {
@@ -160,6 +175,11 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'copy-source') {
+    if (isAppStoreProfile()) {
+      console.log('native app source copy is unavailable from the CLI in the App Store-safe profile')
+      return
+    }
+
     const source = store.latestSourceContext(parsed.flags.line)
     const value = source?.cwd ?? source?.url
 
@@ -174,7 +194,7 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'state') {
-    const state = store.getState()
+    const state = store.getState(profile)
     console.log(`${state.mode}${state.muted ? ', muted' : ''}, active-line=${state.activeLine ?? 'none'}, inactive-line-combiner=${state.inactiveLineCombiner}`)
     return
   }
@@ -183,7 +203,7 @@ function run(parsed: ParsedCommand): void {
     const requested = parsed.args[0] ?? parsed.flags.line
 
     if (requested === undefined) {
-      const state = store.getState()
+      const state = store.getState(profile)
       console.log(state.activeLine ?? 'none')
       return
     }
@@ -197,32 +217,72 @@ function run(parsed: ParsedCommand): void {
     const requested = parsed.flags.command ?? parsed.flags.tool
 
     if (requested === undefined) {
-      console.log(store.getState().inactiveLineCombinerCommand)
+      console.log(store.getState(profile).inactiveLineCombinerCommand)
       return
     }
 
-    const state = store.setInactiveLineCombinerCommand(requested === 'none' ? '' : requested)
+    const state = store.setInactiveLineCombinerCommandForProfile(requested === 'none' ? '' : requested, profile)
     console.log(`inactive line combiner set to ${state.inactiveLineCombiner}`)
     return
   }
 
   if (parsed.command === 'settings') {
-    const state = store.getState()
-
     if (parsed.flags['combiner-command'] !== undefined) {
-      store.setInactiveLineCombinerCommand(parsed.flags['combiner-command'])
+      store.setInactiveLineCombinerCommandForProfile(parsed.flags['combiner-command'], profile)
     }
 
     if (parsed.flags['speech-command'] !== undefined) {
-      store.setSpeechCommand(parsed.flags['speech-command'])
+      store.setSpeechCommandForProfile(parsed.flags['speech-command'], profile)
     }
 
-    const updated = store.getState()
+    const updated = store.getState(profile)
     console.log(JSON.stringify({
+      profile,
       inactiveLineCombiner: updated.inactiveLineCombiner,
       inactiveLineCombinerCommand: updated.inactiveLineCombinerCommand,
       speechCommand: updated.speechCommand,
+      capabilities: relayCapabilities(profile),
     }))
+    return
+  }
+
+  if (parsed.command === 'app-claim-next') {
+    requireAppAuthorization()
+    store.failStaleSpeaking()
+    const activeLine = store.getState(profile).activeLine
+    const relay = parsed.flags.line !== undefined
+      ? store.claimNextForLine(parsed.flags.line)
+      : activeLine !== undefined && store.queuedCountForLine(activeLine) > 0
+        ? store.claimNextForLine(activeLine)
+        : store.claimNextForSpeech()
+
+    if (relay === undefined) {
+      console.log(JSON.stringify(null))
+      return
+    }
+
+    console.log(JSON.stringify({
+      id: relay.id,
+      text: spokenText(relay, { includeLine: store.shouldPrefixSpokenLine(relay.line) }),
+      line: relay.line,
+    }))
+    return
+  }
+
+  if (parsed.command === 'app-mark-heard') {
+    requireAppAuthorization()
+    const id = Number(requiredFlag(parsed.flags, 'id'))
+    const relay = store.markStatus(id, 'heard')
+    store.recordSpokenLine(relay.line)
+    console.log(`heard #${relay.id}`)
+    return
+  }
+
+  if (parsed.command === 'app-mark-failed') {
+    requireAppAuthorization()
+    const id = Number(requiredFlag(parsed.flags, 'id'))
+    const relay = store.markStatus(id, 'failed')
+    console.log(`failed #${relay.id}`)
     return
   }
 
@@ -242,6 +302,12 @@ function parseArgs(args: string[]): ParsedCommand {
   }
 
   return { command: 'enqueue', args: [], flags: parseFlags(args) }
+}
+
+function requireAppAuthorization(): void {
+  if (!processorIsAppAuthorized()) {
+    throw new Error('app helper commands require TSRS app authorization')
+  }
 }
 
 function parseCommandArgs(args: string[]): { args: string[], flags: Record<string, string> } {
@@ -303,32 +369,34 @@ function requiredFlag(flags: Record<string, string>, key: string): string {
 
 function printHelp(): void {
   console.log(`Usage:
-  voicemail --line "Brain" --message "The plan is ready."
-  voicemail list
-  voicemail ready
-  voicemail focus
-  voicemail mute
-  voicemail unmute
-  voicemail clear
-  voicemail clear-heard
-  voicemail skip-next
-  voicemail mark-handled
-  voicemail replay-last
-  voicemail clear-line --line "Brain"
-  voicemail source [--line "Brain"]
-  voicemail reveal-source [--line "Brain"]
-  voicemail copy-source [--line "Brain"]
-  voicemail line
-  voicemail line "Tri-State Relay Service"
-  voicemail combiner
-  voicemail combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
-  voicemail settings
-  voicemail state
-  voicemail status`)
+  relay --line "Brain" --message "The plan is ready."
+  relay list
+  relay ready
+  relay focus
+  relay mute
+  relay unmute
+  relay clear
+  relay clear-delivered
+  relay skip-next
+  relay acknowledge
+  relay replay-last
+  relay clear-line --line "Brain"
+  relay source [--line "Brain"]
+  relay reveal-source [--line "Brain"]
+  relay copy-source [--line "Brain"]
+  relay line
+  relay line "Tri-State Relay Service"
+  relay combiner
+  relay combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+  relay settings
+  relay state
+  relay status
+
+  Relay is the supported CLI.`)
 }
 
 function inactiveLineCombiner(): ((input: InactiveLineCombineInput) => InactiveLineCombineResult | undefined) | undefined {
-  const state = store.getState()
+  const state = store.getState(profile)
 
   if (!commandIsEnabled(state.inactiveLineCombinerCommand)) {
     return undefined
@@ -350,7 +418,7 @@ function combineInactiveLine(commandTemplate: string, input: InactiveLineCombine
   }
 
   function canUseExternalCombiner(): boolean {
-    return process.argv[1] !== undefined && !process.argv[1].endsWith('/voicemail')
+    return process.argv[1] !== undefined && !process.argv[1].endsWith('/relay')
   }
 
   return latestOnlyFallback(input)
@@ -379,10 +447,10 @@ function runCombinerCommand(commandTemplate: string, inputJson: string): string 
   return undefined
 }
 
-const combinerSystemPrompt = `You combine pending inactive-line agent voicemail updates into one short spoken voicemail.
+const combinerSystemPrompt = `You combine pending inactive-line agent relay updates into one short spoken relay.
 
 Return only JSON with this shape:
-{"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short voicemail"}
+{"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short relay"}
 
 Prefer one useful update over a transcript. Drop duplicate progress-only updates. Promote blockers or completion when warranted. Keep message <= 160 characters.`
 

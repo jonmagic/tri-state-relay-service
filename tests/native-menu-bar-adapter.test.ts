@@ -10,10 +10,10 @@ import {
   type NativeMenuBarRenderModel,
 } from '../src/app/native-menu-bar-adapter.ts'
 import { MenuBarAppShell } from '../src/app/menu-bar-shell.ts'
-import { VoicemailStore } from '../src/storage/store.ts'
+import { RelayStore } from '../src/storage/store.ts'
 
 test('native menu bar render model exposes safe title and controls', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const shell = new MenuBarAppShell(store)
   store.enqueue({ line: 'Brain', message: 'Do not render this message text.' })
 
@@ -36,7 +36,7 @@ test('native menu bar render model exposes safe title and controls', () => {
 })
 
 test('native menu bar adapter sends rendered models to the host', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const rendered: NativeMenuBarRenderModel[] = []
   const shell = new MenuBarAppShell(store)
   const adapter = new NativeMenuBarAdapter(shell, {
@@ -59,5 +59,5 @@ test('native menu bar adapter sends rendered models to the host', () => {
 })
 
 function temporaryDatabasePath(): string {
-  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
+  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'relay.db')
 }

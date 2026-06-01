@@ -13,8 +13,8 @@ Before claiming native binaries are usable, run a smoke test:
 
 ```sh
 tmpdir=$(mktemp -d)
-TSRS_DB_PATH="$tmpdir/voicemail.db" ./dist/native/voicemail --line Brain --message "Native smoke test."
-TSRS_DB_PATH="$tmpdir/voicemail.db" ./dist/native/voicemail list
+TSRS_DB_PATH="$tmpdir/relay.db" ./dist/native/relay --line Brain --message "Native smoke test."
+TSRS_DB_PATH="$tmpdir/relay.db" ./dist/native/relay list
 ```
 
 If this fails, keep native builds documented as blocked and add the

@@ -5,10 +5,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { AppQueueController } from '../src/app/controller.ts'
-import { VoicemailStore } from '../src/storage/store.ts'
+import { RelayStore } from '../src/storage/store.ts'
 
 test('app controller reports menu bar queue status without message text', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
   store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
   store.enqueue({ line: 'Hamzo', message: 'The review is blocked.', priority: 'high' })
@@ -30,7 +30,7 @@ test('app controller reports menu bar queue status without message text', () => 
 })
 
 test('app controller toggles ready focus mute and unmute through store rules', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
   store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
@@ -42,7 +42,7 @@ test('app controller toggles ready focus mute and unmute through store rules', (
 })
 
 test('app controller clear updates queue status for menu bar display', () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   const controller = new AppQueueController(store)
   store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
 
@@ -55,5 +55,5 @@ test('app controller clear updates queue status for menu bar display', () => {
 })
 
 function temporaryDatabasePath(): string {
-  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
+  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'relay.db')
 }

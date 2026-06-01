@@ -5,10 +5,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { runAppProcessorLoop } from '../src/app/processor-loop.ts'
-import { VoicemailStore } from '../src/storage/store.ts'
+import { RelayStore } from '../src/storage/store.ts'
 
-test('app processor loop processes ready voicemail through locked processor path', async () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+test('app processor loop processes ready relay through locked processor path', async () => {
+  const store = new RelayStore(temporaryDatabasePath())
   const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
   store.setMode('ready')
   const slept: number[] = []
@@ -24,7 +24,7 @@ test('app processor loop processes ready voicemail through locked processor path
   })
 
   assert.deepEqual(results, [
-    { status: 'heard', exitCode: 0, voicemailId: queued.id },
+    { status: 'heard', exitCode: 0, relayId: queued.id },
     { status: 'idle', exitCode: 0 },
   ])
   assert.deepEqual(slept, [5])
@@ -33,7 +33,7 @@ test('app processor loop processes ready voicemail through locked processor path
 })
 
 test('app processor loop can be stopped by the owning app', async () => {
-  const store = new VoicemailStore(temporaryDatabasePath())
+  const store = new RelayStore(temporaryDatabasePath())
   let iterations = 0
 
   const results = await runAppProcessorLoop(store, {
@@ -47,5 +47,5 @@ test('app processor loop can be stopped by the owning app', async () => {
 })
 
 function temporaryDatabasePath(): string {
-  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'voicemail.db')
+  return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'relay.db')
 }

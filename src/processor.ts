@@ -3,9 +3,11 @@ import { spawnSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { appProcessorAuthorization, appProcessorAuthorizationEnv, processorIsAppAuthorized } from './core/app-authorization.ts'
 import { buildCommandInvocation } from './core/command-template.ts'
+import { isAppStoreProfile } from './core/distribution-profile.ts'
 import { spokenText } from './core/message.ts'
-import { VoicemailStore } from './storage/store.ts'
+import { RelayStore } from './storage/store.ts'
 
 const speechTimeoutMs = 30_000
 
@@ -16,19 +18,14 @@ export interface SpeechResult {
 export interface ProcessOneResult {
   status: 'idle' | 'heard' | 'failed' | 'locked'
   exitCode: number
-  voicemailId?: number
+  relayId?: number
 }
 
-export type SpeakVoicemail = (text: string) => SpeechResult
+export type SpeakRelay = (text: string) => SpeechResult
 
-export const appProcessorAuthorization = 'app-owned-processor'
-export const appProcessorAuthorizationEnv = 'TSRS_PROCESSOR_AUTH'
+export { appProcessorAuthorization, appProcessorAuthorizationEnv, processorIsAppAuthorized }
 
-export function processorIsAppAuthorized(env: Record<string, string | undefined> = process.env): boolean {
-  return env[appProcessorAuthorizationEnv] === appProcessorAuthorization
-}
-
-export function processOneVoicemailWithLock(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
+export function processOneRelayWithLock(store: RelayStore, speak?: SpeakRelay): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
   if (!store.acquireProcessorLock(owner)) {
@@ -36,28 +33,28 @@ export function processOneVoicemailWithLock(store: VoicemailStore, speak?: Speak
   }
 
   try {
-    return processOneVoicemail(store, speak)
+    return processOneRelay(store, speak)
   } finally {
     store.releaseProcessorLock(owner)
   }
 }
 
-export function processOneAppLoopVoicemailWithLock(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
+export function processOneAppLoopRelayWithLock(store: RelayStore, speak?: SpeakRelay): ProcessOneResult {
   store.failStaleSpeaking()
   const activeLine = store.getState().activeLine
 
   if (activeLine !== undefined && store.queuedCountForLine(activeLine) > 0) {
-    return processOneLineVoicemailWithLock(store, activeLine, speak)
+    return processOneLineRelayWithLock(store, activeLine, speak)
   }
 
-  return processOneVoicemailWithLock(store, speak)
+  return processOneRelayWithLock(store, speak)
 }
 
-export function processOneVoicemail(store: VoicemailStore, speak?: SpeakVoicemail): ProcessOneResult {
-  return processClaimedVoicemail(store, store.claimNextForSpeech(), speak ?? configuredSpeaker(store))
+export function processOneRelay(store: RelayStore, speak?: SpeakRelay): ProcessOneResult {
+  return processClaimedRelay(store, store.claimNextForSpeech(), speak ?? configuredSpeaker(store))
 }
 
-export function processOneLineVoicemailWithLock(store: VoicemailStore, line: string, speak?: SpeakVoicemail): ProcessOneResult {
+export function processOneLineRelayWithLock(store: RelayStore, line: string, speak?: SpeakRelay): ProcessOneResult {
   const owner = `processor:${process.pid}`
 
   if (!store.acquireProcessorLock(owner)) {
@@ -65,40 +62,44 @@ export function processOneLineVoicemailWithLock(store: VoicemailStore, line: str
   }
 
   try {
-    return processOneLineVoicemail(store, line, speak)
+    return processOneLineRelay(store, line, speak)
   } finally {
     store.releaseProcessorLock(owner)
   }
 }
 
-export function processOneLineVoicemail(store: VoicemailStore, line: string, speak?: SpeakVoicemail): ProcessOneResult {
-  return processClaimedVoicemail(store, store.claimNextForLine(line), speak ?? configuredSpeaker(store))
+export function processOneLineRelay(store: RelayStore, line: string, speak?: SpeakRelay): ProcessOneResult {
+  return processClaimedRelay(store, store.claimNextForLine(line), speak ?? configuredSpeaker(store))
 }
 
-function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<VoicemailStore['claimNextForSpeech']>, speak: SpeakVoicemail): ProcessOneResult {
-  if (voicemail === undefined) {
+function processClaimedRelay(store: RelayStore, relay: ReturnType<RelayStore['claimNextForSpeech']>, speak: SpeakRelay): ProcessOneResult {
+  if (relay === undefined) {
     return { status: 'idle', exitCode: 0 }
   }
 
-  const includeLine = store.shouldPrefixSpokenLine(voicemail.line)
-  const result = speak(spokenText(voicemail, { includeLine }))
+  const includeLine = store.shouldPrefixSpokenLine(relay.line)
+  const result = speak(spokenText(relay, { includeLine }))
 
   if (result.status === 0) {
-    store.recordSpokenLine(voicemail.line)
-    store.markStatus(voicemail.id, 'heard')
-    return { status: 'heard', exitCode: 0, voicemailId: voicemail.id }
+    store.recordSpokenLine(relay.line)
+    store.markStatus(relay.id, 'heard')
+    return { status: 'heard', exitCode: 0, relayId: relay.id }
   }
 
-  store.markStatus(voicemail.id, 'failed')
-  return { status: 'failed', exitCode: result.status ?? 1, voicemailId: voicemail.id }
+  store.markStatus(relay.id, 'failed')
+  return { status: 'failed', exitCode: result.status ?? 1, relayId: relay.id }
 }
 
 export function speakWithSay(text: string): SpeechResult {
   return spawnSync('/usr/bin/say', [text], { stdio: 'ignore', timeout: speechTimeoutMs })
 }
 
-function configuredSpeaker(store: VoicemailStore): SpeakVoicemail {
+function configuredSpeaker(store: RelayStore): SpeakRelay {
   return (text) => {
+    if (isAppStoreProfile()) {
+      return { status: 1 }
+    }
+
     const invocation = buildCommandInvocation(store.getState().speechCommand, { '<message>': text })
 
     if (invocation === undefined) {
@@ -128,10 +129,10 @@ function appLoopParentIsAlive(): boolean {
 }
 
 if (isMainModule()) {
-  const store = new VoicemailStore()
+  const store = new RelayStore()
 
   if (!processorIsAppAuthorized()) {
-    console.error('voicemail-processor can only be launched by the TSRS app')
+    console.error('relay-processor can only be launched by the TSRS app')
     store.close()
     process.exit(1)
   }
@@ -147,14 +148,14 @@ if (isMainModule()) {
           process.exit(0)
         }
 
-        processOneAppLoopVoicemailWithLock(store)
+        processOneAppLoopRelayWithLock(store)
       }, 1000)
-      processOneAppLoopVoicemailWithLock(store)
+      processOneAppLoopRelayWithLock(store)
     } else {
       const line = lineArg(args)
       const result = line === undefined
-        ? processOneVoicemailWithLock(store)
-        : processOneLineVoicemailWithLock(store, line)
+        ? processOneRelayWithLock(store)
+        : processOneLineRelayWithLock(store, line)
       process.exitCode = result.exitCode
       store.close()
     }
@@ -172,5 +173,5 @@ function isMainModule(): boolean {
   const executable = basename(process.argv[1])
 
   return fileURLToPath(import.meta.url) === process.argv[1]
-    || executable === 'voicemail-processor'
+    || executable === 'relay-processor'
 }

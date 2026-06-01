@@ -1,7 +1,7 @@
 import { AppQueueController, type AppQueueStatus } from './controller.ts'
 import { runAppProcessorLoop, type AppProcessorLoopOptions } from './processor-loop.ts'
 import type { ProcessOneResult } from '../processor.ts'
-import type { VoicemailStore } from '../storage/store.ts'
+import type { RelayStore } from '../storage/store.ts'
 
 export interface MenuBarSnapshot {
   title: string
@@ -14,10 +14,10 @@ export interface MenuBarAppShellOptions extends AppProcessorLoopOptions {
 
 export class MenuBarAppShell {
   readonly controller: AppQueueController
-  private readonly store: VoicemailStore
+  private readonly store: RelayStore
   private readonly options: MenuBarAppShellOptions
 
-  constructor(store: VoicemailStore, options: MenuBarAppShellOptions = {}) {
+  constructor(store: RelayStore, options: MenuBarAppShellOptions = {}) {
     this.store = store
     this.options = options
     this.controller = new AppQueueController(store)

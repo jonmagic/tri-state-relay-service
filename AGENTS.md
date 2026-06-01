@@ -1,6 +1,6 @@
 # Tri-State Relay Service Agent Guide
 
-Tri-State Relay Service is a local macOS agent voicemail queue. Agents are implementation partners building a safe, quiet coordination layer for many agent sessions sharing one speaker.
+Tri-State Relay Service is a local macOS agent relay queue. Agents are implementation partners building a safe, quiet coordination layer for many agent sessions sharing one speaker.
 
 ## Agent communication updates
 
@@ -21,7 +21,7 @@ When in doubt, enqueue the short update. Follow-up explanations such as "what's 
 
 Keep updates brief, intentional, and human-authored. Say what is happening or what changed, not raw details. Do not include code, logs, terminal output, file contents, secrets, private data, or long explanations.
 
-Use TSRS as the transport when available. In this repository, use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before sending an update:
+Use TSRS as the transport when available. In this repository, use `./dist/native/relay` when it exists, falling back to `./dist/native/relay` for older builds; otherwise use `npm run build:native` before sending an update:
 
 Choose TSRS line names from the agent's current working directory, not from
 the topic being researched. In this repository the line is `Tri-State Relay
@@ -30,7 +30,7 @@ researching TSRS. Mention cross-project targets in the message text instead
 of changing the line.
 
 ```sh
-./dist/native/voicemail --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+./dist/native/relay --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
 ```
 
 Use `--type complete` for completion updates and `--priority high` only when the message needs prompt human attention. Include `--cwd` when safe so source context can be revealed later. The TSRS app owns playback; do not call `/usr/bin/say` directly.
@@ -39,9 +39,9 @@ Use `--type complete` for completion updates and `--priority high` only when the
 
 1. Do not estimate timelines unless the user explicitly asks for an estimate.
 2. Use red-green-refactor wherever practical.
-3. The CLI must never speak directly. Only the app-owned processor loop may invoke the processor path that calls `/usr/bin/say`.
+3. The CLI must never speak directly. App playback is owned by Swift native speech; `relay-processor` is legacy compatibility and must not be bundled into the macOS app.
 4. Preserve the single-writer invariant for claiming and speaking messages.
-5. Focus mode is the safe default. Ready mode releases one voicemail, then returns to focus.
+5. Focus mode is the safe default. Ready mode releases one relay, then returns to focus.
 6. Reject or scrub unsafe message input rather than speaking arbitrary terminal output.
 7. Keep queue, policy, and validation logic testable without macOS UI or audio.
 8. Require human checkpoints for persistence schema changes, permissions, launch agents, Accessibility/Input Monitoring, or anything that could speak unexpectedly.
@@ -55,7 +55,13 @@ Use these local skills when their trigger matches the work:
 
 ## Product rules
 
-Many agents may enqueue messages, but only the app-owned processor loop may speak through the locked processor path. The CLI submits and inspects voicemail; it does not invoke `/usr/bin/say`.
+Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`.
+
+The primary distribution direction is signed direct download with a standard
+local `relay` CLI and future license-key Pro unlocks. The App Store-safe
+profile is a hardening profile, not the default release target. Prefer moving
+normal app behavior toward Swift/Xcode and native macOS APIs while keeping the
+CLI as the agent integration surface.
 
 Start with these message states:
 
@@ -67,20 +73,22 @@ Start with these message states:
 6. `expired`: too stale to play.
 7. `failed`: playback or processing failed.
 
-Heard and handled are separate. A heard blocker can still need attention.
+Heard and handled are separate storage states. In user-facing copy, prefer delivered and acknowledged.
 
-Focus mode is safe and quiet. Incoming messages queue but do not play. Ready mode releases exactly one voicemail. If a message is queued, the next eligible message plays. If none are queued, the next incoming eligible message may play. After one message is spoken, return to focus mode. Mute overrides ready. Muted systems should enqueue and show messages without speaking.
+Focus mode is safe and quiet. Incoming relays queue but do not play. Ready mode releases exactly one relay. If a relay is queued, the next eligible relay plays. If none are queued, the next incoming eligible relay may play. After one relay is spoken, return to focus mode. Mute overrides ready. Muted systems should enqueue and show relays without speaking.
 
 Keep the agent-facing command readable:
 
 ```sh
-voicemail --line "Brain" --message "The plan is ready."
-voicemail --line "Brain" --type complete --priority normal --message "The plan is ready."
-voicemail list
-voicemail ready
-voicemail mute
-voicemail unmute
-voicemail clear
+relay --line "Brain" --message "The plan is ready."
+relay --line "Brain" --type complete --priority normal --message "The plan is ready."
+relay list
+relay ready
+relay mute
+relay unmute
+relay clear
+relay acknowledge
+relay clear-delivered
 ```
 
 Use long flags only. `--line` is authoritative when provided. Future auto-detection may fill missing line labels, but must not override explicit line input.
@@ -96,8 +104,10 @@ Grow toward these boundaries only as features need them:
 - `src/core/`: message validation, policy, queue state transitions, and ordering.
 - `src/storage/`: SQLite schema, migrations, persistence, and transactions.
 - `src/cli.ts`: argument parsing and command dispatch only.
-- `src/processor.ts`: claim-next-and-speak flow and `/usr/bin/say` integration.
+- `src/processor.ts`: legacy claim-next-and-speak flow and `/usr/bin/say` integration kept out of the app bundle.
 - `src/app/`: app-owned processor loop, menu-bar-facing queue controller, menu bar app shell, and platform adapters.
+- Native Swift/Xcode code should replace helper shell-outs and Perry-built app
+  bridge behavior as seams become clear.
 - `docs/`: decisions, progress, and agent misses.
 - `tests/`: unit and integration tests for queue behavior.
 
@@ -125,7 +135,12 @@ Use this order unless there is a strong reason to change it:
 11. Interactable AppKit menu bar host around the Perry-built CLI and processor binaries.
 12. Replay last, skip current, mark handled, and clear heard.
 13. Line-scoped menu actions and active-line switching from playback.
-14. Terminal-specific focus adapters where reliable.
+14. Relay terminology aliases for acknowledge and clear-delivered.
+15. Terminal-specific focus adapters where reliable.
+16. Signed direct-download packaging: signing, notarization, and standard CLI installation.
+17. Swift/Xcode migration for app-owned queue, settings, source actions, and playback behavior.
+18. App Store-safe profile hardening: native speech, no external command templates, and bundle inspection.
+19. Remove app dependence on `relay-processor`; playback is now Swift-native in both profiles.
 
 ## Task exit criteria
 
@@ -134,6 +149,8 @@ Every implementation task should end with:
 - The closest available validation passing.
 - Behavior verified automatically or manually.
 - Documentation updated when commands, state, persistence, or agent workflow changes.
+- For App Store/direct profile changes, both `npm run build:macos:direct` and `npm run build:macos:app-store` should pass and their bundles should be inspected. Neither macOS app profile should bundle `relay-processor`.
+- Distribution and licensing changes must preserve `docs/distribution.md`, and App Store-safe profile changes must preserve `docs/app-store-profile.md`.
 - Commit-ready summary with changed files and remaining risks.
 
 ## Self-improvement loop

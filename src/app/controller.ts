@@ -1,4 +1,4 @@
-import type { QueueCounts, QueueOverview, QueueState, VoicemailStore } from '../storage/store.ts'
+import type { QueueCounts, QueueOverview, QueueState, RelayStore } from '../storage/store.ts'
 
 export interface AppQueueStatus {
   mode: QueueState['mode']
@@ -11,9 +11,9 @@ export interface AppQueueStatus {
 }
 
 export class AppQueueController {
-  private readonly store: VoicemailStore
+  private readonly store: RelayStore
 
-  constructor(store: VoicemailStore) {
+  constructor(store: RelayStore) {
     this.store = store
   }
 

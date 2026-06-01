@@ -4,7 +4,8 @@ import { homedir } from 'node:os'
 import Database from 'better-sqlite3'
 
 import { commandIsEnabled, defaultInactiveLineCombinerCommand, defaultSpeechCommand, resetBlankCommand } from '../core/command-template.ts'
-import { normalizeVoicemail, priorities, type MessageStatus, type MessageType, type NewVoicemail, type NewVoicemailInput, type Priority, type Voicemail } from '../core/message.ts'
+import { type DistributionProfile, distributionProfile } from '../core/distribution-profile.ts'
+import { normalizeRelay, priorities, type MessageStatus, type MessageType, type NewRelay, type NewRelayInput, type Priority, type Relay } from '../core/message.ts'
 
 export type PlaybackMode = 'focus' | 'ready'
 export type InactiveLineCombiner = 'none' | 'custom'
@@ -107,7 +108,7 @@ export interface StaleSpeakingOptions {
   ttlMs?: number
 }
 
-export class VoicemailStore {
+export class RelayStore {
   readonly path: string
   readonly database: Database.Database
 
@@ -125,35 +126,35 @@ export class VoicemailStore {
   queuedCountForLine(line: string): number {
     const row = this.database.prepare(`
       SELECT COUNT(*) AS count
-      FROM voicemails
+      FROM relays
       WHERE status = 'queued' AND line = ?
     `).get(line) as { count: number }
 
     return Number(row.count)
   }
 
-  enqueue(input: NewVoicemailInput): Voicemail {
-    const voicemail = normalizeVoicemail(input)
-    return this.insertVoicemail(voicemail)
+  enqueue(input: NewRelayInput): Relay {
+    const relay = normalizeRelay(input)
+    return this.insertRelay(relay)
   }
 
-  enqueueWithLinePolicy(input: NewVoicemailInput, combine?: InactiveLineCombinerFunction): Voicemail | undefined {
-    const voicemail = normalizeVoicemail(input)
+  enqueueWithLinePolicy(input: NewRelayInput, combine?: InactiveLineCombinerFunction): Relay | undefined {
+    const relay = normalizeRelay(input)
     const state = this.getState()
 
-    if (state.activeLine === undefined || voicemail.line === state.activeLine) {
-      return this.insertVoicemail(voicemail)
+    if (state.activeLine === undefined || relay.line === state.activeLine) {
+      return this.insertRelay(relay)
     }
 
     if (state.inactiveLineCombiner === 'none' || combine === undefined) {
-      this.deleteQueuedForLine(voicemail.line)
-      return this.insertVoicemail(voicemail)
+      this.deleteQueuedForLine(relay.line)
+      return this.insertRelay(relay)
     }
 
-    const existing = this.queuedForLine(voicemail.line)
+    const existing = this.queuedForLine(relay.line)
     const combined = combine({
       activeLine: state.activeLine,
-      inactiveLine: voicemail.line,
+      inactiveLine: relay.line,
       existingPendingMessage: lastItem(existing)?.message,
       incoming: [
         ...existing.map((item) => ({
@@ -162,9 +163,9 @@ export class VoicemailStore {
           message: item.message,
         })),
         {
-          type: voicemail.type,
-          priority: voicemail.priority,
-          message: voicemail.message,
+          type: relay.type,
+          priority: relay.priority,
+          message: relay.message,
         },
       ],
     })
@@ -173,62 +174,62 @@ export class VoicemailStore {
       return lastItem(existing)
     }
 
-    this.deleteQueuedForLine(voicemail.line)
-    return this.insertVoicemail({
-      ...voicemail,
+    this.deleteQueuedForLine(relay.line)
+    return this.insertRelay({
+      ...relay,
       message: combined.message,
       type: combined.type,
       priority: combined.priority,
     })
   }
 
-  private insertVoicemail(voicemail: NewVoicemail): Voicemail {
+  private insertRelay(relay: NewRelay): Relay {
     const now = new Date().toISOString()
     const insert = this.database.prepare(`
-      INSERT INTO voicemails (
+      INSERT INTO relays (
         line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
       RETURNING *
     `)
 
-    return mapVoicemail(insert.get(
-      voicemail.line,
-      voicemail.message,
-      voicemail.type,
-      voicemail.priority,
-      voicemail.session ?? null,
-      voicemail.app ?? null,
-      voicemail.cwd ?? null,
-      voicemail.url ?? null,
+    return mapRelay(insert.get(
+      relay.line,
+      relay.message,
+      relay.type,
+      relay.priority,
+      relay.session ?? null,
+      relay.app ?? null,
+      relay.cwd ?? null,
+      relay.url ?? null,
       now,
       now,
     ))
   }
 
-  private queuedForLine(line: string): Voicemail[] {
+  private queuedForLine(line: string): Relay[] {
     const select = this.database.prepare(`
       SELECT *
-      FROM voicemails
+      FROM relays
       WHERE line = ? AND status = 'queued'
       ORDER BY created_at ASC
     `)
 
-    return select.all(line).map(mapVoicemail)
+    return select.all(line).map(mapRelay)
   }
 
   private deleteQueuedForLine(line: string): number {
     const result = this.database.prepare(`
-      DELETE FROM voicemails
+      DELETE FROM relays
       WHERE line = ? AND status = 'queued'
     `).run(line)
 
     return Number(result.changes)
   }
 
-  list(limit = 20): Voicemail[] {
+  list(limit = 20): Relay[] {
     const select = this.database.prepare(`
       SELECT *
-      FROM voicemails
+      FROM relays
       ORDER BY
         CASE status
           WHEN 'speaking' THEN 0
@@ -240,7 +241,7 @@ export class VoicemailStore {
       LIMIT ?
     `)
 
-    return select.all(limit).map(mapVoicemail)
+    return select.all(limit).map(mapRelay)
   }
 
   countByStatus(): QueueCounts {
@@ -255,7 +256,7 @@ export class VoicemailStore {
     }
     const rows = this.database.prepare(`
       SELECT status, COUNT(*) AS count
-      FROM voicemails
+      FROM relays
       GROUP BY status
     `).all() as Array<{ status: MessageStatus, count: number }>
 
@@ -273,7 +274,7 @@ export class VoicemailStore {
         SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
         SUM(CASE WHEN status = 'heard' THEN 1 ELSE 0 END) AS heard,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
-      FROM voicemails
+      FROM relays
       WHERE status IN ('queued', 'heard', 'failed')
       GROUP BY line
       HAVING queued > 0 OR heard > 0 OR failed > 0
@@ -307,7 +308,7 @@ export class VoicemailStore {
   private priorityOverview(): PriorityOverviewItem[] {
     const rows = this.database.prepare(`
       SELECT priority, COUNT(*) AS count
-      FROM voicemails
+      FROM relays
       WHERE status IN ('queued', 'heard', 'failed')
       GROUP BY priority
     `).all() as Array<{ priority: Priority, count: number }>
@@ -324,7 +325,7 @@ export class VoicemailStore {
       SELECT
         COALESCE(session, app, 'unknown') AS producer,
         COUNT(*) AS count
-      FROM voicemails
+      FROM relays
       WHERE status IN ('queued', 'heard', 'failed')
       GROUP BY producer
       ORDER BY count DESC, producer ASC
@@ -340,7 +341,7 @@ export class VoicemailStore {
   private staleBlockerOverview(staleBefore: string, thresholdMinutes: number): StaleBlockerOverview {
     const row = this.database.prepare(`
       SELECT COUNT(*) AS count, MIN(created_at) AS oldestCreatedAt
-      FROM voicemails
+      FROM relays
       WHERE status IN ('queued', 'heard')
         AND priority = 'high'
         AND type IN ('blocked', 'needs-input')
@@ -358,7 +359,7 @@ export class VoicemailStore {
   latestSourceContext(line?: string): SourceContext | undefined {
     const row = this.database.prepare(`
       SELECT id, line, session, app, cwd, url
-      FROM voicemails
+      FROM relays
       WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
         AND (? IS NULL OR line = ?)
       ORDER BY created_at DESC, id DESC
@@ -375,11 +376,11 @@ export class VoicemailStore {
   latestSourceContextsByLine(): SourceContext[] {
     const rows = this.database.prepare(`
       SELECT id, line, session, app, cwd, url
-      FROM voicemails AS source
+      FROM relays AS source
       WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
         AND id = (
           SELECT id
-          FROM voicemails AS candidate
+          FROM relays AS candidate
           WHERE candidate.line = source.line
             AND (
               candidate.cwd IS NOT NULL
@@ -398,7 +399,7 @@ export class VoicemailStore {
 
   clear(): number {
     const result = this.database.prepare(`
-      DELETE FROM voicemails
+      DELETE FROM relays
       WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
     `).run()
 
@@ -408,7 +409,7 @@ export class VoicemailStore {
   clearHeard(line?: string): number {
     if (line !== undefined) {
       const result = this.database.prepare(`
-        DELETE FROM voicemails
+        DELETE FROM relays
         WHERE status = 'heard' AND line = ?
       `).run(line)
 
@@ -416,7 +417,7 @@ export class VoicemailStore {
     }
 
     const result = this.database.prepare(`
-      DELETE FROM voicemails
+      DELETE FROM relays
       WHERE status = 'heard'
     `).run()
 
@@ -425,38 +426,39 @@ export class VoicemailStore {
 
   clearQueued(line: string): number {
     const result = this.database.prepare(`
-      DELETE FROM voicemails
+      DELETE FROM relays
       WHERE status = 'queued' AND line = ?
     `).run(line)
 
     return Number(result.changes)
   }
 
-  skipNextQueued(line?: string): Voicemail | undefined {
+  skipNextQueued(line?: string): Relay | undefined {
     return this.markFirstMatchingStatus('queued', 'skipped', line)
   }
 
-  markLatestHeardHandled(line?: string): Voicemail | undefined {
+  markLatestHeardHandled(line?: string): Relay | undefined {
     return this.markLatestMatchingStatus('heard', 'handled', line)
   }
 
-  replayLatestHeard(line?: string): Voicemail | undefined {
+  replayLatestHeard(line?: string): Relay | undefined {
     return this.markLatestMatchingStatus('heard', 'queued', line)
   }
 
-  getState(): QueueState {
+  getState(profile: DistributionProfile = distributionProfile()): QueueState {
     const mode = this.getSetting('mode') ?? 'focus'
     const muted = this.getSetting('muted') === 'true'
     const inactiveLineCombinerCommand = this.getSetting('inactive_line_combiner_command') ?? this.migratedInactiveLineCombinerCommand()
     const speechCommand = this.getSetting('speech_command') ?? defaultSpeechCommand
     const activeLine = this.getSetting('active_line')
+    const appStore = profile === 'app-store'
 
     return {
       mode: mode === 'ready' ? 'ready' : 'focus',
       muted,
-      inactiveLineCombiner: commandIsEnabled(inactiveLineCombinerCommand) ? 'custom' : 'none',
-      inactiveLineCombinerCommand,
-      speechCommand,
+      inactiveLineCombiner: !appStore && commandIsEnabled(inactiveLineCombinerCommand) ? 'custom' : 'none',
+      inactiveLineCombinerCommand: appStore ? appStoreUnavailableCommand('inactive-line combiner') : inactiveLineCombinerCommand,
+      speechCommand: appStore ? appStoreUnavailableCommand('speech') : speechCommand,
       activeLine,
     }
   }
@@ -479,6 +481,22 @@ export class VoicemailStore {
   setSpeechCommand(command: string): QueueState {
     this.setSetting('speech_command', resetBlankCommand(command, defaultSpeechCommand))
     return this.getState()
+  }
+
+  setInactiveLineCombinerCommandForProfile(command: string, profile: DistributionProfile = distributionProfile()): QueueState {
+    if (profile === 'app-store') {
+      return this.getState(profile)
+    }
+
+    return this.setInactiveLineCombinerCommand(command)
+  }
+
+  setSpeechCommandForProfile(command: string, profile: DistributionProfile = distributionProfile()): QueueState {
+    if (profile === 'app-store') {
+      return this.getState(profile)
+    }
+
+    return this.setSpeechCommand(command)
   }
 
   setActiveLine(line: string): QueueState {
@@ -532,7 +550,7 @@ export class VoicemailStore {
     return undefined
   }
 
-  claimNextForSpeech(): Voicemail | undefined {
+  claimNextForSpeech(): Relay | undefined {
     const state = this.getState()
 
     if (state.muted || state.mode !== 'ready') {
@@ -540,11 +558,11 @@ export class VoicemailStore {
     }
 
     const row = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = 'speaking', updated_at = ?
       WHERE id = (
         SELECT id
-        FROM voicemails
+        FROM relays
         WHERE status = 'queued'
         ORDER BY
           CASE priority
@@ -563,10 +581,10 @@ export class VoicemailStore {
     }
 
     this.setMode('focus')
-    return mapVoicemail(row)
+    return mapRelay(row)
   }
 
-  claimNextForLine(line: string): Voicemail | undefined {
+  claimNextForLine(line: string): Relay | undefined {
     const state = this.getState()
 
     if (state.muted) {
@@ -574,11 +592,11 @@ export class VoicemailStore {
     }
 
     const row = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = 'speaking', updated_at = ?
       WHERE id = (
         SELECT id
-        FROM voicemails
+        FROM relays
         WHERE status = 'queued' AND line = ?
         ORDER BY
           CASE priority
@@ -596,22 +614,22 @@ export class VoicemailStore {
       return undefined
     }
 
-    return mapVoicemail(row)
+    return mapRelay(row)
   }
 
-  markStatus(id: number, status: MessageStatus): Voicemail {
+  markStatus(id: number, status: MessageStatus): Relay {
     const row = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = ?, updated_at = ?
       WHERE id = ?
       RETURNING *
     `).get(status, new Date().toISOString(), id)
 
     if (row === undefined) {
-      throw new Error(`voicemail ${id} not found`)
+      throw new Error(`relay ${id} not found`)
     }
 
-    return mapVoicemail(row)
+    return mapRelay(row)
   }
 
   failStaleSpeaking(options: StaleSpeakingOptions = {}): number {
@@ -619,7 +637,7 @@ export class VoicemailStore {
     const ttlMs = options.ttlMs ?? 60_000
     const staleBefore = new Date(now.getTime() - ttlMs).toISOString()
     const result = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = 'failed', updated_at = ?
       WHERE status = 'speaking' AND updated_at <= ?
     `).run(now.toISOString(), staleBefore)
@@ -627,13 +645,13 @@ export class VoicemailStore {
     return Number(result.changes)
   }
 
-  private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Voicemail | undefined {
+  private markFirstMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Relay | undefined {
     const row = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = ?, updated_at = ?
       WHERE id = (
         SELECT id
-        FROM voicemails
+        FROM relays
         WHERE status = ? AND (? IS NULL OR line = ?)
         ORDER BY
           CASE priority
@@ -647,16 +665,16 @@ export class VoicemailStore {
       RETURNING *
     `).get(to, new Date().toISOString(), from, line ?? null, line ?? null)
 
-    return row === undefined ? undefined : mapVoicemail(row)
+    return row === undefined ? undefined : mapRelay(row)
   }
 
-  private markLatestMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Voicemail | undefined {
+  private markLatestMatchingStatus(from: MessageStatus, to: MessageStatus, line?: string): Relay | undefined {
     const row = this.database.prepare(`
-      UPDATE voicemails
+      UPDATE relays
       SET status = ?, updated_at = ?
       WHERE id = (
         SELECT id
-        FROM voicemails
+        FROM relays
         WHERE status = ? AND (? IS NULL OR line = ?)
         ORDER BY updated_at DESC, id DESC
         LIMIT 1
@@ -664,7 +682,7 @@ export class VoicemailStore {
       RETURNING *
     `).get(to, new Date().toISOString(), from, line ?? null, line ?? null)
 
-    return row === undefined ? undefined : mapVoicemail(row)
+    return row === undefined ? undefined : mapRelay(row)
   }
 
   acquireProcessorLock(owner: string, options: ProcessorLockOptions = {}): boolean {
@@ -708,7 +726,7 @@ export class VoicemailStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS voicemails (
+      CREATE TABLE IF NOT EXISTS relays (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         line TEXT NOT NULL,
         message TEXT NOT NULL,
@@ -779,12 +797,16 @@ export function defaultDatabasePath(): string {
     return process.env.TSRS_DB_PATH
   }
 
-  return join(homedir(), 'Library', 'Application Support', 'Tri-State Relay Service', 'voicemail.db')
+  return join(homedir(), 'Library', 'Application Support', 'Tri-State Relay Service', 'relay.db')
 }
 
-function mapVoicemail(row: unknown): Voicemail {
+function appStoreUnavailableCommand(feature: string): string {
+  return `# External ${feature} command execution is unavailable in the App Store-safe profile.`
+}
+
+function mapRelay(row: unknown): Relay {
   if (row === undefined || row === null || typeof row !== 'object') {
-    throw new Error('expected voicemail row')
+    throw new Error('expected relay row')
   }
 
   const value = row as Record<string, unknown>
@@ -793,13 +815,13 @@ function mapVoicemail(row: unknown): Voicemail {
     id: Number(value.id),
     line: String(value.line),
     message: String(value.message),
-    type: String(value.type) as Voicemail['type'],
-    priority: String(value.priority) as Voicemail['priority'],
+    type: String(value.type) as Relay['type'],
+    priority: String(value.priority) as Relay['priority'],
     session: optionalString(value.session),
     app: optionalString(value.app),
     cwd: optionalString(value.cwd),
     url: optionalString(value.url),
-    status: String(value.status) as Voicemail['status'],
+    status: String(value.status) as Relay['status'],
     createdAt: String(value.created_at),
     updatedAt: String(value.updated_at),
   }

@@ -1,17 +1,17 @@
-import { processOneVoicemailWithLock, type ProcessOneResult, type SpeakVoicemail } from '../processor.ts'
-import { VoicemailStore } from '../storage/store.ts'
+import { processOneRelayWithLock, type ProcessOneResult, type SpeakRelay } from '../processor.ts'
+import { RelayStore } from '../storage/store.ts'
 
 export interface AppProcessorLoopOptions {
   intervalMs?: number
   maxIterations?: number
   sleep?: (milliseconds: number) => Promise<void>
-  speak?: SpeakVoicemail
+  speak?: SpeakRelay
   onResult?: (result: ProcessOneResult) => void
   shouldContinue?: () => boolean
 }
 
 export async function runAppProcessorLoop(
-  store: VoicemailStore,
+  store: RelayStore,
   options: AppProcessorLoopOptions = {},
 ): Promise<ProcessOneResult[]> {
   const intervalMs = options.intervalMs ?? 1000
@@ -20,7 +20,7 @@ export async function runAppProcessorLoop(
   const results: ProcessOneResult[] = []
 
   while (shouldContinue() && (options.maxIterations === undefined || results.length < options.maxIterations)) {
-    const result = processOneVoicemailWithLock(store, options.speak)
+    const result = processOneRelayWithLock(store, options.speak)
     results.push(result)
     options.onResult?.(result)
 

@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { normalizeVoicemail, spokenText } from '../src/core/message.ts'
+import { normalizeRelay, spokenText } from '../src/core/message.ts'
 
-test('normalizes the smallest agent voicemail contract', () => {
-  const voicemail = normalizeVoicemail({
+test('normalizes the smallest agent relay contract', () => {
+  const relay = normalizeRelay({
     line: ' Brain ',
     message: ' The plan   is ready. ',
   })
 
-  assert.deepEqual(voicemail, {
+  assert.deepEqual(relay, {
     line: 'Brain',
     message: 'The plan is ready.',
     type: 'update',
@@ -18,25 +18,25 @@ test('normalizes the smallest agent voicemail contract', () => {
 })
 
 test('accepts v0 type, priority, and source metadata', () => {
-  const voicemail = normalizeVoicemail({
+  const relay = normalizeRelay({
     line: 'Brain',
     message: 'The plan is ready.',
     type: 'complete',
     priority: 'high',
-    session: 'agent voicemail plan',
+    session: 'agent relay plan',
     app: 'Ghostty',
     cwd: '~/Brain',
   })
 
-  assert.equal(voicemail.type, 'complete')
-  assert.equal(voicemail.priority, 'high')
-  assert.equal(voicemail.session, 'agent voicemail plan')
-  assert.equal(voicemail.app, 'Ghostty')
-  assert.equal(voicemail.cwd, '~/Brain')
+  assert.equal(relay.type, 'complete')
+  assert.equal(relay.priority, 'high')
+  assert.equal(relay.session, 'agent relay plan')
+  assert.equal(relay.app, 'Ghostty')
+  assert.equal(relay.cwd, '~/Brain')
 })
 
 test('rejects obvious token-looking strings', () => {
-  assert.throws(() => normalizeVoicemail({
+  assert.throws(() => normalizeRelay({
     line: 'Brain',
     message: 'token=TEST_TOKEN',
   }), /secret or token/)

@@ -1,4 +1,4 @@
-You evaluate a candidate voicemail composed from short agent status updates.
+You evaluate a candidate relay composed from short agent status updates.
 
 Return exactly one JSON object and no other text:
 
@@ -14,7 +14,7 @@ Score from 1 to 10.
 
 Evaluation criteria:
 
-1. Sounds like a useful voicemail a thoughtful agent would leave.
+1. Sounds like a useful relay a thoughtful agent would leave.
 2. Preserves the current important point from the source messages.
 3. Does not invent facts, outcomes, decisions, files, links, or errors.
 4. Avoids dashboard/log-summary language like "3 updates from..." unless the
