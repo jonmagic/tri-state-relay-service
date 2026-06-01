@@ -23,6 +23,12 @@ Keep updates brief, intentional, and human-authored. Say what is happening or wh
 
 Use TSRS as the transport when available. In this repository, use `./dist/native/voicemail` when it exists; otherwise use `npm run build:native` before sending an update:
 
+Choose TSRS line names from the agent's current working directory, not from
+the topic being researched. In this repository the line is `Tri-State Relay
+Service`; an agent working from `~/Brain` should use `Brain` even when it is
+researching TSRS. Mention cross-project targets in the message text instead
+of changing the line.
+
 ```sh
 ./dist/native/voicemail --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
 ```
