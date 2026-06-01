@@ -242,7 +242,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         button.title = ""
         button.attributedTitle = NSAttributedString(string: "")
-        button.image = NSImage(systemSymbolName: model.status.systemImage, accessibilityDescription: model.status.title)
+        button.image = model.status.statusImage
     }
 
     private func showMenu() {
@@ -1012,6 +1012,20 @@ struct QueueStatus {
         }
 
         return "tray"
+    }
+
+    var statusImage: NSImage? {
+        let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+
+        guard queued > 0, !muted, speaking == 0 else {
+            image?.isTemplate = true
+            return image
+        }
+
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [.labelColor, .systemRed])
+        let configured = image?.withSymbolConfiguration(configuration) ?? image
+        configured?.isTemplate = false
+        return configured
     }
 }
 
