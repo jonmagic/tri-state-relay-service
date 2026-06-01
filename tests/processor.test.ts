@@ -25,6 +25,41 @@ test('processor marks one ready voicemail heard after successful speech', () => 
   store.close()
 })
 
+test('processor repeats line prefix only after line changes or timeout', () => {
+  const store = new VoicemailStore(temporaryDatabasePath())
+  const spoken: string[] = []
+  store.enqueue({ line: 'Brain', message: 'First update.' })
+  store.enqueue({ line: 'Brain', message: 'Second update.' })
+  store.enqueue({ line: 'TSRS', message: 'Line changed.' })
+  store.setMode('ready')
+
+  processOneVoicemail(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  })
+  store.setMode('ready')
+  processOneVoicemail(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  })
+  store.setMode('ready')
+  processOneVoicemail(store, (text) => {
+    spoken.push(text)
+    return { status: 0 }
+  })
+
+  assert.deepEqual(spoken, [
+    'Brain. First update.',
+    'Second update.',
+    'TSRS. Line changed.',
+  ])
+
+  store.recordSpokenLine('TSRS', new Date('2026-05-31T19:00:00.000Z'))
+  assert.equal(store.shouldPrefixSpokenLine('TSRS', new Date('2026-05-31T19:00:59.000Z')), false)
+  assert.equal(store.shouldPrefixSpokenLine('TSRS', new Date('2026-05-31T19:01:00.000Z')), true)
+  store.close()
+})
+
 test('processor marks one ready voicemail failed after speech failure', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
   const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })

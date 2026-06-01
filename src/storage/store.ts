@@ -97,6 +97,11 @@ export interface ProcessorLockOptions {
   isOwnerAlive?: (owner: string) => boolean
 }
 
+export interface SpokenLineState {
+  line: string
+  spokenAt: string
+}
+
 export class VoicemailStore {
   readonly path: string
   readonly database: Database.Database
@@ -470,6 +475,46 @@ export class VoicemailStore {
 
     this.setSetting('active_line', normalized)
     return this.getState()
+  }
+
+  shouldPrefixSpokenLine(line: string, now = new Date(), timeoutMs = 60_000): boolean {
+    const last = this.lastSpokenLine()
+
+    if (last === undefined || last.line !== line) {
+      return true
+    }
+
+    const spokenAt = Date.parse(last.spokenAt)
+
+    if (Number.isNaN(spokenAt)) {
+      return true
+    }
+
+    return now.getTime() - spokenAt >= timeoutMs
+  }
+
+  recordSpokenLine(line: string, now = new Date()): void {
+    this.setSetting('last_spoken_line', JSON.stringify({ line, spokenAt: now.toISOString() }))
+  }
+
+  private lastSpokenLine(): SpokenLineState | undefined {
+    const value = this.getSetting('last_spoken_line')
+
+    if (value === undefined) {
+      return undefined
+    }
+
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>
+
+      if (typeof parsed.line === 'string' && typeof parsed.spokenAt === 'string') {
+        return { line: parsed.line, spokenAt: parsed.spokenAt }
+      }
+    } catch {
+      return undefined
+    }
+
+    return undefined
   }
 
   claimNextForSpeech(): Voicemail | undefined {

@@ -51,3 +51,13 @@ test('formats spoken text with line and non-update type', () => {
 
   assert.equal(text, 'Brain. blocked. I need a decision.')
 })
+
+test('formats repeated spoken text without line prefix', () => {
+  const text = spokenText({
+    line: 'Brain',
+    type: 'update',
+    message: 'The plan is ready.',
+  }, { includeLine: false })
+
+  assert.equal(text, 'The plan is ready.')
+})

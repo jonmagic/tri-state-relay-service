@@ -70,9 +70,11 @@ export function normalizeVoicemail(input: NewVoicemailInput): NewVoicemail {
   return voicemail
 }
 
-export function spokenText(voicemail: Pick<Voicemail, 'line' | 'type' | 'message'>): string {
+export function spokenText(voicemail: Pick<Voicemail, 'line' | 'type' | 'message'>, options: { includeLine?: boolean } = {}): string {
   const typePrefix = voicemail.type === 'update' ? '' : `${voicemail.type}. `
-  return `${voicemail.line}. ${typePrefix}${voicemail.message}`
+  const linePrefix = options.includeLine === false ? '' : `${voicemail.line}. `
+
+  return `${linePrefix}${typePrefix}${voicemail.message}`
 }
 
 function normalizeRequiredText(value: string, field: string, maxLength: number): string {

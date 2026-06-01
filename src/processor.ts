@@ -67,9 +67,11 @@ function processClaimedVoicemail(store: VoicemailStore, voicemail: ReturnType<Vo
     return { status: 'idle', exitCode: 0 }
   }
 
-  const result = speak(spokenText(voicemail))
+  const includeLine = store.shouldPrefixSpokenLine(voicemail.line)
+  const result = speak(spokenText(voicemail, { includeLine }))
 
   if (result.status === 0) {
+    store.recordSpokenLine(voicemail.line)
     store.markStatus(voicemail.id, 'heard')
     return { status: 'heard', exitCode: 0, voicemailId: voicemail.id }
   }
