@@ -163,6 +163,18 @@ producer counts, and stale high-priority blockers. The overview is safe for
 menu and automation use because it omits voicemail message text and source
 paths.
 
+Source controls are available globally and per line:
+
+```sh
+voicemail source
+voicemail source --line "Tri-State Relay Service"
+voicemail reveal-source --line "Tri-State Relay Service"
+voicemail copy-source --line "Tri-State Relay Service"
+```
+
+Line submenu source actions use the selected line's latest source context,
+not the newest source from another line.
+
 Global hotkeys:
 
 - `Control` + `Option` + `Command` + `Space`: play the current line.
@@ -170,6 +182,5 @@ Global hotkeys:
 
 ## Next slices
 
-1. Render the safe aggregate queue overview in the menu bar app.
-2. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
-3. Refine source controls so line submenus can reveal or copy source context for that specific line.
+1. Replace shell-out app actions with a native library boundary or direct Swift/Perry bridge.
+2. Add terminal-specific focus adapters where reliable.

@@ -161,6 +161,24 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
+    @objc private func revealLineSource(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.revealSource(line: line)
+        refreshStatusItem()
+    }
+
+    @objc private func copyLineSource(_ sender: NSMenuItem) {
+        guard let line = sender.representedObject as? String else {
+            return
+        }
+
+        model.copySource(line: line)
+        refreshStatusItem()
+    }
+
     @objc private func refresh() {
         model.refresh()
         refreshStatusItem()
@@ -359,6 +377,22 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             }
         }
 
+        if model.status.hasSource(for: line) {
+            if submenu.items.count > 0 {
+                submenu.addItem(.separator())
+            }
+
+            if model.status.hasSourcePath(for: line) {
+                let reveal = menuItem("Reveal Source", action: #selector(revealLineSource(_:)), enabled: true)
+                reveal.representedObject = line
+                submenu.addItem(reveal)
+            }
+
+            let copy = menuItem("Copy Source", action: #selector(copyLineSource(_:)), enabled: true)
+            copy.representedObject = line
+            submenu.addItem(copy)
+        }
+
         if submenu.items.isEmpty {
             submenu.addItem(NSMenuItem(title: "No line actions available", action: nil, keyEquivalent: ""))
         }
@@ -554,7 +588,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], lineSources: [:], sourcePath: nil, sourceURL: nil)
 
     init() {
         refresh()
@@ -670,8 +704,18 @@ final class MenuBarModel {
         refresh()
     }
 
+    func revealSource(line: String) {
+        runVoicemail("reveal-source", arguments: ["--line", line])
+        refresh()
+    }
+
     func copySource() {
         runVoicemail("copy-source")
+        refresh()
+    }
+
+    func copySource(line: String) {
+        runVoicemail("copy-source", arguments: ["--line", line])
         refresh()
     }
 
@@ -717,7 +761,7 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], lineSources: [:], sourcePath: nil, sourceURL: nil)
         }
 
         let mode = json["mode"] as? String ?? "focus"
@@ -733,8 +777,9 @@ final class MenuBarModel {
         let source = json["source"] as? [String: Any]
         let cwd = source?["cwd"] as? String
         let url = source?["url"] as? String
+        let lineSources = parseLineSources(json["lineSources"])
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, overviewItems: overviewItems, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, overviewItems: overviewItems, lineSources: lineSources, sourcePath: cwd, sourceURL: url)
     }
 
     @discardableResult
@@ -818,6 +863,7 @@ struct QueueStatus {
     let activeLine: String?
     let lines: [LineSummary]
     let overviewItems: [String]
+    let lineSources: [String: LineSource]
     let sourcePath: String?
     let sourceURL: String?
 
@@ -827,6 +873,18 @@ struct QueueStatus {
 
     var hasSource: Bool {
         sourcePath != nil || sourceURL != nil
+    }
+
+    func hasSourcePath(for line: String) -> Bool {
+        lineSources[line]?.path != nil
+    }
+
+    func hasSource(for line: String) -> Bool {
+        guard let source = lineSources[line] else {
+            return false
+        }
+
+        return source.path != nil || source.url != nil
     }
 
     var canPlayFromMenu: Bool {
@@ -897,6 +955,11 @@ struct LineSummary {
     let failed: Int
 }
 
+struct LineSource {
+    let path: String?
+    let url: String?
+}
+
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let speechCommand: String
@@ -931,6 +994,23 @@ private func parseLines(_ value: Any?) -> [LineSummary] {
             failed: intValue(row["failed"]),
         )
     }
+}
+
+private func parseLineSources(_ value: Any?) -> [String: LineSource] {
+    guard let rows = value as? [String: [String: Any]] else {
+        return [:]
+    }
+
+    var sources: [String: LineSource] = [:]
+
+    for (line, source) in rows {
+        sources[line] = LineSource(
+            path: source["cwd"] as? String,
+            url: source["url"] as? String
+        )
+    }
+
+    return sources
 }
 
 private func parseOverviewItems(_ value: Any?) -> [String] {

@@ -328,29 +328,43 @@ export class VoicemailStore {
     }
   }
 
-  latestSourceContext(): SourceContext | undefined {
+  latestSourceContext(line?: string): SourceContext | undefined {
     const row = this.database.prepare(`
       SELECT id, line, session, app, cwd, url
       FROM voicemails
-      WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
+      WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
+        AND (? IS NULL OR line = ?)
       ORDER BY created_at DESC, id DESC
       LIMIT 1
-    `).get()
+    `).get(line ?? null, line ?? null)
 
     if (row === undefined) {
       return undefined
     }
 
-    const value = row as Record<string, unknown>
+    return mapSourceContext(row)
+  }
 
-    return {
-      id: Number(value.id),
-      line: String(value.line),
-      session: optionalString(value.session),
-      app: optionalString(value.app),
-      cwd: optionalString(value.cwd),
-      url: optionalString(value.url),
-    }
+  latestSourceContextsByLine(): SourceContext[] {
+    const rows = this.database.prepare(`
+      SELECT id, line, session, app, cwd, url
+      FROM (
+        SELECT
+          id,
+          line,
+          session,
+          app,
+          cwd,
+          url,
+          ROW_NUMBER() OVER (PARTITION BY line ORDER BY created_at DESC, id DESC) AS row_number
+        FROM voicemails
+        WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
+      )
+      WHERE row_number = 1
+      ORDER BY line ASC
+    `).all()
+
+    return rows.map(mapSourceContext)
   }
 
   clear(): number {
@@ -692,6 +706,30 @@ function mapVoicemail(row: unknown): Voicemail {
     createdAt: String(value.created_at),
     updatedAt: String(value.updated_at),
   }
+}
+
+function mapSourceContext(row: unknown): SourceContext {
+  if (row === undefined || row === null || typeof row !== 'object') {
+    throw new Error('expected source context row')
+  }
+
+  const value = row as Record<string, unknown>
+  const source: SourceContext = {
+    id: Number(value.id),
+    line: String(value.line),
+  }
+
+  const session = optionalString(value.session)
+  const app = optionalString(value.app)
+  const cwd = optionalString(value.cwd)
+  const url = optionalString(value.url)
+
+  if (session !== undefined) source.session = session
+  if (app !== undefined) source.app = app
+  if (cwd !== undefined) source.cwd = cwd
+  if (url !== undefined) source.url = url
+
+  return source
 }
 
 function optionalString(value: unknown): string | undefined {

@@ -51,6 +51,7 @@ function run(parsed: ParsedCommand): void {
     const state = store.getState()
     const counts = store.countByStatus()
     const source = store.latestSourceContext()
+    const lineSources = Object.fromEntries(store.latestSourceContextsByLine().map((source) => [source.line, source]))
     const lines = store.lineSummaries()
     const overview = store.queueOverview()
 
@@ -66,6 +67,7 @@ function run(parsed: ParsedCommand): void {
       attentionCount: counts.queued + counts.heard + counts.failed,
       overview,
       source,
+      lineSources,
       lines,
     }))
     return
@@ -130,13 +132,13 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'source') {
-    const source = store.latestSourceContext()
+    const source = store.latestSourceContext(parsed.flags.line)
     console.log(JSON.stringify(source ?? null))
     return
   }
 
   if (parsed.command === 'reveal-source') {
-    const source = store.latestSourceContext()
+    const source = store.latestSourceContext(parsed.flags.line)
 
     if (source?.cwd === undefined) {
       console.log('no source cwd to reveal')
@@ -149,7 +151,7 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'copy-source') {
-    const source = store.latestSourceContext()
+    const source = store.latestSourceContext(parsed.flags.line)
     const value = source?.cwd ?? source?.url
 
     if (value === undefined) {
@@ -304,9 +306,9 @@ function printHelp(): void {
   voicemail mark-handled
   voicemail replay-last
   voicemail clear-line --line "Brain"
-  voicemail source
-  voicemail reveal-source
-  voicemail copy-source
+  voicemail source [--line "Brain"]
+  voicemail reveal-source [--line "Brain"]
+  voicemail copy-source [--line "Brain"]
   voicemail line
   voicemail line "Tri-State Relay Service"
   voicemail combiner

@@ -216,7 +216,11 @@ test('lifecycle controls can be scoped to a line', () => {
 
 test('latest source context omits message text and prefers newest metadata', () => {
   const store = new VoicemailStore(temporaryDatabasePath())
-  store.enqueue({ line: 'Brain', message: 'No source here.' })
+  store.enqueue({
+    line: 'Brain',
+    message: 'Brain source ready.',
+    cwd: '~/Brain',
+  })
   store.enqueue({
     line: 'TSRS',
     message: 'The app is ready.',
@@ -234,7 +238,29 @@ test('latest source context omits message text and prefers newest metadata', () 
     cwd: '~/code/tri-state-relay-service',
     url: 'https://github.com/jonmagic/tri-state-relay-service',
   })
+  assert.deepEqual(store.latestSourceContext('Brain'), {
+    id: 1,
+    line: 'Brain',
+    cwd: '~/Brain',
+  })
+  assert.deepEqual(store.latestSourceContextsByLine(), [
+    {
+      id: 1,
+      line: 'Brain',
+      cwd: '~/Brain',
+    },
+    {
+      id: 2,
+      line: 'TSRS',
+      session: 'agent session',
+      app: 'Ghostty',
+      cwd: '~/code/tri-state-relay-service',
+      url: 'https://github.com/jonmagic/tri-state-relay-service',
+    },
+  ])
   assert.equal(JSON.stringify(store.latestSourceContext()).includes('The app is ready.'), false)
+  assert.equal(JSON.stringify(store.latestSourceContext('Brain')).includes('Brain source ready.'), false)
+  assert.equal(JSON.stringify(store.latestSourceContextsByLine()).includes('The app is ready.'), false)
   store.close()
 })
 
