@@ -70,7 +70,10 @@ separate architecture decision and human checkpoint.
 
 Tri-State Relay Service is a local macOS menu bar status inbox for developer
 tools. It stores short user-authored status relays locally and plays them
-through the app-controlled speech path only when the user enables playback.
-The App Store build does not execute arbitrary user-provided shell commands or
-download executable code. External command integrations are reserved for the
-separately distributed direct-download edition.
+through the app-controlled speech path only when the user enables playback. The
+app checks default input-device activity before claiming speech so it can defer
+playback while another app is capturing microphone input, without recording or
+inspecting microphone audio. The App Store build does not execute arbitrary
+user-provided shell commands or download executable code. External command
+integrations are reserved for the separately distributed direct-download
+edition.

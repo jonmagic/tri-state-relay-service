@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import CoreAudio
 import SQLite3
 
 #if APP_STORE
@@ -588,12 +589,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let model: MenuBarModel
     private let onChange: () -> Void
+    private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = preferredRelayVoice()
 
-    init(model: MenuBarModel, onChange: @escaping () -> Void) {
+    init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
         self.model = model
+        self.inputCaptureSensor = inputCaptureSensor
         self.onChange = onChange
         super.init()
         synthesizer.delegate = self
@@ -601,6 +604,12 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
     func playNext(line: String? = nil) {
         guard !synthesizer.isSpeaking else {
+            return
+        }
+
+        if inputCaptureSensor.isInputCaptureActive() {
+            model.refresh()
+            onChange()
             return
         }
 
@@ -637,6 +646,62 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         model.markNativeSpeechFailed(id: id)
         currentId = nil
         onChange()
+    }
+}
+
+protocol InputCaptureSensing {
+    func isInputCaptureActive() -> Bool
+}
+
+struct DefaultInputCaptureSensor: InputCaptureSensing {
+    func isInputCaptureActive() -> Bool {
+        guard let deviceID = defaultInputDeviceID() else {
+            return false
+        }
+
+        var isRunning: UInt32 = 0
+        var propertySize = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &propertySize,
+            &isRunning
+        )
+
+        return status == noErr && isRunning != 0
+    }
+
+    private func defaultInputDeviceID() -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(0)
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &propertySize,
+            &deviceID
+        )
+
+        guard status == noErr, deviceID != AudioDeviceID(kAudioObjectUnknown) else {
+            return nil
+        }
+
+        return deviceID
     }
 }
 

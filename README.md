@@ -100,6 +100,12 @@ enqueueing disabled and hides external speech and inactive-line combiner command
 templates. Playback is claimed and spoken by the app with AVFoundation speech
 using a natural available English voice when possible.
 
+Before claiming a relay for speech, the app checks whether the default input
+device appears to be actively captured by another app. When microphone capture
+is active, TSRS leaves relays queued and retries later instead of speaking over
+the user. This is a best-effort CoreAudio device-state check; TSRS does not
+record or inspect microphone audio.
+
 The profile also exposes a capability seam through `relay settings`. The
 App Store-safe profile reports native speech, line-scoped source actions, no
 terminal enqueueing, disabled external command templates, and a one-line
