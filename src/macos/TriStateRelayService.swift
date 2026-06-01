@@ -165,16 +165,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
-    @objc private func revealSource() {
-        model.revealSource()
-        refreshStatusItem()
-    }
-
-    @objc private func copySource() {
-        model.copySource()
-        refreshStatusItem()
-    }
-
     @objc private func revealLineSource(_ sender: NSMenuItem) {
         guard let line = sender.representedObject as? String else {
             return
@@ -260,18 +250,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         for item in lineMenuItems() {
             menu.addItem(item)
         }
-        for item in overviewMenuItems() {
-            menu.addItem(item)
-        }
-        if model.status.hasSource {
-            menu.addItem(.separator())
-
-            if model.status.hasSourcePath {
-                menu.addItem(menuItem("Reveal Source", action: #selector(revealSource), enabled: true))
-            }
-
-            menu.addItem(menuItem("Copy Source", action: #selector(copySource), enabled: true))
-        }
         menu.addItem(.separator())
         if model.status.muted {
             menu.addItem(menuItem("Unmute", action: #selector(unmute), enabled: true))
@@ -285,27 +263,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
-    }
-
-    private func overviewMenuItems() -> [NSMenuItem] {
-        let items = model.status.overviewItems
-
-        if items.isEmpty {
-            return []
-        }
-
-        var menuItems = [NSMenuItem.separator()]
-        let overview = NSMenuItem(title: "Overview", action: nil, keyEquivalent: "")
-        overview.isEnabled = false
-        menuItems.append(overview)
-
-        for item in items {
-            let menuItem = NSMenuItem(title: item, action: nil, keyEquivalent: "")
-            menuItem.isEnabled = false
-            menuItems.append(menuItem)
-        }
-
-        return menuItems
     }
 
     private func playCurrentLineFromHotKey() {
@@ -700,7 +657,7 @@ private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
 }
 
 final class MenuBarModel {
-    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], lineSources: [:], sourcePath: nil, sourceURL: nil)
+    private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
 
     init() {
         refresh()
@@ -808,18 +765,8 @@ final class MenuBarModel {
         refresh()
     }
 
-    func revealSource() {
-        revealNativeSource(status.sourcePath)
-        refresh()
-    }
-
     func revealSource(line: String) {
         revealNativeSource(status.lineSources[line]?.path)
-        refresh()
-    }
-
-    func copySource() {
-        copyNativeSource(status.sourcePath ?? status.sourceURL)
         refresh()
     }
 
@@ -902,7 +849,7 @@ final class MenuBarModel {
             let data = output.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], overviewItems: [], lineSources: [:], sourcePath: nil, sourceURL: nil)
+            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
         }
 
         let mode = json["mode"] as? String ?? "focus"
@@ -914,13 +861,9 @@ final class MenuBarModel {
         let speaking = intValue(counts["speaking"])
         let heard = intValue(counts["heard"])
         let lines = parseLines(json["lines"])
-        let overviewItems = parseOverviewItems(json["overview"])
-        let source = json["source"] as? [String: Any]
-        let cwd = source?["cwd"] as? String
-        let url = source?["url"] as? String
         let lineSources = parseLineSources(json["lineSources"])
 
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, overviewItems: overviewItems, lineSources: lineSources, sourcePath: cwd, sourceURL: url)
+        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, lineSources: lineSources)
     }
 
     @discardableResult
@@ -1027,18 +970,7 @@ struct QueueStatus {
     let inactiveLineCombiner: String
     let activeLine: String?
     let lines: [LineSummary]
-    let overviewItems: [String]
     let lineSources: [String: LineSource]
-    let sourcePath: String?
-    let sourceURL: String?
-
-    var hasSourcePath: Bool {
-        sourcePath != nil
-    }
-
-    var hasSource: Bool {
-        sourcePath != nil || sourceURL != nil
-    }
 
     func hasSourcePath(for line: String) -> Bool {
         lineSources[line]?.path != nil
@@ -1176,39 +1108,4 @@ private func parseLineSources(_ value: Any?) -> [String: LineSource] {
     }
 
     return sources
-}
-
-private func parseOverviewItems(_ value: Any?) -> [String] {
-    guard let overview = value as? [String: Any] else {
-        return []
-    }
-
-    let priorities = overview["byPriority"] as? [[String: Any]] ?? []
-    let producers = overview["byProducer"] as? [[String: Any]] ?? []
-    let staleBlockers = overview["staleBlockers"] as? [String: Any] ?? [:]
-    var items: [String] = []
-
-    for priority in priorities {
-        guard let name = priority["priority"] as? String else {
-            continue
-        }
-
-        items.append("Priority \(name): \(intValue(priority["count"]))")
-    }
-
-    for producer in producers {
-        guard let name = producer["producer"] as? String else {
-            continue
-        }
-
-        items.append("Producer \(name): \(intValue(producer["count"]))")
-    }
-
-    let staleCount = intValue(staleBlockers["count"])
-
-    if staleCount > 0 {
-        items.append("Stale blockers: \(staleCount)")
-    }
-
-    return items
 }

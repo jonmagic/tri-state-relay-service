@@ -24,8 +24,8 @@ The App Store-safe profile:
 2. Uses the same CLI-only native app packaging as the direct build and does not build, bundle, or launch `relay-processor`.
 3. Requires `TSRS_PROCESSOR_AUTH=app-owned-processor` for app-only claim and mark helper commands.
 4. Masks external speech and inactive-line combiner command templates.
-5. Refuses terminal `relay reveal-source` and `relay copy-source` shell-outs when `TSRS_DISTRIBUTION_PROFILE=app-store`.
-6. Performs app source actions with `NSWorkspace` and `NSPasteboard`.
+5. Has no CLI source command surface.
+6. Performs line-scoped app source actions with `NSWorkspace` and `NSPasteboard`.
 7. Exposes capabilities through `relay settings` and `relay status`.
 8. Rejects terminal `relay --line ... --message ...` enqueueing until an App Store-safe storage model is chosen.
 
@@ -34,7 +34,7 @@ The direct profile keeps:
 1. Swift-owned AVFoundation app playback.
 2. Configurable speech command templates for legacy processor/terminal compatibility.
 3. Configurable inactive-line combiner command templates.
-4. CLI source actions for direct terminal use.
+4. Line-scoped app source actions for direct terminal use context.
 
 ## Storage and enqueueing decision
 

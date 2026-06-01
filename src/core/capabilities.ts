@@ -7,7 +7,7 @@ export interface RelayCapabilities {
   terminalEnqueue: boolean
   externalSpeechCommand: boolean
   externalInactiveLineCombiner: boolean
-  nativeSourceActions: boolean
+  lineSourceActions: boolean
 }
 
 export function relayCapabilities(profile: DistributionProfile): RelayCapabilities {
@@ -19,7 +19,7 @@ export function relayCapabilities(profile: DistributionProfile): RelayCapabiliti
       terminalEnqueue: false,
       externalSpeechCommand: false,
       externalInactiveLineCombiner: false,
-      nativeSourceActions: true,
+      lineSourceActions: true,
     }
   }
 
@@ -29,6 +29,6 @@ export function relayCapabilities(profile: DistributionProfile): RelayCapabiliti
     terminalEnqueue: true,
     externalSpeechCommand: true,
     externalInactiveLineCombiner: true,
-    nativeSourceActions: false,
+    lineSourceActions: true,
   }
 }

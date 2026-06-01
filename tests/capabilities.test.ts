@@ -11,7 +11,7 @@ test('app-store capabilities define free safe relay behavior', () => {
     terminalEnqueue: false,
     externalSpeechCommand: false,
     externalInactiveLineCombiner: false,
-    nativeSourceActions: true,
+    lineSourceActions: true,
   })
 })
 
@@ -22,6 +22,6 @@ test('direct capabilities preserve power-user relay behavior', () => {
     terminalEnqueue: true,
     externalSpeechCommand: true,
     externalInactiveLineCombiner: true,
-    nativeSourceActions: false,
+    lineSourceActions: true,
   })
 })

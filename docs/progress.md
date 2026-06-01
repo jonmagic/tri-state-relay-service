@@ -21,7 +21,7 @@ Current state:
 13. `src/macos/TriStateRelayService.swift` builds an interactable AppKit `NSStatusItem` app around the Perry-built CLI and processor binaries.
 14. `relay status` exposes JSON queue state for the app without scraping message text.
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
-16. The CLI and menu bar app support source actions for revealing the latest captured cwd and copying the latest cwd or URL.
+16. The menu bar app supports line-scoped source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 17. The menu bar app periodically refreshes queue state and processes one queued relay when ready and unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
 19. `npm run eval:inactive-line` compares `apfel` and `llm` against relay-composition fixtures with contract checks and an LLM judge.
@@ -36,8 +36,7 @@ Current state:
 Roadmap gaps from the latest feature review:
 
 1. The roadmap should include safe aggregate queue views for producer/line/priority/staleness patterns without exposing message text.
-2. Source controls are still global latest-source actions; line-specific source controls should be added when needed.
-3. Shell-out app actions should eventually move behind a native library boundary or direct Swift/Perry bridge.
+2. Shell-out app actions should eventually move behind a native library boundary or direct Swift/Perry bridge.
 
 Recommended next slice: safe aggregate queue views.
 
@@ -52,13 +51,13 @@ Current state additions:
 3. `npm run build:macos:app-store` builds the App Store-safe profile with `relay`.
 4. App Store-safe playback uses app-owned AVFoundation speech and avoids external speech command templates.
 5. App Store-safe settings hide external combiner and speech command template editors.
-6. App Store-safe source actions use native `NSWorkspace` and `NSPasteboard` APIs instead of CLI `open` or `pbcopy` commands.
+6. Source actions are line-scoped app menu actions using native `NSWorkspace` and `NSPasteboard` APIs.
 7. External inactive-line combiner execution is direct-profile only; App Store-safe mode reports it unavailable and uses latest-only inactive-line behavior.
 8. `relay` is the CLI/native binary.
 9. `relay settings` exposes a capability seam for direct versus App Store-safe behavior, including the one-line free-tier placeholder.
 10. `relay status` exposes the active profile and capabilities for diagnostics.
 11. App-only native playback helper commands require app authorization before claiming or mutating playback state.
-12. In App Store-safe mode, terminal `relay reveal-source` and `relay copy-source` refuse to shell out and leave source actions to the native app.
+12. The CLI source command surface was removed; source actions live in line submenus.
 13. Documentation now describes profile differences, unavailable App Store-safe features, storage/enqueueing caveats, and an App Review note draft.
 14. `docs/app-store-profile.md` records the App Store-safe profile contract and makes CLI enqueueing a direct-profile capability until a sandbox storage architecture is explicitly chosen.
 

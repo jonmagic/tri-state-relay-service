@@ -16,9 +16,6 @@ relay clear-delivered
 relay skip-next
 relay acknowledge
 relay replay-last
-relay source
-relay reveal-source
-relay copy-source
 relay line
 relay line "Tri-State Relay Service"
 relay combiner
@@ -110,12 +107,12 @@ so direct terminal use cannot claim or mutate playback state through those
 app-only commands.
 
 The profile also exposes a capability seam through `relay settings`. The
-App Store-safe profile reports native speech, native source actions, no
+App Store-safe profile reports native speech, line-scoped source actions, no
 terminal enqueueing, disabled external command templates, and a one-line
-free-tier limit. The direct profile reports the power-user command-template and
-terminal enqueue capabilities. No purchase flow or StoreKit behavior is
-implemented yet. `relay status` also reports the active profile and
-capabilities for automation and diagnostics.
+free-tier limit. The direct profile reports the power-user command-template,
+terminal enqueue, and line-scoped source action capabilities. No purchase flow
+or StoreKit behavior is implemented yet. `relay status` also reports the active
+profile and capabilities for automation and diagnostics.
 
 The app injects `TSRS_PROCESSOR_AUTH=app-owned-processor` only for constrained
 app helper commands that claim or update playback state. This keeps normal CLI
@@ -123,14 +120,10 @@ usage as a queue and control interface while preserving the app-owned speech
 path.
 
 Each line submenu scopes lifecycle controls to that line: play next, skip
-next, clear queue, replay last, acknowledge last, and clear delivered. Global
-controls cover mute, unmute, settings, refresh, and quit. Source controls can
-reveal the latest captured working directory or copy the latest captured
-working directory/URL without exposing message text. The App Store-safe
-profile performs those source actions with `NSWorkspace` and `NSPasteboard`
-instead of CLI commands. When `TSRS_DISTRIBUTION_PROFILE=app-store`, the CLI
-source commands report that native source actions are unavailable from the
-terminal instead of shelling out to `/usr/bin/open` or `/usr/bin/pbcopy`.
+next, clear queue, replay last, acknowledge last, clear delivered, and source
+actions for that line. Global controls cover mute, unmute, settings, refresh,
+and quit. Source actions are app menu actions only; there is no global source
+menu, no overview section, and no CLI source command surface.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/relay.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
@@ -203,22 +196,13 @@ line as they arrive. Messages from other lines remain queued until you
 switch lines or pull them manually. Pulling a message from another line
 makes that line active.
 
-`relay status` includes a text-free `overview` with priority counts,
-producer counts, and stale high-priority blockers. The overview is safe for
-menu and automation use because it omits relay message text and source
-paths.
+Line submenu source actions use the selected line's latest source context, not
+the newest source from another line. The global menu does not show source
+actions.
 
-Source controls are available globally and per line:
-
-```sh
-relay source
-relay source --line "Tri-State Relay Service"
-relay reveal-source --line "Tri-State Relay Service"
-relay copy-source --line "Tri-State Relay Service"
-```
-
-Line submenu source actions use the selected line's latest source context,
-not the newest source from another line.
+Future richer relay interaction could move into a Raycast-style pop-up or
+browser for viewing relay text, searching history, dismissing, and acting on
+selected relays.
 
 Global hotkeys:
 

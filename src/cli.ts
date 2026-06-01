@@ -58,7 +58,6 @@ function run(parsed: ParsedCommand): void {
   if (parsed.command === 'status') {
     const state = store.getState(profile)
     const counts = store.countByStatus()
-    const source = store.latestSourceContext()
     const lineSources: Record<string, ReturnType<RelayStore['latestSourceContext']>> = {}
 
     for (const lineSource of store.latestSourceContextsByLine()) {
@@ -79,7 +78,6 @@ function run(parsed: ParsedCommand): void {
       queueCount: counts.queued,
       attentionCount: counts.queued + counts.heard + counts.failed,
       overview,
-      source,
       lines,
       capabilities: relayCapabilities(profile),
     }
@@ -147,49 +145,6 @@ function run(parsed: ParsedCommand): void {
   if (parsed.command === 'clear-line') {
     const line = requiredFlag(parsed.flags, 'line')
     console.log(`cleared ${store.clearQueued(line)} queued relays from ${line}`)
-    return
-  }
-
-  if (parsed.command === 'source') {
-    const source = store.latestSourceContext(parsed.flags.line)
-    console.log(JSON.stringify(source ?? null))
-    return
-  }
-
-  if (parsed.command === 'reveal-source') {
-    if (isAppStoreProfile()) {
-      console.log('native app source reveal is unavailable from the CLI in the App Store-safe profile')
-      return
-    }
-
-    const source = store.latestSourceContext(parsed.flags.line)
-
-    if (source?.cwd === undefined) {
-      console.log('no source cwd to reveal')
-      return
-    }
-
-    spawnSync('/usr/bin/open', [source.cwd], { stdio: 'ignore' })
-    console.log(`revealed ${source.cwd}`)
-    return
-  }
-
-  if (parsed.command === 'copy-source') {
-    if (isAppStoreProfile()) {
-      console.log('native app source copy is unavailable from the CLI in the App Store-safe profile')
-      return
-    }
-
-    const source = store.latestSourceContext(parsed.flags.line)
-    const value = source?.cwd ?? source?.url
-
-    if (value === undefined) {
-      console.log('no source path or URL to copy')
-      return
-    }
-
-    spawnSync('/usr/bin/pbcopy', { input: value })
-    console.log('copied source')
     return
   }
 
@@ -381,9 +336,6 @@ function printHelp(): void {
   relay acknowledge
   relay replay-last
   relay clear-line --line "Brain"
-  relay source [--line "Brain"]
-  relay reveal-source [--line "Brain"]
-  relay copy-source [--line "Brain"]
   relay line
   relay line "Tri-State Relay Service"
   relay combiner

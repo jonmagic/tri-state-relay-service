@@ -57,19 +57,6 @@ test('authorized app helper command claims one relay for native speech', () => {
   })
 })
 
-test('app-store source CLI commands do not shell out', () => {
-  const dbPath = temporaryDatabasePath()
-  runCli(dbPath, ['--line', 'Brain', '--message', 'The plan is ready.', '--cwd', '/tmp'])
-
-  const revealed = runCli(dbPath, ['reveal-source'], { TSRS_DISTRIBUTION_PROFILE: 'app-store' })
-  const copied = runCli(dbPath, ['copy-source'], { TSRS_DISTRIBUTION_PROFILE: 'app-store' })
-
-  assert.equal(revealed.status, 0)
-  assert.match(revealed.stdout, /unavailable from the CLI in the App Store-safe profile/)
-  assert.equal(copied.status, 0)
-  assert.match(copied.stdout, /unavailable from the CLI in the App Store-safe profile/)
-})
-
 test('status and settings expose the active distribution profile', () => {
   const dbPath = temporaryDatabasePath()
   runCli(dbPath, ['--line', 'Brain', '--message', 'The plan is ready.'])

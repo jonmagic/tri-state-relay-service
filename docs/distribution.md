@@ -42,13 +42,20 @@ Direct download does not mean “keep shelling out forever.” Prefer moving
 normal app behavior into Swift/Xcode and native macOS APIs:
 
 1. Native speech through AVFoundation or another current Apple API.
-2. Native copy/open/source actions through AppKit APIs.
+2. Native line-scoped source actions through AppKit APIs.
 3. Native settings UI.
 4. Native queue/storage access when the persistence boundary is ready.
 5. A standard CLI for agent enqueueing and automation.
 
 Perry remains useful for the current CLI bridge, but the long-term app
 direction is Swift/Xcode-first.
+
+## Product ideas
+
+Future relay interaction could use a Raycast-style browser or pop-up for
+viewing relay text, searching prior relays, dismissing or acknowledging items,
+and acting on a selected line. This would be a better home for richer relay
+text and history than the compact menu bar menu.
 
 ## Relationship to App Store-safe profile
 
@@ -58,7 +65,7 @@ when it helps enforce good boundaries:
 
 1. No arbitrary command execution from the app surface.
 2. Native app-owned playback.
-3. Native source actions.
+3. Native line-scoped source actions.
 4. Clear capability reporting.
 
 Do not let App Store constraints block direct-download Pro features that fit
