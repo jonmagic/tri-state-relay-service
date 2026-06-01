@@ -1016,18 +1016,54 @@ struct QueueStatus {
     }
 
     var statusImage: NSImage? {
-        let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+        if !muted && speaking == 0 {
+            return trayImage(accessibilityDescription: title, includesRedBars: queued > 0)
+        }
 
-        guard queued > 0, !muted, speaking == 0 else {
+        guard queued > 0 else {
+            let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
             image?.isTemplate = true
             return image
         }
 
-        let configuration = NSImage.SymbolConfiguration(paletteColors: [.labelColor, .systemRed])
-        let configured = image?.withSymbolConfiguration(configuration) ?? image
-        configured?.isTemplate = false
-        return configured
+        let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+        image?.isTemplate = true
+        return image
     }
+}
+
+private func trayImage(accessibilityDescription: String, includesRedBars: Bool) -> NSImage {
+    let size = NSSize(width: 20, height: 20)
+    let image = NSImage(size: size)
+    image.accessibilityDescription = accessibilityDescription
+    image.isTemplate = includesRedBars ? false : true
+
+    image.lockFocus()
+    defer {
+        image.unlockFocus()
+    }
+
+    if let tray = NSImage(systemSymbolName: "tray", accessibilityDescription: accessibilityDescription)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)) {
+        tray.isTemplate = true
+        tray.draw(in: NSRect(x: 0.5, y: 1, width: 19, height: 17))
+    }
+
+    guard includesRedBars else {
+        return image
+    }
+
+    let redBars = NSBezierPath()
+    redBars.lineWidth = 1.25
+    redBars.lineCapStyle = .round
+    NSColor.systemRed.setStroke()
+    redBars.move(to: NSPoint(x: 7.4, y: 13.2))
+    redBars.line(to: NSPoint(x: 11.8, y: 13.2))
+    redBars.move(to: NSPoint(x: 6.1, y: 11.2))
+    redBars.line(to: NSPoint(x: 13.1, y: 11.2))
+    redBars.stroke()
+
+    return image
 }
 
 struct LineSummary {
