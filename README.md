@@ -89,11 +89,12 @@ open "dist/macos-app-store/Tri-State Relay Service.app"
 
 The direct profile is an AppKit `NSStatusItem` host that shells out to the
 Perry-built `relay` binary for queue controls while owning playback
-in Swift with AVFoundation speech. The app reads `relay status` JSON rather
-than scraping message text. Right click opens line controls; left click selects
-the next queued line for playback. When unmuted, the app keeps playing incoming
-relays on the active line. Other lines stay quiet and can be pulled from their
-line submenu.
+in Swift with AVFoundation speech. The app reads menu status and settings
+directly from SQLite without scraping message text, while queue mutations and
+app-authorized speech claims still go through the bundled `relay` helper. Right
+click opens line controls; left click selects the next queued line for playback.
+When unmuted, the app keeps playing incoming relays on the active line. Other
+lines stay quiet and can be pulled from their line submenu.
 
 Both macOS profiles are packaged from the CLI-only native build and do not
 bundle or launch the legacy processor. The App Store-safe profile is built
@@ -211,8 +212,8 @@ Global hotkeys:
 
 ## Next slices
 
-1. Move more app behavior from Perry-built helper calls into Swift/Xcode and
-   native macOS APIs while keeping the standard `relay` CLI for agent
+1. Move queue mutations and app-authorized speech claim helpers into Swift/Xcode
+   and native macOS APIs while keeping the standard `relay` CLI for agent
    integrations.
 2. Add signing and notarization packaging for the direct-download app.
 3. Add terminal-specific focus adapters where reliable.

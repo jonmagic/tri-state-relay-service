@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import SQLite3
 
 #if APP_STORE
 let distributionProfile = "app-store"
@@ -658,6 +659,7 @@ private func preferredRelayVoice() -> AVSpeechSynthesisVoice? {
 
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
+    private let storeReader = NativeRelayStoreReader(profile: distributionProfile)
 
     init() {
         refresh()
@@ -813,19 +815,7 @@ final class MenuBarModel {
     }
 
     func loadSettings() -> SettingsSnapshot {
-        let output = runRelay("settings")
-
-        guard
-            let data = output.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return SettingsSnapshot(inactiveLineCombinerCommand: "", speechCommand: "/usr/bin/say <message>")
-        }
-
-        return SettingsSnapshot(
-            inactiveLineCombinerCommand: json["inactiveLineCombinerCommand"] as? String ?? "",
-            speechCommand: json["speechCommand"] as? String ?? "/usr/bin/say <message>"
-        )
+        storeReader.loadSettings()
     }
 
     func saveSettings(inactiveLineCombinerCommand: String, speechCommand: String) {
@@ -843,27 +833,7 @@ final class MenuBarModel {
     }
 
     private func loadStatus() -> QueueStatus {
-        let output = runRelay("status")
-
-        guard
-            let data = output.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
-        }
-
-        let mode = json["mode"] as? String ?? "focus"
-        let muted = json["muted"] as? Bool ?? false
-        let inactiveLineCombiner = json["inactiveLineCombiner"] as? String ?? "none"
-        let activeLine = json["activeLine"] as? String
-        let queued = intValue(json["queueCount"])
-        let counts = json["counts"] as? [String: Any] ?? [:]
-        let speaking = intValue(counts["speaking"])
-        let heard = intValue(counts["heard"])
-        let lines = parseLines(json["lines"])
-        let lineSources = parseLineSources(json["lineSources"])
-
-        return QueueStatus(mode: mode, muted: muted, queued: queued, speaking: speaking, heard: heard, inactiveLineCombiner: inactiveLineCombiner, activeLine: activeLine, lines: lines, lineSources: lineSources)
+        storeReader.loadStatus()
     }
 
     @discardableResult
@@ -1062,50 +1032,269 @@ struct SettingsSnapshot {
     let speechCommand: String
 }
 
-private func intValue(_ value: Any?) -> Int {
-    if let int = value as? Int {
-        return int
+final class NativeRelayStoreReader {
+    private let profile: String
+
+    init(profile: String) {
+        self.profile = profile
     }
 
-    if let number = value as? NSNumber {
-        return number.intValue
+    func loadSettings() -> SettingsSnapshot {
+        withDatabase { database in
+            let settings = loadRawSettings(database)
+            return SettingsSnapshot(
+                inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
+                speechCommand: speechCommand(settings)
+            )
+        } ?? defaultSettings()
     }
 
-    return 0
-}
-
-private func parseLines(_ value: Any?) -> [LineSummary] {
-    guard let rows = value as? [[String: Any]] else {
-        return []
+    func loadStatus() -> QueueStatus {
+        withDatabase { database in
+            let settings = loadRawSettings(database)
+            let counts = countByStatus(database)
+            return QueueStatus(
+                mode: playbackMode(settings["mode"]),
+                muted: settings["muted"] == "true",
+                queued: counts["queued"] ?? 0,
+                speaking: counts["speaking"] ?? 0,
+                heard: counts["heard"] ?? 0,
+                inactiveLineCombiner: inactiveLineCombiner(settings),
+                activeLine: settings["active_line"],
+                lines: lineSummaries(database),
+                lineSources: latestSourceContextsByLine(database)
+            )
+        } ?? defaultStatus()
     }
 
-    return rows.compactMap { row in
-        guard let line = row["line"] as? String else {
+    private func withDatabase<T>(_ read: (OpaquePointer) -> T?) -> T? {
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+
+        guard sqlite3_open_v2(databasePath(), &database, flags, nil) == SQLITE_OK, let database else {
+            if let database {
+                sqlite3_close(database)
+            }
             return nil
         }
 
-        return LineSummary(
-            line: line,
-            queued: intValue(row["queued"]),
-            heard: intValue(row["heard"]),
-            failed: intValue(row["failed"]),
-        )
+        sqlite3_busy_timeout(database, 2_000)
+        defer {
+            sqlite3_close(database)
+        }
+
+        return read(database)
+    }
+
+    private func loadRawSettings(_ database: OpaquePointer) -> [String: String] {
+        var settings: [String: String] = [:]
+        query(database, "SELECT key, value FROM settings") { statement in
+            guard let key = columnString(statement, 0), let value = columnString(statement, 1) else {
+                return
+            }
+
+            settings[key] = value
+        }
+
+        return settings
+    }
+
+    private func countByStatus(_ database: OpaquePointer) -> [String: Int] {
+        var counts = [
+            "queued": 0,
+            "speaking": 0,
+            "heard": 0,
+            "handled": 0,
+            "skipped": 0,
+            "expired": 0,
+            "failed": 0,
+        ]
+
+        query(database, """
+            SELECT status, COUNT(*) AS count
+            FROM relays
+            GROUP BY status
+        """) { statement in
+            guard let status = columnString(statement, 0) else {
+                return
+            }
+
+            counts[status] = Int(sqlite3_column_int(statement, 1))
+        }
+
+        return counts
+    }
+
+    private func lineSummaries(_ database: OpaquePointer) -> [LineSummary] {
+        var lines: [LineSummary] = []
+
+        query(database, """
+            SELECT
+              line,
+              SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+              SUM(CASE WHEN status = 'heard' THEN 1 ELSE 0 END) AS heard,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM relays
+            WHERE status IN ('queued', 'heard', 'failed')
+            GROUP BY line
+            HAVING queued > 0 OR heard > 0 OR failed > 0
+            ORDER BY queued DESC, heard DESC, failed DESC, line ASC
+        """) { statement in
+            guard let line = columnString(statement, 0) else {
+                return
+            }
+
+            lines.append(LineSummary(
+                line: line,
+                queued: Int(sqlite3_column_int(statement, 1)),
+                heard: Int(sqlite3_column_int(statement, 2)),
+                failed: Int(sqlite3_column_int(statement, 3))
+            ))
+        }
+
+        return lines
+    }
+
+    private func latestSourceContextsByLine(_ database: OpaquePointer) -> [String: LineSource] {
+        var sources: [String: LineSource] = [:]
+
+        query(database, """
+            SELECT id, line, session, app, cwd, url
+            FROM relays AS source
+            WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
+              AND id = (
+                SELECT id
+                FROM relays AS candidate
+                WHERE candidate.line = source.line
+                  AND (
+                    candidate.cwd IS NOT NULL
+                    OR candidate.url IS NOT NULL
+                    OR candidate.app IS NOT NULL
+                    OR candidate.session IS NOT NULL
+                  )
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+              )
+            ORDER BY line ASC
+        """) { statement in
+            guard let line = columnString(statement, 1) else {
+                return
+            }
+
+            sources[line] = LineSource(
+                path: columnString(statement, 4),
+                url: columnString(statement, 5)
+            )
+        }
+
+        return sources
+    }
+
+    private func query(_ database: OpaquePointer, _ sql: String, row: (OpaquePointer) -> Void) {
+        var statement: OpaquePointer?
+
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            if let statement {
+                sqlite3_finalize(statement)
+            }
+            return
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            row(statement)
+        }
+    }
+
+    private func inactiveLineCombiner(_ settings: [String: String]) -> String {
+        if profile == "app-store" {
+            return "none"
+        }
+
+        return commandIsEnabled(settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand) ? "custom" : "none"
+    }
+
+    private func inactiveLineCombinerCommand(_ settings: [String: String]) -> String {
+        if profile == "app-store" {
+            return appStoreUnavailableCommand("inactive-line combiner")
+        }
+
+        return settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
+    }
+
+    private func speechCommand(_ settings: [String: String]) -> String {
+        if profile == "app-store" {
+            return appStoreUnavailableCommand("speech")
+        }
+
+        return settings["speech_command"] ?? defaultSpeechCommand
     }
 }
 
-private func parseLineSources(_ value: Any?) -> [String: LineSource] {
-    guard let rows = value as? [String: [String: Any]] else {
-        return [:]
+private func databasePath() -> String {
+    let environment = ProcessInfo.processInfo.environment
+
+    if let path = environment["TSRS_DB_PATH"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return path
     }
 
-    var sources: [String: LineSource] = [:]
-
-    for (line, source) in rows {
-        sources[line] = LineSource(
-            path: source["cwd"] as? String,
-            url: source["url"] as? String
-        )
-    }
-
-    return sources
+    let home = environment["HOME"] ?? NSHomeDirectory()
+    return "\(home)/Library/Application Support/Tri-State Relay Service/relay.db"
 }
+
+private func defaultStatus() -> QueueStatus {
+    QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
+}
+
+private func defaultSettings() -> SettingsSnapshot {
+    SettingsSnapshot(inactiveLineCombinerCommand: "", speechCommand: "/usr/bin/say <message>")
+}
+
+private func playbackMode(_ value: String?) -> String {
+    value == "ready" ? "ready" : "focus"
+}
+
+private func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {
+    guard sqlite3_column_type(statement, index) != SQLITE_NULL, let text = sqlite3_column_text(statement, index) else {
+        return nil
+    }
+
+    return String(cString: text)
+}
+
+private func commandIsEnabled(_ template: String) -> Bool {
+    let commandText = template
+        .split(whereSeparator: \.isNewline)
+        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        .joined(separator: " ")
+
+    return !commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+private func appStoreUnavailableCommand(_ feature: String) -> String {
+    "# External \(feature) command execution is unavailable in the App Store-safe profile."
+}
+
+private let defaultInactiveLineCombinerCommand = """
+# Inactive line combiner command.
+# Leave this commented to use latest-only inactive-line behavior.
+# The command must print a JSON object: {"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short relay"}
+# Placeholders are inserted as single argv values, not shell-expanded.
+#
+# llm CLI: https://github.com/simonw/llm
+# llm prompt <input> --system <system> --no-stream --no-log
+#
+# apfel CLI: https://github.com/Arthur-Ficial/apfel
+# apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>
+"""
+
+private let defaultSpeechCommand = """
+# Speech command.
+# /usr/bin/say ships with macOS, so no extra install is required.
+# Placeholders are inserted as single argv values, not shell-expanded.
+/usr/bin/say <message>
+"""

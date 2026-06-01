@@ -84,5 +84,6 @@ Swift migration update:
 2. The macOS app no longer launches or supervises the legacy relay processor loop.
 3. Both macOS app profiles package only the CLI helper binary, `relay`.
 4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.
+5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to `relay status` or `relay settings`.
 
-Recommended next Swift migration slice: replace `relay status`/settings helper calls with native Swift SQLite reads for menu state and settings.
+Recommended next Swift migration slice: move queue mutations and app-authorized speech claim/mark helpers behind a native Swift storage boundary.
