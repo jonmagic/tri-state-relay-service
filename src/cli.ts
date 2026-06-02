@@ -56,6 +56,7 @@ function run(parsed: ParsedCommand): void {
   }
 
   if (parsed.command === 'status') {
+    store.expireStaleRelays()
     const state = store.getState(profile)
     const counts = store.countByStatus()
     const lineSources: Record<string, ReturnType<RelayStore['latestSourceContext']>> = {}

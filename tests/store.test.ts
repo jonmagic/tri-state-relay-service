@@ -127,6 +127,48 @@ test('active line setting and line counts are persisted', () => {
   store.close()
 })
 
+test('stale relay expiry removes old menu lines without expiring important queued work', () => {
+  const store = new RelayStore(temporaryDatabasePath())
+  const now = new Date('2026-05-31T15:00:00.000Z')
+  const stale = '2026-05-31T14:00:00.000Z'
+  const recent = '2026-05-31T14:45:00.000Z'
+
+  store.enqueue({ line: 'OldUpdate', message: 'Old update.' })
+  store.enqueue({ line: 'OldComplete', type: 'complete', message: 'Old complete.' })
+  store.enqueue({ line: 'OldHigh', priority: 'high', message: 'High update.' })
+  store.enqueue({ line: 'OldBlocked', type: 'blocked', message: 'Blocked update.' })
+  store.enqueue({ line: 'Recent', message: 'Recent update.' })
+  store.enqueue({ line: 'Delivered', message: 'Delivered update.' })
+  store.enqueue({ line: 'Failed', message: 'Failed update.' })
+  store.markStatus(6, 'heard')
+  store.markStatus(7, 'failed')
+  store.database.prepare(`
+    UPDATE relays
+    SET created_at = ?, updated_at = ?
+    WHERE line IN ('OldUpdate', 'OldComplete', 'OldHigh', 'OldBlocked', 'Delivered', 'Failed')
+  `).run(stale, stale)
+  store.database.prepare(`
+    UPDATE relays
+    SET created_at = ?, updated_at = ?
+    WHERE line = 'Recent'
+  `).run(recent, recent)
+
+  assert.equal(store.expireStaleRelays({ now, ageMinutes: 30 }), 4)
+  assert.deepEqual(store.lineSummaries(), [
+    { line: 'OldBlocked', queued: 1, heard: 0, failed: 0 },
+    { line: 'OldHigh', queued: 1, heard: 0, failed: 0 },
+    { line: 'Recent', queued: 1, heard: 0, failed: 0 },
+  ])
+  assert.deepEqual(
+    store.list(20)
+      .filter((relay) => relay.status === 'expired')
+      .map((relay) => relay.line)
+      .sort(),
+    ['Delivered', 'Failed', 'OldComplete', 'OldUpdate'],
+  )
+  store.close()
+})
+
 test('inactive line without combiner keeps only latest queued message', () => {
   const store = new RelayStore(temporaryDatabasePath())
   store.setActiveLine('TSRS')

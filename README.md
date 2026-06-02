@@ -133,6 +133,12 @@ actions for that line. Global controls cover mute, unmute, settings, refresh,
 and quit. Source actions are app menu actions only; there is no global source
 menu, no overview section, and no CLI source command surface.
 
+To keep old lines from living in the menu forever, TSRS expires stale relays
+from menu views after 30 minutes. Delivered and failed relays expire by
+`updated_at`; queued normal or low-priority update/complete relays expire by
+`created_at`. High-priority queued relays and blocked/needs-input relays stay
+until handled explicitly.
+
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/relay.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path.
 
 ## Dogfooding

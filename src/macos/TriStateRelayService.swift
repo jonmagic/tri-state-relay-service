@@ -822,6 +822,8 @@ private let settingsSecondarySectionTitle = "Combiner"
 private let secondarySidebarIconName = "text.bubble"
 #endif
 
+private let defaultStaleRelayAgeMinutes = 30
+
 final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let model: MenuBarModel
     private let onChange: () -> Void
@@ -1511,7 +1513,8 @@ final class NativeRelayStore {
     }
 
     func loadStatus() -> QueueStatus {
-        withDatabase { database in
+        withWriteDatabase { database in
+            expireStaleRelays(database)
             let settings = loadRawSettings(database)
             let counts = countByStatus(database)
             return QueueStatus(
@@ -1628,6 +1631,7 @@ final class NativeRelayStore {
 
     func claimNextForNativeSpeech(line: String? = nil) -> NativeSpeechClaim? {
         writeResult { database in
+            expireStaleRelays(database)
             failStaleSpeaking(database)
             let relay: NativeRelay?
 
@@ -2032,6 +2036,22 @@ final class NativeRelayStore {
             SET status = 'failed', updated_at = ?
             WHERE status = 'speaking' AND updated_at <= ?
         """, [nowString(), staleBefore])
+    }
+
+    private func expireStaleRelays(_ database: OpaquePointer) {
+        let staleBefore = nowString(addingMilliseconds: -TimeInterval(defaultStaleRelayAgeMinutes * 60 * 1000))
+        execute(database, """
+            UPDATE relays
+            SET status = 'expired', updated_at = ?
+            WHERE (
+              status IN ('heard', 'failed') AND updated_at <= ?
+            ) OR (
+              status = 'queued'
+              AND priority != 'high'
+              AND type IN ('update', 'complete')
+              AND created_at <= ?
+            )
+        """, [nowString(), staleBefore, staleBefore])
     }
 
     private func recordSpokenLine(_ database: OpaquePointer, line: String) {

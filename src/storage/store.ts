@@ -90,6 +90,7 @@ export type InactiveLineCombinerFunction = (input: InactiveLineCombineInput) => 
 const schemaVersion = 1
 const defaultQueueOverviewLimit = 10
 export const defaultStaleBlockerAgeMinutes = 15
+export const defaultStaleRelayAgeMinutes = 30
 const defaultProcessorLockTtlMs = 60_000
 
 export interface ProcessorLockOptions {
@@ -106,6 +107,11 @@ export interface SpokenLineState {
 export interface StaleSpeakingOptions {
   now?: Date
   ttlMs?: number
+}
+
+export interface StaleRelayOptions {
+  now?: Date
+  ageMinutes?: number
 }
 
 export class RelayStore {
@@ -287,6 +293,26 @@ export class RelayStore {
       heard: Number(row.heard),
       failed: Number(row.failed),
     }))
+  }
+
+  expireStaleRelays(options: StaleRelayOptions = {}): number {
+    const now = options.now ?? new Date()
+    const ageMinutes = options.ageMinutes ?? defaultStaleRelayAgeMinutes
+    const staleBefore = new Date(now.getTime() - ageMinutes * 60 * 1000).toISOString()
+    const result = this.database.prepare(`
+      UPDATE relays
+      SET status = 'expired', updated_at = ?
+      WHERE (
+        status IN ('heard', 'failed') AND updated_at <= ?
+      ) OR (
+        status = 'queued'
+        AND priority != 'high'
+        AND type IN ('update', 'complete')
+        AND created_at <= ?
+      )
+    `).run(now.toISOString(), staleBefore, staleBefore)
+
+    return Number(result.changes)
   }
 
   queueOverview(options: QueueOverviewOptions = {}): QueueOverview {
