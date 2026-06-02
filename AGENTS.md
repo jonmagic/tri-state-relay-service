@@ -26,9 +26,11 @@ When an implementation milestone is complete, validated, and not blocked, commit
 it without waiting for another prompt. Keep unrelated changes in separate
 commits, and call out any remaining uncommitted work or risks in the handoff.
 
-For app-visible macOS changes, rebuild the direct app, quit and reopen that
-rebuilt app, verify the running process points at the rebuilt bundle, and say so
-explicitly in the handoff.
+For app-visible macOS changes, run `npm run build:macos:direct` and then
+`npm run restart:macos`. Do not use ad hoc `open` commands without first
+stopping the old process. The restart helper must report a running PID from the
+rebuilt `dist/macos/Tri-State Relay Service.app` bundle; say that explicitly in
+the handoff.
 
 ## Product rules
 

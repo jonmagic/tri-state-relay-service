@@ -471,42 +471,84 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let onSave: () -> Void
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
+    private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
+    private let voicePreviewSynthesizer = AVSpeechSynthesizer()
+    private let settingsTabView = NSTabView()
+    private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
+    private let secondarySectionButton = NSButton(title: settingsSecondarySectionTitle, target: nil, action: nil)
+    private let voiceSectionRow = SidebarRowView()
+    private let secondarySectionRow = SidebarRowView()
+    private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
+    private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
+    private let voiceOptions = availableSpeechVoiceOptions()
 
     init(model: MenuBarModel, onSave: @escaping () -> Void) {
         self.model = model
         self.onSave = onSave
 
-        let tabView = NSTabView(frame: NSRect(x: 0, y: 48, width: 720, height: 432))
-        tabView.autoresizingMask = [.width, .height]
+        let sidebar = NSVisualEffectView()
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .withinWindow
+        sidebar.state = .active
+        configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: true)
+        configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
+        settingsTabView.translatesAutoresizingMaskIntoConstraints = false
+        settingsTabView.tabViewType = .noTabsNoBorder
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Voice"))
 #if APP_STORE
-        tabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner and speech command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
+        settingsTabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
 #else
-        tabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
+        settingsTabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
 #endif
-        tabView.addTabViewItem(Self.voiceTabItem(popUpButton: voicePopUpButton))
 
-        let saveButton = NSButton(title: "Save", target: nil, action: nil)
-        saveButton.frame = NSRect(x: 608, y: 12, width: 88, height: 28)
-        saveButton.bezelStyle = .rounded
-
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
-        content.addSubview(tabView)
-        content.addSubview(saveButton)
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 360))
+        content.addSubview(sidebar)
+        sidebar.addSubview(voiceSectionRow)
+        sidebar.addSubview(secondarySectionRow)
+        content.addSubview(settingsTabView)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 360),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Tri-State Relay Service Settings"
+        window.minSize = NSSize(width: 560, height: 320)
         window.contentView = content
         window.center()
 
         super.init(window: window)
         window.delegate = self
-        saveButton.target = self
-        saveButton.action = #selector(save)
+        settingsTabView.tabViewItem(at: 0).label = "Voice"
+        settingsTabView.tabViewItem(at: 0).view = voiceTabView()
+        voiceSectionButton.target = self
+        voiceSectionButton.action = #selector(selectVoiceSection)
+        secondarySectionButton.target = self
+        secondarySectionButton.action = #selector(selectSecondarySection)
+        voicePopUpButton.target = self
+        voicePopUpButton.action = #selector(selectVoice(_:))
+        voicePreviewButton.target = self
+        voicePreviewButton.action = #selector(previewSelectedVoice(_:))
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: content.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 160),
+            voiceSectionRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            voiceSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 28),
+            voiceSectionRow.heightAnchor.constraint(equalToConstant: 38),
+            secondarySectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
+            secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
+            secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
+            secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
+            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
+            settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
+            settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
+            settingsTabView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),
+        ])
         reload()
     }
 
@@ -520,26 +562,53 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        saveCombinerIfNeeded()
         NSApp.setActivationPolicy(.accessory)
     }
 
-    @objc private func save() {
-#if APP_STORE
+    @objc private func selectVoiceSection() {
+        settingsTabView.selectTabViewItem(at: 0)
+        updateSidebarSelection(voiceSelected: true)
+    }
+
+    @objc private func selectSecondarySection() {
+        settingsTabView.selectTabViewItem(at: 1)
+        updateSidebarSelection(voiceSelected: false)
+    }
+
+    @objc private func selectVoice(_ sender: Any?) {
         model.saveVoiceSetting(voiceIdentifier: selectedVoiceIdentifier())
-#else
-        model.saveSettings(
-            inactiveLineCombinerCommand: combinerTextView.string,
-            voiceIdentifier: selectedVoiceIdentifier()
-        )
-#endif
-        reload()
         onSave()
+        previewSelectedVoice(sender)
+    }
+
+    @objc private func previewSelectedVoice(_ sender: Any?) {
+        voicePreviewSynthesizer.stopSpeaking(at: .immediate)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+
+            let option = self.selectedVoiceOption()
+            speakPreview("Tri-state relay service, you changed the voice to \(option.name).", option: option, synthesizer: self.voicePreviewSynthesizer)
+        }
     }
 
     private func reload() {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
+    }
+
+    private func saveCombinerIfNeeded() {
+#if !APP_STORE
+        model.saveSettings(
+            inactiveLineCombinerCommand: combinerTextView.string,
+            voiceIdentifier: selectedVoiceIdentifier()
+        )
+        onSave()
+#endif
     }
 
     private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
@@ -555,14 +624,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = false
 
-        let scrollView = NSScrollView(frame: NSRect(x: 12, y: 12, width: 680, height: 360))
-        scrollView.autoresizingMask = [.width, .height]
+        let title = NSTextField(labelWithString: label)
+        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+
+        let subtitle = NSTextField(labelWithString: "Optional command used to combine inactive-line updates. Leave commented for latest-only behavior.")
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byWordWrapping
+        subtitle.maximumNumberOfLines = 0
+
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
+        scrollView.borderType = .bezelBorder
         scrollView.documentView = textView
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
-        container.addSubview(scrollView)
+        let stack = NSStackView(views: [title, subtitle, scrollView])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+        ])
 
         let item = NSTabViewItem(identifier: label)
         item.label = label
@@ -584,33 +678,58 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
 
-    private static func voiceTabItem(popUpButton: NSPopUpButton) -> NSTabViewItem {
-        let label = NSTextField(labelWithString: "Native speech voice")
-        label.frame = NSRect(x: 16, y: 332, width: 672, height: 24)
+    private func voiceTabView() -> NSView {
+        let title = NSTextField(labelWithString: "Voice")
+        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let help = NSTextField(labelWithString: "Choose the voice TSRS uses for spoken relays. Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
-        help.frame = NSRect(x: 16, y: 272, width: 672, height: 48)
-        help.lineBreakMode = .byWordWrapping
+        let subtitle = NSTextField(labelWithString: "Choose how relay updates sound when TSRS speaks.")
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byWordWrapping
+        subtitle.maximumNumberOfLines = 0
 
-        popUpButton.frame = NSRect(x: 16, y: 300, width: 320, height: 28)
+        let voiceLabel = NSTextField(labelWithString: "Speech voice")
+        voiceLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
-        container.addSubview(label)
-        container.addSubview(popUpButton)
-        container.addSubview(help)
+        let voiceRow = NSStackView(views: [voicePopUpButton, voicePreviewButton])
+        voiceRow.orientation = .horizontal
+        voiceRow.alignment = .centerY
+        voiceRow.spacing = 8
 
-        let item = NSTabViewItem(identifier: "Voice")
-        item.label = "Voice"
-        item.view = container
-        return item
+        let note = NSTextField(labelWithString: "Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
+        note.textColor = .secondaryLabelColor
+        note.font = NSFont.systemFont(ofSize: 12)
+        note.lineBreakMode = .byWordWrapping
+        note.maximumNumberOfLines = 0
+
+        let stack = NSStackView(views: [title, subtitle, voiceLabel, voiceRow, note])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        voicePopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
+        subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        return container
     }
 
     private func reloadVoiceMenu(selectedIdentifier: String?) {
         voicePopUpButton.removeAllItems()
 
-        for voice in availableRelayVoices() {
-            voicePopUpButton.addItem(withTitle: "\(voice.name) (\(voice.language))")
-            voicePopUpButton.lastItem?.representedObject = voice.identifier
+        for option in voiceOptions {
+            voicePopUpButton.addItem(withTitle: option.title)
+            voicePopUpButton.lastItem?.representedObject = option.identifier
         }
 
         if
@@ -625,13 +744,90 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func selectedVoiceIdentifier() -> String {
         voicePopUpButton.selectedItem?.representedObject as? String ?? defaultSpeechVoiceIdentifier
     }
+
+    private func selectedVoiceOption() -> SpeechVoiceOption {
+        voiceOptions.first { $0.identifier == selectedVoiceIdentifier() } ?? defaultSpeechVoiceOption
+    }
+
+    private func updateSidebarSelection(voiceSelected: Bool) {
+        configureSidebarButton(voiceSectionButton, selected: voiceSelected)
+        configureSidebarButton(secondarySectionButton, selected: !voiceSelected)
+        voiceIconView.contentTintColor = voiceSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        secondaryIconView.contentTintColor = voiceSelected ? .secondaryLabelColor : .selectedMenuItemTextColor
+        voiceSectionRow.selected = voiceSelected
+        secondarySectionRow.selected = !voiceSelected
+    }
 }
+
+private func configureSidebarButton(_ button: NSButton, selected: Bool) {
+    button.bezelStyle = .regularSquare
+    button.isBordered = false
+    button.alignment = .left
+    button.font = NSFont.systemFont(ofSize: 13, weight: selected ? .semibold : .regular)
+    button.contentTintColor = selected ? .selectedMenuItemTextColor : .labelColor
+    button.imagePosition = .noImage
+}
+
+private func configureSidebarRow(_ row: SidebarRowView, button: NSButton, iconView: NSImageView, selected: Bool) {
+    row.translatesAutoresizingMaskIntoConstraints = false
+    row.selected = selected
+    iconView.translatesAutoresizingMaskIntoConstraints = false
+    button.translatesAutoresizingMaskIntoConstraints = false
+    configureSidebarButton(button, selected: selected)
+    row.addSubview(iconView)
+    row.addSubview(button)
+    NSLayoutConstraint.activate([
+        iconView.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
+        iconView.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        iconView.widthAnchor.constraint(equalToConstant: 24),
+        iconView.heightAnchor.constraint(equalToConstant: 24),
+        button.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+        button.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
+        button.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+    ])
+}
+
+final class SidebarRowView: NSView {
+    var selected = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard selected else {
+            return
+        }
+
+        NSColor.controlAccentColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+    }
+}
+
+private func sidebarIcon(systemName: String) -> NSImage {
+    let image = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .medium))
+        ?? NSImage(size: NSSize(width: 18, height: 18))
+    image.isTemplate = true
+    return image
+}
+
+#if APP_STORE
+private let settingsSecondarySectionTitle = "App Store"
+private let secondarySidebarIconName = "lock.shield"
+#else
+private let settingsSecondarySectionTitle = "Combiner"
+private let secondarySidebarIconName = "text.bubble"
+#endif
 
 final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let model: MenuBarModel
     private let onChange: () -> Void
     private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
+    private var currentProcess: Process?
     private let synthesizer = AVSpeechSynthesizer()
 
     init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
@@ -643,7 +839,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func playNext(line: String? = nil) {
-        guard !synthesizer.isSpeaking else {
+        guard !synthesizer.isSpeaking, currentProcess == nil else {
             return
         }
 
@@ -661,11 +857,51 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         currentId = claim.id
 
+        speak(claim)
+    }
+
+    private func speak(_ claim: NativeSpeechClaim) {
+#if APP_STORE
         let utterance = AVSpeechUtterance(string: claim.text)
         utterance.voice = preferredRelayVoice(identifier: model.loadSettings().speechVoiceIdentifier)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1
         synthesizer.speak(utterance)
+#else
+        let option = speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        process.arguments = sayArguments(text: claim.text, option: option)
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        process.terminationHandler = { [weak self] process in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+
+                if process.terminationStatus == 0 {
+                    self.model.markNativeSpeechHeard(id: claim.id)
+                } else {
+                    self.model.markNativeSpeechFailed(id: claim.id)
+                }
+
+                self.currentId = nil
+                self.currentProcess = nil
+                self.onChange()
+            }
+        }
+
+        do {
+            currentProcess = process
+            try process.run()
+        } catch {
+            currentProcess = nil
+            model.markNativeSpeechFailed(id: claim.id)
+            currentId = nil
+            onChange()
+        }
+#endif
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -745,7 +981,53 @@ struct DefaultInputCaptureSensor: InputCaptureSensing {
     }
 }
 
-private let defaultSpeechVoiceIdentifier = "com.apple.voice.compact.en-US.Samantha"
+struct SpeechVoiceOption {
+    let identifier: String
+    let name: String
+    let title: String
+}
+
+private let systemSayVoiceIdentifier = "system-say-default"
+private let defaultSpeechVoiceIdentifier = systemSayVoiceIdentifier
+private let defaultSpeechVoiceOption = SpeechVoiceOption(identifier: systemSayVoiceIdentifier, name: "System Default", title: "System Default (say)")
+
+private func availableSpeechVoiceOptions() -> [SpeechVoiceOption] {
+#if APP_STORE
+    return availableRelayVoices().map { voice in
+        SpeechVoiceOption(identifier: voice.identifier, name: voice.name, title: "\(voice.name) (\(voice.language))")
+    }
+#else
+    return directSpeechVoiceOptions
+#endif
+}
+
+private func speechVoiceOption(identifier: String?) -> SpeechVoiceOption {
+    availableSpeechVoiceOptions().first { $0.identifier == identifier } ?? defaultSpeechVoiceOption
+}
+
+private func sayArguments(text: String, option: SpeechVoiceOption) -> [String] {
+    if option.identifier.hasPrefix("say:") {
+        return ["-v", option.name, text]
+    }
+
+    return [text]
+}
+
+private func speakPreview(_ text: String, option: SpeechVoiceOption, synthesizer: AVSpeechSynthesizer) {
+#if APP_STORE
+    let utterance = AVSpeechUtterance(string: text)
+    utterance.voice = preferredRelayVoice(identifier: option.identifier)
+    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+    synthesizer.speak(utterance)
+#else
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+    process.arguments = sayArguments(text: text, option: option)
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try? process.run()
+#endif
+}
 
 private func availableRelayVoices() -> [AVSpeechSynthesisVoice] {
     AVSpeechSynthesisVoice.speechVoices()
@@ -824,6 +1106,35 @@ private let noveltyVoiceIdentifiers = Set([
     "com.apple.speech.synthesis.voice.Whisper",
     "com.apple.speech.synthesis.voice.Zarvox",
 ])
+
+private let noveltySayVoiceNames = Set([
+    "Albert",
+    "Bad News",
+    "Bahh",
+    "Bells",
+    "Boing",
+    "Bubbles",
+    "Cellos",
+    "Good News",
+    "Jester",
+    "Junior",
+    "Organ",
+    "Ralph",
+    "Superstar",
+    "Trinoids",
+    "Whisper",
+    "Wobble",
+    "Zarvox",
+])
+
+private let directSpeechVoiceOptions = [
+    defaultSpeechVoiceOption,
+    SpeechVoiceOption(identifier: "say:Samantha", name: "Samantha", title: "Samantha"),
+    SpeechVoiceOption(identifier: "say:Alex", name: "Alex", title: "Alex"),
+    SpeechVoiceOption(identifier: "say:Daniel", name: "Daniel", title: "Daniel"),
+    SpeechVoiceOption(identifier: "say:Karen", name: "Karen", title: "Karen"),
+    SpeechVoiceOption(identifier: "say:Moira", name: "Moira", title: "Moira"),
+]
 
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
@@ -1260,7 +1571,7 @@ final class NativeRelayStore {
     }
 
     func saveVoiceIdentifier(_ voiceIdentifier: String) {
-        guard availableRelayVoices().contains(where: { $0.identifier == voiceIdentifier }) else {
+        guard availableSpeechVoiceOptions().contains(where: { $0.identifier == voiceIdentifier }) else {
             NSLog("TSRS native store rejected unavailable voice identifier: \(voiceIdentifier)")
             return
         }
@@ -1806,7 +2117,7 @@ final class NativeRelayStore {
     private func speechVoiceIdentifier(_ settings: [String: String]) -> String? {
         let identifier = settings["speech_voice_identifier"] ?? defaultSpeechVoiceIdentifier
 
-        if availableRelayVoices().contains(where: { $0.identifier == identifier }) {
+        if availableSpeechVoiceOptions().contains(where: { $0.identifier == identifier }) {
             return identifier
         }
 

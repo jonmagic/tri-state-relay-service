@@ -17,6 +17,7 @@
     "build:macos": "npm run build:macos:direct",
     "build:macos:direct": "node scripts/build-macos.mjs direct",
     "build:macos:app-store": "node scripts/build-macos.mjs app-store",
+    "restart:macos": "node scripts/restart-macos-app.mjs",
     "eval:inactive-line": "node scripts/eval-inactive-line.mjs",
     "perry:check": "perry check src/ --check-deps",
     "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
