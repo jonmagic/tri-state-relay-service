@@ -317,6 +317,10 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             let play = menuItem("Play Next", action: #selector(playLine(_:)), enabled: true)
             play.representedObject = line
             submenu.addItem(play)
+
+            let clearQueue = menuItem("Clear Queue", action: #selector(clearLine(_:)), enabled: true)
+            clearQueue.representedObject = line
+            submenu.addItem(clearQueue)
         }
 
         if line == model.status.activeLine && (model.status.mode != "focus" || model.status.queued > 0 || model.status.heard > 0) {
@@ -332,10 +336,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 let skip = menuItem("Skip Next", action: #selector(skipLineNext(_:)), enabled: true)
                 skip.representedObject = line
                 submenu.addItem(skip)
-
-                let clearQueue = menuItem("Clear Queue", action: #selector(clearLine(_:)), enabled: true)
-                clearQueue.representedObject = line
-                submenu.addItem(clearQueue)
             }
 
             if delivered > 0 {
