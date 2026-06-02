@@ -202,30 +202,30 @@ relay line
 relay line "Tri-State Relay Service"
 ```
 
-The menu bar app shows the active line and queued lines in the right-click
-menu. When unmuted, the app keeps playing queued messages from the active
-line as they arrive. Messages from other lines remain queued until you
-switch lines or pull them manually. Pulling a message from another line
-makes that line active.
+The menu bar app currently shows the active line and queued lines in the
+right-click menu. Left click remains the fastest pointer path for Play Next.
+When unmuted, the app keeps playing queued messages from the active line as they
+arrive. Messages from other lines remain queued until you switch lines or pull
+them manually. Pulling a message from another line makes that line active.
 
 Line submenu source actions use the selected line's latest source context, not
 the newest source from another line. The global menu does not show source
 actions.
 
-Future richer relay interaction could move into a Raycast-style pop-up or
-browser for viewing relay text, searching history, dismissing, and acting on
-selected relays.
+The next interaction direction is a Raycast-style command palette for
+keyboard-first relay actions. See `docs/command-palette.md`.
 
 Global hotkeys:
 
-- `Control` + `Option` + `Command` + `Space`: play the current line.
+- `Control` + `Option` + `Command` + `Space`: currently plays the current line;
+  planned to open the command palette with `play next` preselected.
 - `Control` + `Option` + `Command` + `V`: open the menu.
 
 ## Next slices
 
-1. Add signing and notarization packaging for the direct-download app.
-2. Split the native app into smaller Swift files under the Xcode project.
-3. Add terminal-specific focus adapters where reliable.
+1. Build the Raycast-style command palette in `docs/command-palette.md`.
+2. Add signing and notarization packaging for the direct-download app.
+3. Split the native app into smaller Swift files under the Xcode project.
 
 ## App Review note draft
 

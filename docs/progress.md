@@ -89,3 +89,19 @@ Swift migration update:
 7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj`, with npm scripts still bundling the Perry-built `relay` CLI.
 
 Recommended next slice: add direct-download signing/notarization packaging, then split the native app into smaller Swift files under the Xcode project.
+
+Command palette direction:
+
+1. The next major product direction is a Raycast-style command palette for
+   keyboard-first relay actions.
+2. Control-Option-Command-Space should open the palette instead of immediately
+   playing the next message.
+3. The palette should open with `play next` prefilled and selected, so Return
+   keeps the fast Play Next path while typing replaces the query and filters to
+   other actions.
+4. Left click on the menu bar icon should continue to play the next message.
+5. `docs/command-palette.md` records the interaction contract, initial action
+   set, search behavior, UI shape, and implementation slices.
+
+Recommended next slice: extract a command model from existing menu actions, then
+build the first native command palette window.
