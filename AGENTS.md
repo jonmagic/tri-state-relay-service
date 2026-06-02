@@ -30,7 +30,9 @@ For app-visible macOS changes, run `npm run build:macos:direct` and then
 `npm run restart:macos`. Do not use ad hoc `open` commands without first
 stopping the old process. The restart helper must report a running PID from the
 rebuilt `dist/macos/Tri-State Relay Service.app` bundle; say that explicitly in
-the handoff.
+the handoff. Before any handoff or docs-only commit, check for pending app-visible
+Swift changes; if any exist, either run the restart gate and commit them first or
+explicitly say they remain uncommitted for review.
 
 ## Product rules
 
