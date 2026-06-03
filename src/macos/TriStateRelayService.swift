@@ -25,7 +25,15 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
         self?.refreshStatusItem()
     }
+    private lazy var commandPaletteCommandsProvider: () -> [CommandPaletteCommand] = { [weak self] in
+        guard let self else {
+            return []
+        }
 
+        self.model.refresh()
+        self.refreshStatusItem()
+        return self.commandPaletteCommands()
+    }
     static func main() {
         let app = NSApplication.shared
         let delegate = TriStateRelayServiceApp()
@@ -244,7 +252,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         button.title = ""
         button.attributedTitle = NSAttributedString(string: "")
-        button.image = model.status.statusImage
+        button.image = model.status.statusImage(appearance: button.effectiveAppearance)
     }
 
     private func showMenu() {
@@ -278,7 +286,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         let commands = commandPaletteCommands()
 
         if commandPaletteWindowController == nil {
-            commandPaletteWindowController = CommandPaletteWindowController()
+            commandPaletteWindowController = CommandPaletteWindowController(commandsProvider: commandPaletteCommandsProvider)
         }
 
         commandPaletteWindowController?.show(commands: commands, initialQuery: initialQuery)
@@ -296,20 +304,33 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func commandPaletteCommands() -> [CommandPaletteCommand] {
-        var commands: [CommandPaletteCommand] = [
-            CommandPaletteCommand(title: "Play Next", subtitle: "Release the next queued relay", aliases: ["play", "next"]) { [weak self] in
-                self?.model.ready()
-                self?.nativePlayback.playNext()
-                self?.refreshStatusItem()
-                self?.schedulePlaybackRefresh()
+        var commands: [CommandPaletteCommand] = model.status.menuLines.compactMap { line in
+            let children = commandPaletteCommands(for: line)
+
+            guard !children.isEmpty else {
+                return nil
+            }
+
+            return CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued, \(line.heard) delivered", aliases: ["line", line.line], children: children)
+        }
+
+        commands.append(contentsOf: [
+            CommandPaletteCommand(title: "Play Next", subtitle: model.status.queued > 0 ? "Release the next queued relay" : "No queued messages", aliases: ["play", "next"]) { [weak self] in
+                guard let self, self.model.status.queued > 0 else {
+                    return
+                }
+                self.model.ready()
+                self.nativePlayback.playNext()
+                self.refreshStatusItem()
+                self.schedulePlaybackRefresh()
             },
-            CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS") { [weak self] in
+            CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS", restoresPreviousFocus: false) { [weak self] in
                 self?.showSettingsWindow()
             },
-            CommandPaletteCommand(title: "Quit", subtitle: "Quit Tri-State Relay Service", aliases: ["exit"]) {
+            CommandPaletteCommand(title: "Quit", subtitle: "Quit Tri-State Relay Service", aliases: ["exit"], restoresPreviousFocus: false) {
                 NSApplication.shared.terminate(nil)
             },
-        ]
+        ])
 
         if model.status.muted {
             commands.append(CommandPaletteCommand(title: "Unmute", subtitle: "Allow relays to speak") { [weak self] in
@@ -330,12 +351,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             })
         }
 
-        for line in model.status.menuLines {
-            let children = commandPaletteCommands(for: line)
-
-            if !children.isEmpty {
-                commands.append(CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued, \(line.heard) delivered", aliases: ["line", line.line], children: children))
-            }
+        if model.status.queued == 0 {
+            commands.append(CommandPaletteCommand(title: "No Queued Messages", subtitle: "TSRS is caught up", aliases: ["empty", "none", "messages"]))
         }
 
         return commands
@@ -390,7 +407,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
 
         if model.status.hasSourcePath(for: line.line) {
-            commands.append(CommandPaletteCommand(title: "Reveal Source", subtitle: "Open latest source context", aliases: ["source", "reveal", line.line]) { [weak self] in
+            commands.append(CommandPaletteCommand(title: "Reveal Source", subtitle: "Open latest source context", aliases: ["source", "reveal", line.line], restoresPreviousFocus: false) { [weak self] in
                 self?.model.revealSource(line: line.line)
                 self?.refreshStatusItem()
             })
@@ -883,40 +900,63 @@ struct CommandPaletteCommand {
     let subtitle: String
     let aliases: [String]
     let children: [CommandPaletteCommand]
+    let restoresPreviousFocus: Bool
     let action: () -> Void
 
-    init(title: String, subtitle: String, aliases: [String] = [], children: [CommandPaletteCommand] = [], action: @escaping () -> Void = {}) {
+    init(title: String, subtitle: String, aliases: [String] = [], children: [CommandPaletteCommand] = [], restoresPreviousFocus: Bool = true, action: @escaping () -> Void = {}) {
         self.title = title
         self.subtitle = subtitle
         self.aliases = aliases
         self.children = children
+        self.restoresPreviousFocus = restoresPreviousFocus
         self.action = action
     }
 
     func matches(_ query: String) -> Bool {
+        matchScore(query) != nil
+    }
+
+    func matchScore(_ query: String) -> Int? {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         if normalized.isEmpty {
-            return true
+            return 0
         }
 
-        let childText = children.flatMap { [$0.title, $0.subtitle] + $0.aliases }
-        let haystack = ([title, subtitle] + aliases + childText).joined(separator: " ").lowercased()
-        return haystack.contains(normalized)
+        if title.lowercased().contains(normalized) {
+            return 100
+        }
+
+        if aliases.contains(where: { $0.lowercased().contains(normalized) }) {
+            return 90
+        }
+
+        if subtitle.lowercased().contains(normalized) {
+            return 80
+        }
+
+        if children.contains(where: { $0.matches(normalized) }) {
+            return 10
+        }
+
+        return nil
     }
 }
 
 final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDelegate {
     private let searchField = CommandPaletteSearchField()
     private let resultsStack = NSStackView()
+    private let commandsProvider: () -> [CommandPaletteCommand]
     private var allCommands: [CommandPaletteCommand] = []
     private var rootCommands: [CommandPaletteCommand] = []
     private var filteredCommands: [CommandPaletteCommand] = []
     private var selectedIndex = 0
     private var previousApplication: NSRunningApplication?
     private var navigationStack: [(title: String, commands: [CommandPaletteCommand])] = []
+    private var refreshTimer: Timer?
 
-    init() {
+    init(commandsProvider: @escaping () -> [CommandPaletteCommand]) {
+        self.commandsProvider = commandsProvider
         let panel = CommandPalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 320),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -954,6 +994,13 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
             self?.window?.makeFirstResponder(self?.searchField)
             self?.searchField.selectText(nil)
         }
+        startRefreshing()
+    }
+
+    override func close() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        super.close()
     }
 
     private func buildContent() {
@@ -1037,13 +1084,41 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
     }
 
     private func filterCommands() {
-        filteredCommands = allCommands.filter { $0.matches(searchField.stringValue) }
+        filteredCommands = allCommands
+            .compactMap { command -> (command: CommandPaletteCommand, score: Int)? in
+                guard let score = command.matchScore(searchField.stringValue) else {
+                    return nil
+                }
+
+                return (command, score)
+            }
+            .sorted { first, second in
+                first.score > second.score
+            }
+            .map(\.command)
 
         if selectedIndex >= filteredCommands.count {
             selectedIndex = max(0, filteredCommands.count - 1)
         }
 
         renderResults()
+    }
+
+    private func startRefreshing() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshCommands()
+        }
+    }
+
+    private func refreshCommands() {
+        guard navigationStack.isEmpty else {
+            return
+        }
+
+        allCommands = commandsProvider()
+        rootCommands = allCommands
+        filterCommands()
     }
 
     private func moveSelection(_ delta: Int) {
@@ -1064,7 +1139,11 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         if command.children.isEmpty {
             close()
             command.action()
-            restorePreviousApplication()
+            if command.restoresPreviousFocus {
+                restorePreviousApplication()
+            } else {
+                previousApplication = nil
+            }
         } else {
             navigationStack.append((title: command.title, commands: allCommands))
             allCommands = command.children
@@ -1230,12 +1309,32 @@ private func sidebarIcon(systemName: String) -> NSImage {
     return image
 }
 
-private func resolvedColor(_ color: NSColor) -> NSColor {
-    NSAppearance.current = NSApp.effectiveAppearance
+private func resolvedColor(_ color: NSColor, appearance: NSAppearance = NSApp.effectiveAppearance) -> NSColor {
+    NSAppearance.current = appearance
     defer {
         NSAppearance.current = nil
     }
     return color.usingColorSpace(.deviceRGB) ?? color
+}
+
+private func menuBarIconStrokeColor(appearance: NSAppearance) -> NSColor {
+    if menuBarIsDark(appearance: appearance) {
+        return .white
+    }
+
+    return .black
+}
+
+private func menuBarQueuedAccentColor(appearance: NSAppearance) -> NSColor {
+    if menuBarIsDark(appearance: appearance) {
+        return NSColor(calibratedRed: 1, green: 0.32, blue: 0.28, alpha: 1)
+    }
+
+    return resolvedColor(.systemRed, appearance: appearance)
+}
+
+private func menuBarIsDark(appearance: NSAppearance) -> Bool {
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 }
 
 #if APP_STORE
@@ -1837,60 +1936,61 @@ struct QueueStatus {
             return "speaker.slash"
         }
 
-        if queued > 0 {
-            return "tray.full"
-        }
-
-        return "tray"
+        return "cassette"
     }
 
-    var statusImage: NSImage? {
+    func statusImage(appearance: NSAppearance) -> NSImage? {
         if !muted && speaking == 0 {
-            return trayImage(accessibilityDescription: title, includesRedBars: queued > 0)
+            return cassetteStatusImage(accessibilityDescription: title, hasMessages: queued > 0, appearance: appearance)
         }
 
-        guard queued > 0 else {
-            let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
-            image?.isTemplate = true
-            return image
-        }
-
-        let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)?
+            .withSymbolConfiguration(configuration)
         image?.isTemplate = true
         return image
     }
 }
 
-private func trayImage(accessibilityDescription: String, includesRedBars: Bool) -> NSImage {
-    let size = NSSize(width: 20, height: 20)
-    let image = NSImage(size: size)
+private func cassetteStatusImage(accessibilityDescription: String, hasMessages: Bool, appearance: NSAppearance) -> NSImage {
+    let image = NSImage(size: NSSize(width: 20, height: 20))
     image.accessibilityDescription = accessibilityDescription
-    image.isTemplate = includesRedBars ? false : true
+    image.isTemplate = false
 
     image.lockFocus()
     defer {
         image.unlockFocus()
     }
 
-    if let tray = NSImage(systemSymbolName: "tray", accessibilityDescription: accessibilityDescription)?
-        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)) {
-        resolvedColor(.labelColor).set()
-        tray.draw(in: NSRect(x: 0.5, y: 1, width: 19, height: 17), from: .zero, operation: .sourceAtop, fraction: 1)
-    }
+    let strokeColor = menuBarIconStrokeColor(appearance: appearance)
+    strokeColor.setStroke()
 
-    guard includesRedBars else {
-        return image
-    }
+    let body = NSBezierPath(roundedRect: NSRect(x: 2, y: 4.7, width: 16, height: 11.4), xRadius: 2.5, yRadius: 2.5)
+    body.lineWidth = 1.55
+    body.stroke()
 
-    let redBars = NSBezierPath()
-    redBars.lineWidth = 1.25
-    redBars.lineCapStyle = .round
-    resolvedColor(.systemRed).setStroke()
-    redBars.move(to: NSPoint(x: 7.4, y: 13.2))
-    redBars.line(to: NSPoint(x: 11.8, y: 13.2))
-    redBars.move(to: NSPoint(x: 6.1, y: 11.2))
-    redBars.line(to: NSPoint(x: 13.1, y: 11.2))
-    redBars.stroke()
+    let window = NSBezierPath(roundedRect: NSRect(x: 5.6, y: 12.3, width: 8.8, height: 2.3), xRadius: 0.8, yRadius: 0.8)
+    window.lineWidth = 1
+    window.stroke()
+
+    let leftReel = NSBezierPath(ovalIn: NSRect(x: 4.7, y: 6.9, width: 3.8, height: 3.8))
+    leftReel.lineWidth = 1.2
+    leftReel.stroke()
+
+    let rightReel = NSBezierPath(ovalIn: NSRect(x: 11.5, y: 6.9, width: 3.8, height: 3.8))
+    rightReel.lineWidth = 1.2
+    rightReel.stroke()
+
+    let tapeLine = NSBezierPath()
+    tapeLine.lineWidth = 1
+    tapeLine.move(to: NSPoint(x: 8.5, y: 8.8))
+    tapeLine.line(to: NSPoint(x: 11.5, y: 8.8))
+    tapeLine.stroke()
+
+    if hasMessages {
+        menuBarQueuedAccentColor(appearance: appearance).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 13.8, y: 12.7, width: 4.2, height: 4.2)).fill()
+    }
 
     return image
 }
