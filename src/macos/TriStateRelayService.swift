@@ -331,64 +331,76 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
 
         for line in model.status.menuLines {
-            let isActive = line.line == model.status.activeLine
-            let activePrefix = isActive ? "Current line" : "Line"
-            commands.append(CommandPaletteCommand(title: "Make Current Line: \(line.line)", subtitle: "\(activePrefix), \(line.queued) queued", aliases: ["line", line.line]) { [weak self] in
+            let children = commandPaletteCommands(for: line)
+
+            if !children.isEmpty {
+                commands.append(CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued, \(line.heard) delivered", aliases: ["line", line.line], children: children))
+            }
+        }
+
+        return commands
+    }
+
+    private func commandPaletteCommands(for line: LineSummary) -> [CommandPaletteCommand] {
+        let isActive = line.line == model.status.activeLine
+        let activePrefix = isActive ? "Current line" : "Line"
+        var commands: [CommandPaletteCommand] = [
+            CommandPaletteCommand(title: "Make Current Line", subtitle: "\(activePrefix), \(line.queued) queued", aliases: ["line", line.line]) { [weak self] in
                 self?.model.setActiveLine(line.line)
+                self?.refreshStatusItem()
+            },
+        ]
+
+        if line.queued > 0 {
+            commands.append(CommandPaletteCommand(title: "Play Next", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
+                self?.model.setActiveLine(line.line)
+                self?.model.playActiveLine()
+                self?.nativePlayback.playNext(line: line.line)
+                self?.refreshStatusItem()
+                self?.schedulePlaybackRefresh()
+            })
+            commands.append(CommandPaletteCommand(title: "Clear Queue", subtitle: "Clear \(line.queued) queued relays", aliases: ["clear", "queue", line.line]) { [weak self] in
+                self?.model.clear(line: line.line)
                 self?.refreshStatusItem()
             })
 
-            if line.queued > 0 {
-                commands.append(CommandPaletteCommand(title: "Play Next: \(line.line)", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
-                    self?.model.setActiveLine(line.line)
-                    self?.model.playActiveLine()
-                    self?.nativePlayback.playNext(line: line.line)
-                    self?.refreshStatusItem()
-                    self?.schedulePlaybackRefresh()
-                })
-                commands.append(CommandPaletteCommand(title: "Clear Queue: \(line.line)", subtitle: "Clear \(line.queued) queued relays", aliases: ["clear", "queue", line.line]) { [weak self] in
-                    self?.model.clear(line: line.line)
-                    self?.refreshStatusItem()
-                })
-
-                if isActive {
-                    commands.append(CommandPaletteCommand(title: "Skip Next: \(line.line)", subtitle: "Skip the next queued relay", aliases: ["skip", line.line]) { [weak self] in
-                        self?.model.skipNext(line: line.line)
-                        self?.refreshStatusItem()
-                    })
-                }
-            }
-
-            if line.heard > 0 {
-                commands.append(CommandPaletteCommand(title: "Replay Last: \(line.line)", subtitle: "Replay latest delivered relay", aliases: ["replay", line.line]) { [weak self] in
-                    self?.model.replayLast(line: line.line)
-                    self?.nativePlayback.playNext(line: line.line)
-                    self?.refreshStatusItem()
-                    self?.schedulePlaybackRefresh()
-                })
-                commands.append(CommandPaletteCommand(title: "Acknowledge Last: \(line.line)", subtitle: "Mark latest delivered relay acknowledged", aliases: ["acknowledge", "handled", line.line]) { [weak self] in
-                    self?.model.markHandled(line: line.line)
-                    self?.refreshStatusItem()
-                })
-                commands.append(CommandPaletteCommand(title: "Clear Delivered: \(line.line)", subtitle: "Clear delivered relays", aliases: ["clear", "delivered", line.line]) { [weak self] in
-                    self?.model.clearHeard(line: line.line)
+            if isActive {
+                commands.append(CommandPaletteCommand(title: "Skip Next", subtitle: "Skip the next queued relay", aliases: ["skip", line.line]) { [weak self] in
+                    self?.model.skipNext(line: line.line)
                     self?.refreshStatusItem()
                 })
             }
+        }
 
-            if model.status.hasSourcePath(for: line.line) {
-                commands.append(CommandPaletteCommand(title: "Reveal Source: \(line.line)", subtitle: "Open latest source context", aliases: ["source", "reveal", line.line]) { [weak self] in
-                    self?.model.revealSource(line: line.line)
-                    self?.refreshStatusItem()
-                })
-            }
+        if line.heard > 0 {
+            commands.append(CommandPaletteCommand(title: "Replay Last", subtitle: "Replay latest delivered relay", aliases: ["replay", line.line]) { [weak self] in
+                self?.model.replayLast(line: line.line)
+                self?.nativePlayback.playNext(line: line.line)
+                self?.refreshStatusItem()
+                self?.schedulePlaybackRefresh()
+            })
+            commands.append(CommandPaletteCommand(title: "Acknowledge Last", subtitle: "Mark latest delivered relay acknowledged", aliases: ["acknowledge", "handled", line.line]) { [weak self] in
+                self?.model.markHandled(line: line.line)
+                self?.refreshStatusItem()
+            })
+            commands.append(CommandPaletteCommand(title: "Clear Delivered", subtitle: "Clear delivered relays", aliases: ["clear", "delivered", line.line]) { [weak self] in
+                self?.model.clearHeard(line: line.line)
+                self?.refreshStatusItem()
+            })
+        }
 
-            if model.status.hasSource(for: line.line) {
-                commands.append(CommandPaletteCommand(title: "Copy Source: \(line.line)", subtitle: "Copy latest source path or URL", aliases: ["source", "copy", line.line]) { [weak self] in
-                    self?.model.copySource(line: line.line)
-                    self?.refreshStatusItem()
-                })
-            }
+        if model.status.hasSourcePath(for: line.line) {
+            commands.append(CommandPaletteCommand(title: "Reveal Source", subtitle: "Open latest source context", aliases: ["source", "reveal", line.line]) { [weak self] in
+                self?.model.revealSource(line: line.line)
+                self?.refreshStatusItem()
+            })
+        }
+
+        if model.status.hasSource(for: line.line) {
+            commands.append(CommandPaletteCommand(title: "Copy Source", subtitle: "Copy latest source path or URL", aliases: ["source", "copy", line.line]) { [weak self] in
+                self?.model.copySource(line: line.line)
+                self?.refreshStatusItem()
+            })
         }
 
         return commands
@@ -870,12 +882,14 @@ struct CommandPaletteCommand {
     let title: String
     let subtitle: String
     let aliases: [String]
+    let children: [CommandPaletteCommand]
     let action: () -> Void
 
-    init(title: String, subtitle: String, aliases: [String] = [], action: @escaping () -> Void) {
+    init(title: String, subtitle: String, aliases: [String] = [], children: [CommandPaletteCommand] = [], action: @escaping () -> Void = {}) {
         self.title = title
         self.subtitle = subtitle
         self.aliases = aliases
+        self.children = children
         self.action = action
     }
 
@@ -886,7 +900,8 @@ struct CommandPaletteCommand {
             return true
         }
 
-        let haystack = ([title, subtitle] + aliases).joined(separator: " ").lowercased()
+        let childText = children.flatMap { [$0.title, $0.subtitle] + $0.aliases }
+        let haystack = ([title, subtitle] + aliases + childText).joined(separator: " ").lowercased()
         return haystack.contains(normalized)
     }
 }
@@ -895,9 +910,11 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
     private let searchField = CommandPaletteSearchField()
     private let resultsStack = NSStackView()
     private var allCommands: [CommandPaletteCommand] = []
+    private var rootCommands: [CommandPaletteCommand] = []
     private var filteredCommands: [CommandPaletteCommand] = []
     private var selectedIndex = 0
     private var previousApplication: NSRunningApplication?
+    private var navigationStack: [(title: String, commands: [CommandPaletteCommand])] = []
 
     init() {
         let panel = CommandPalettePanel(
@@ -923,7 +940,9 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
 
     func show(commands: [CommandPaletteCommand], initialQuery: String) {
         previousApplication = NSWorkspace.shared.frontmostApplication
+        rootCommands = commands
         allCommands = commands
+        navigationStack = []
         searchField.stringValue = initialQuery
         searchField.currentEditor()?.selectAll(nil)
         selectedIndex = 0
@@ -958,7 +977,7 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         content.layer?.cornerRadius = 18
         content.layer?.cornerCurve = .continuous
         content.layer?.masksToBounds = true
-        content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        content.layer?.backgroundColor = resolvedColor(.windowBackgroundColor).cgColor
         content.addSubview(searchField)
         content.addSubview(resultsStack)
         window.contentView = content
@@ -1000,8 +1019,17 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         }
 
         if selector == #selector(NSResponder.cancelOperation(_:)) {
-            close()
-            restorePreviousApplication()
+            if navigationStack.isEmpty {
+                close()
+                restorePreviousApplication()
+            } else {
+                navigateBack()
+            }
+            return true
+        }
+
+        if selector == #selector(NSResponder.deleteBackward(_:)), searchField.stringValue.isEmpty, !navigationStack.isEmpty {
+            navigateBack()
             return true
         }
 
@@ -1033,9 +1061,28 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         }
 
         let command = filteredCommands[selectedIndex]
-        close()
-        command.action()
-        restorePreviousApplication()
+        if command.children.isEmpty {
+            close()
+            command.action()
+            restorePreviousApplication()
+        } else {
+            navigationStack.append((title: command.title, commands: allCommands))
+            allCommands = command.children
+            searchField.stringValue = ""
+            selectedIndex = 0
+            filterCommands()
+        }
+    }
+
+    private func navigateBack() {
+        guard let previous = navigationStack.popLast() else {
+            return
+        }
+
+        allCommands = previous.commands
+        searchField.stringValue = ""
+        selectedIndex = 0
+        filterCommands()
     }
 
     private func restorePreviousApplication() {
@@ -1071,12 +1118,13 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         row.translatesAutoresizingMaskIntoConstraints = false
         row.selected = selected
 
-        let titleField = NSTextField(labelWithString: title)
+        let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
+        let titleField = NSTextField(labelWithString: displayTitle)
         titleField.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        titleField.textColor = selected ? .selectedMenuItemTextColor : .labelColor
+        titleField.textColor = selected ? resolvedColor(.selectedMenuItemTextColor) : resolvedColor(.labelColor)
         let subtitleField = NSTextField(labelWithString: subtitle)
         subtitleField.font = NSFont.systemFont(ofSize: 11)
-        subtitleField.textColor = selected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        subtitleField.textColor = selected ? resolvedColor(.selectedMenuItemTextColor) : resolvedColor(.secondaryLabelColor)
         let stack = NSStackView(views: [titleField, subtitleField])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -1122,7 +1170,7 @@ final class PaletteResultRowView: NSView {
             return
         }
 
-        NSColor.controlAccentColor.setFill()
+        resolvedColor(.controlAccentColor).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 3), xRadius: 8, yRadius: 8).fill()
     }
 }
@@ -1169,7 +1217,7 @@ final class SidebarRowView: NSView {
             return
         }
 
-        NSColor.controlAccentColor.setFill()
+        resolvedColor(.controlAccentColor).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
     }
 }
@@ -1180,6 +1228,14 @@ private func sidebarIcon(systemName: String) -> NSImage {
         ?? NSImage(size: NSSize(width: 18, height: 18))
     image.isTemplate = true
     return image
+}
+
+private func resolvedColor(_ color: NSColor) -> NSColor {
+    NSAppearance.current = NSApp.effectiveAppearance
+    defer {
+        NSAppearance.current = nil
+    }
+    return color.usingColorSpace(.deviceRGB) ?? color
 }
 
 #if APP_STORE
@@ -1818,8 +1874,8 @@ private func trayImage(accessibilityDescription: String, includesRedBars: Bool) 
 
     if let tray = NSImage(systemSymbolName: "tray", accessibilityDescription: accessibilityDescription)?
         .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)) {
-        tray.isTemplate = true
-        tray.draw(in: NSRect(x: 0.5, y: 1, width: 19, height: 17))
+        resolvedColor(.labelColor).set()
+        tray.draw(in: NSRect(x: 0.5, y: 1, width: 19, height: 17), from: .zero, operation: .sourceAtop, fraction: 1)
     }
 
     guard includesRedBars else {
@@ -1829,7 +1885,7 @@ private func trayImage(accessibilityDescription: String, includesRedBars: Bool) 
     let redBars = NSBezierPath()
     redBars.lineWidth = 1.25
     redBars.lineCapStyle = .round
-    NSColor.systemRed.setStroke()
+    resolvedColor(.systemRed).setStroke()
     redBars.move(to: NSPoint(x: 7.4, y: 13.2))
     redBars.line(to: NSPoint(x: 11.8, y: 13.2))
     redBars.move(to: NSPoint(x: 6.1, y: 11.2))
