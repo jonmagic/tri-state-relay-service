@@ -202,24 +202,21 @@ relay line
 relay line "Tri-State Relay Service"
 ```
 
-The menu bar app currently shows the active line and queued lines in the
-right-click menu. Left click remains the fastest pointer path for Play Next.
-When unmuted, the app keeps playing queued messages from the active line as they
-arrive. Messages from other lines remain queued until you switch lines or pull
-them manually. Pulling a message from another line makes that line active.
+The menu bar app uses a Raycast-style command palette for interactive relay
+actions. Right click opens the palette for search-driven actions, while left
+click remains the fastest pointer path for Play Next. When unmuted, the app
+keeps playing queued messages from the active line as they arrive. Messages from
+other lines remain queued until you switch lines or pull them manually. Pulling
+a message from another line makes that line active.
 
-Line submenu source actions use the selected line's latest source context, not
-the newest source from another line. The global menu does not show source
-actions.
-
-The next interaction direction is a Raycast-style command palette for
-keyboard-first relay actions. See `docs/command-palette.md`.
+Line-scoped source actions use the selected line's latest source context, not
+the newest source from another line. See `docs/command-palette.md`.
 
 Global hotkeys:
 
-- `Control` + `Option` + `Command` + `Space`: currently plays the current line;
-  planned to open the command palette with `play next` preselected.
-- `Control` + `Option` + `Command` + `V`: open the menu.
+- `Control` + `Option` + `Command` + `Space`: open the command palette with
+  `play next` preselected.
+- `Control` + `Option` + `Command` + `V`: open the command palette.
 
 ## Next slices
 

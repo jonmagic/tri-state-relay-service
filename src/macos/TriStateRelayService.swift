@@ -19,6 +19,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var playbackRefreshTimer: Timer?
     private var settingsWindowController: SettingsWindowController?
+    private var commandPaletteWindowController: CommandPaletteWindowController?
     private var playCurrentLineHotKey: EventHotKeyRef?
     private var openMenuHotKey: EventHotKeyRef?
     private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
@@ -61,7 +62,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         let eventType = NSApp.currentEvent?.type
 
         if eventType == .rightMouseUp {
-            showMenu()
+            showCommandPalette(initialQuery: "")
             return
         }
 
@@ -268,16 +269,23 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func playCurrentLineFromHotKey() {
-        model.ready()
-        nativePlayback.playNext()
+        showCommandPalette(initialQuery: "play next")
+    }
+
+    private func showCommandPalette(initialQuery: String) {
+        model.refresh()
         refreshStatusItem()
-        schedulePlaybackRefresh()
+        let commands = commandPaletteCommands()
+
+        if commandPaletteWindowController == nil {
+            commandPaletteWindowController = CommandPaletteWindowController()
+        }
+
+        commandPaletteWindowController?.show(commands: commands, initialQuery: initialQuery)
     }
 
     private func showMenuFromHotKey() {
-        model.refresh()
-        refreshStatusItem()
-        showMenu()
+        showCommandPalette(initialQuery: "")
     }
 
     private func menuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
@@ -285,6 +293,105 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         item.target = self
         item.isEnabled = enabled
         return item
+    }
+
+    private func commandPaletteCommands() -> [CommandPaletteCommand] {
+        var commands: [CommandPaletteCommand] = [
+            CommandPaletteCommand(title: "Play Next", subtitle: "Release the next queued relay", aliases: ["play", "next"]) { [weak self] in
+                self?.model.ready()
+                self?.nativePlayback.playNext()
+                self?.refreshStatusItem()
+                self?.schedulePlaybackRefresh()
+            },
+            CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS") { [weak self] in
+                self?.showSettingsWindow()
+            },
+            CommandPaletteCommand(title: "Quit", subtitle: "Quit Tri-State Relay Service", aliases: ["exit"]) {
+                NSApplication.shared.terminate(nil)
+            },
+        ]
+
+        if model.status.muted {
+            commands.append(CommandPaletteCommand(title: "Unmute", subtitle: "Allow relays to speak") { [weak self] in
+                self?.model.unmute()
+                self?.refreshStatusItem()
+            })
+        } else {
+            commands.append(CommandPaletteCommand(title: "Mute", subtitle: "Queue relays without speaking") { [weak self] in
+                self?.model.mute()
+                self?.refreshStatusItem()
+            })
+        }
+
+        if model.status.mode != "focus" {
+            commands.append(CommandPaletteCommand(title: "Focus", subtitle: "Return to quiet focus mode") { [weak self] in
+                self?.model.focus()
+                self?.refreshStatusItem()
+            })
+        }
+
+        for line in model.status.menuLines {
+            let isActive = line.line == model.status.activeLine
+            let activePrefix = isActive ? "Current line" : "Line"
+            commands.append(CommandPaletteCommand(title: "Make Current Line: \(line.line)", subtitle: "\(activePrefix), \(line.queued) queued", aliases: ["line", line.line]) { [weak self] in
+                self?.model.setActiveLine(line.line)
+                self?.refreshStatusItem()
+            })
+
+            if line.queued > 0 {
+                commands.append(CommandPaletteCommand(title: "Play Next: \(line.line)", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
+                    self?.model.setActiveLine(line.line)
+                    self?.model.playActiveLine()
+                    self?.nativePlayback.playNext(line: line.line)
+                    self?.refreshStatusItem()
+                    self?.schedulePlaybackRefresh()
+                })
+                commands.append(CommandPaletteCommand(title: "Clear Queue: \(line.line)", subtitle: "Clear \(line.queued) queued relays", aliases: ["clear", "queue", line.line]) { [weak self] in
+                    self?.model.clear(line: line.line)
+                    self?.refreshStatusItem()
+                })
+
+                if isActive {
+                    commands.append(CommandPaletteCommand(title: "Skip Next: \(line.line)", subtitle: "Skip the next queued relay", aliases: ["skip", line.line]) { [weak self] in
+                        self?.model.skipNext(line: line.line)
+                        self?.refreshStatusItem()
+                    })
+                }
+            }
+
+            if line.heard > 0 {
+                commands.append(CommandPaletteCommand(title: "Replay Last: \(line.line)", subtitle: "Replay latest delivered relay", aliases: ["replay", line.line]) { [weak self] in
+                    self?.model.replayLast(line: line.line)
+                    self?.nativePlayback.playNext(line: line.line)
+                    self?.refreshStatusItem()
+                    self?.schedulePlaybackRefresh()
+                })
+                commands.append(CommandPaletteCommand(title: "Acknowledge Last: \(line.line)", subtitle: "Mark latest delivered relay acknowledged", aliases: ["acknowledge", "handled", line.line]) { [weak self] in
+                    self?.model.markHandled(line: line.line)
+                    self?.refreshStatusItem()
+                })
+                commands.append(CommandPaletteCommand(title: "Clear Delivered: \(line.line)", subtitle: "Clear delivered relays", aliases: ["clear", "delivered", line.line]) { [weak self] in
+                    self?.model.clearHeard(line: line.line)
+                    self?.refreshStatusItem()
+                })
+            }
+
+            if model.status.hasSourcePath(for: line.line) {
+                commands.append(CommandPaletteCommand(title: "Reveal Source: \(line.line)", subtitle: "Open latest source context", aliases: ["source", "reveal", line.line]) { [weak self] in
+                    self?.model.revealSource(line: line.line)
+                    self?.refreshStatusItem()
+                })
+            }
+
+            if model.status.hasSource(for: line.line) {
+                commands.append(CommandPaletteCommand(title: "Copy Source: \(line.line)", subtitle: "Copy latest source path or URL", aliases: ["source", "copy", line.line]) { [weak self] in
+                    self?.model.copySource(line: line.line)
+                    self?.refreshStatusItem()
+                })
+            }
+        }
+
+        return commands
     }
 
     private func lineMenuItems() -> [NSMenuItem] {
@@ -756,6 +863,267 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         secondaryIconView.contentTintColor = voiceSelected ? .secondaryLabelColor : .selectedMenuItemTextColor
         voiceSectionRow.selected = voiceSelected
         secondarySectionRow.selected = !voiceSelected
+    }
+}
+
+struct CommandPaletteCommand {
+    let title: String
+    let subtitle: String
+    let aliases: [String]
+    let action: () -> Void
+
+    init(title: String, subtitle: String, aliases: [String] = [], action: @escaping () -> Void) {
+        self.title = title
+        self.subtitle = subtitle
+        self.aliases = aliases
+        self.action = action
+    }
+
+    func matches(_ query: String) -> Bool {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if normalized.isEmpty {
+            return true
+        }
+
+        let haystack = ([title, subtitle] + aliases).joined(separator: " ").lowercased()
+        return haystack.contains(normalized)
+    }
+}
+
+final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDelegate {
+    private let searchField = CommandPaletteSearchField()
+    private let resultsStack = NSStackView()
+    private var allCommands: [CommandPaletteCommand] = []
+    private var filteredCommands: [CommandPaletteCommand] = []
+    private var selectedIndex = 0
+    private var previousApplication: NSRunningApplication?
+
+    init() {
+        let panel = CommandPalettePanel(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 320),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = true
+        panel.hasShadow = true
+        panel.center()
+
+        super.init(window: panel)
+        buildContent()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func show(commands: [CommandPaletteCommand], initialQuery: String) {
+        previousApplication = NSWorkspace.shared.frontmostApplication
+        allCommands = commands
+        searchField.stringValue = initialQuery
+        searchField.currentEditor()?.selectAll(nil)
+        selectedIndex = 0
+        filterCommands()
+        window?.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeFirstResponder(self?.searchField)
+            self?.searchField.selectText(nil)
+        }
+    }
+
+    private func buildContent() {
+        guard let window else {
+            return
+        }
+
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.font = NSFont.systemFont(ofSize: 18, weight: .regular)
+        searchField.placeholderString = "Search TSRS actions..."
+        searchField.delegate = self
+
+        resultsStack.orientation = .vertical
+        resultsStack.alignment = .leading
+        resultsStack.spacing = 6
+        resultsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView(frame: window.contentView?.bounds ?? .zero)
+        content.autoresizingMask = [.width, .height]
+        content.wantsLayer = true
+        content.layer?.cornerRadius = 18
+        content.layer?.cornerCurve = .continuous
+        content.layer?.masksToBounds = true
+        content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        content.addSubview(searchField)
+        content.addSubview(resultsStack)
+        window.contentView = content
+
+        NSLayoutConstraint.activate([
+            searchField.topAnchor.constraint(equalTo: content.topAnchor, constant: 18),
+            searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+            searchField.heightAnchor.constraint(equalToConstant: 34),
+            resultsStack.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 14),
+            resultsStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+            resultsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+        ])
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        selectedIndex = 0
+        filterCommands()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        handleCommand(commandSelector)
+    }
+
+    private func handleCommand(_ selector: Selector) -> Bool {
+        if selector == #selector(NSResponder.moveDown(_:)) {
+            moveSelection(1)
+            return true
+        }
+
+        if selector == #selector(NSResponder.moveUp(_:)) {
+            moveSelection(-1)
+            return true
+        }
+
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            executeSelected()
+            return true
+        }
+
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            close()
+            restorePreviousApplication()
+            return true
+        }
+
+        return false
+    }
+
+    private func filterCommands() {
+        filteredCommands = allCommands.filter { $0.matches(searchField.stringValue) }
+
+        if selectedIndex >= filteredCommands.count {
+            selectedIndex = max(0, filteredCommands.count - 1)
+        }
+
+        renderResults()
+    }
+
+    private func moveSelection(_ delta: Int) {
+        guard !filteredCommands.isEmpty else {
+            return
+        }
+
+        selectedIndex = min(max(selectedIndex + delta, 0), filteredCommands.count - 1)
+        renderResults()
+    }
+
+    private func executeSelected() {
+        guard filteredCommands.indices.contains(selectedIndex) else {
+            return
+        }
+
+        let command = filteredCommands[selectedIndex]
+        close()
+        command.action()
+        restorePreviousApplication()
+    }
+
+    private func restorePreviousApplication() {
+        guard let previousApplication, previousApplication != NSRunningApplication.current else {
+            return
+        }
+
+        let application = previousApplication
+        self.previousApplication = nil
+        DispatchQueue.main.async {
+            application.activate(options: [.activateIgnoringOtherApps])
+        }
+    }
+
+    private func renderResults() {
+        for view in resultsStack.arrangedSubviews {
+            resultsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if filteredCommands.isEmpty {
+            resultsStack.addArrangedSubview(resultRow(title: "No actions found", subtitle: "Try another query", selected: false))
+            return
+        }
+
+        for (index, command) in filteredCommands.prefix(5).enumerated() {
+            resultsStack.addArrangedSubview(resultRow(title: command.title, subtitle: command.subtitle, selected: index == selectedIndex))
+        }
+    }
+
+    private func resultRow(title: String, subtitle: String, selected: Bool) -> NSView {
+        let row = PaletteResultRowView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.selected = selected
+
+        let titleField = NSTextField(labelWithString: title)
+        titleField.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        titleField.textColor = selected ? .selectedMenuItemTextColor : .labelColor
+        let subtitleField = NSTextField(labelWithString: subtitle)
+        subtitleField.font = NSFont.systemFont(ofSize: 11)
+        subtitleField.textColor = selected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        let stack = NSStackView(views: [titleField, subtitleField])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 44),
+            row.widthAnchor.constraint(equalToConstant: 524),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ])
+
+        return row
+    }
+}
+
+final class CommandPaletteSearchField: NSSearchField {}
+
+final class CommandPalettePanel: NSPanel {
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
+}
+
+final class PaletteResultRowView: NSView {
+    var selected = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard selected else {
+            return
+        }
+
+        NSColor.controlAccentColor.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 3), xRadius: 8, yRadius: 8).fill()
     }
 }
 

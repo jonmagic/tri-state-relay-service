@@ -17,9 +17,9 @@ The palette becomes the primary interactive UI for relay actions:
 7. Arrow keys move selection.
 8. Opening the palette never claims or speaks a relay by itself.
 
-This replaces the current "hotkey immediately plays next" behavior. It should
-also reduce reliance on nested right-click submenus, although the menu bar menu
-can remain as a backup surface during migration.
+This replaces the current "hotkey immediately plays next" behavior and the old
+nested right-click menu. Right click opens the command palette with an empty
+query; Control-Option-Command-Space opens it with `play next` selected.
 
 Left click on the menu bar icon should remain the fastest pointer path for Play
 Next. The command palette changes the keyboard-first path, not the left-click
@@ -98,7 +98,8 @@ message bodies in palette results by default.
    Escape.
 3. Change Control-Option-Command-Space to open the palette with `play next`
    selected.
-4. Keep Control-Option-Command-V opening the existing menu during migration.
+4. Change Control-Option-Command-V and right click to open the palette with an
+   empty query.
 5. Preserve left click as Play Next.
 6. Once the palette is reliable, consider replacing the right-click menu or
    reducing it to essential status/settings actions.
