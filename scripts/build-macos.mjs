@@ -18,6 +18,9 @@ const derivedData = profile === 'app-store' ? 'dist/xcode/app-store' : 'dist/xco
 const builtApp = join(derivedData, 'Build/Products/Release', appName)
 const outputApp = join(distRoot, appName)
 const outputMacOS = join(outputApp, 'Contents/MacOS')
+const outputResources = join(outputApp, 'Contents/Resources')
+const sourceAppIcon = 'src/macos/Assets/AppIcon.png'
+const appIconName = 'AppIcon.icns'
 
 run('npm', ['run', 'build:native:cli'])
 rmSync(derivedData, { recursive: true, force: true })
@@ -44,6 +47,7 @@ run('xcodebuild', xcodebuildArgs)
 run('cp', ['-R', builtApp, distRoot])
 
 copyFileSync('dist/native/relay', join(outputMacOS, 'relay'))
+installAppIcon(outputResources)
 verifyBundle(outputApp)
 
 function run(command, args) {
@@ -70,6 +74,14 @@ function verifyBundle(appPath) {
     throw new Error('relay helper missing from bundle')
   }
 
+  if (plistValue(infoPlist, 'CFBundleIconFile') !== 'AppIcon') {
+    throw new Error('CFBundleIconFile was not preserved')
+  }
+
+  if (!existsSync(join(appPath, 'Contents/Resources', appIconName))) {
+    throw new Error(`${appIconName} missing from bundle resources`)
+  }
+
   if (existsSync(join(appPath, 'Contents/MacOS/relay-processor'))) {
     throw new Error('relay-processor must not be bundled in the macOS app')
   }
@@ -89,4 +101,35 @@ function plistValue(infoPlist, key) {
   }
 
   return result.stdout.trim()
+}
+
+function installAppIcon(resourcesPath) {
+  if (!existsSync(sourceAppIcon)) {
+    throw new Error(`source app icon missing: ${sourceAppIcon}`)
+  }
+
+  const iconsetPath = 'dist/macos-icon.iconset'
+  rmSync(iconsetPath, { recursive: true, force: true })
+  mkdirSync(iconsetPath, { recursive: true })
+  mkdirSync(resourcesPath, { recursive: true })
+
+  const iconSizes = [
+    [16, 'icon_16x16.png'],
+    [32, 'icon_16x16@2x.png'],
+    [32, 'icon_32x32.png'],
+    [64, 'icon_32x32@2x.png'],
+    [128, 'icon_128x128.png'],
+    [256, 'icon_128x128@2x.png'],
+    [256, 'icon_256x256.png'],
+    [512, 'icon_256x256@2x.png'],
+    [512, 'icon_512x512.png'],
+    [1024, 'icon_512x512@2x.png'],
+  ]
+
+  for (const [size, filename] of iconSizes) {
+    run('sips', ['-z', String(size), String(size), sourceAppIcon, '--out', join(iconsetPath, filename)])
+  }
+
+  run('iconutil', ['-c', 'icns', iconsetPath, '-o', join(resourcesPath, appIconName)])
+  rmSync(iconsetPath, { recursive: true, force: true })
 }
