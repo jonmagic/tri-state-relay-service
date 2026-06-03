@@ -19,6 +19,36 @@ sandboxed App Store build.
 
 `relay` is the CLI name.
 
+## Direct-download packaging
+
+Create a notarized zip for sharing:
+
+```sh
+TSRS_NOTARYTOOL_PROFILE=tsrs npm run package:macos:direct
+```
+
+Prerequisites:
+
+1. A `Developer ID Application` certificate in the local keychain.
+2. A stored notarytool profile, for example:
+
+```sh
+xcrun notarytool store-credentials tsrs \
+  --apple-id "APPLE_ID" \
+  --team-id "TEAM_ID" \
+  --password "APP_SPECIFIC_PASSWORD"
+```
+
+If more than one Developer ID Application identity is installed, set
+`TSRS_CODESIGN_IDENTITY` to the exact identity name. Apple Development
+certificates are useful for local debugging but are not sufficient for a
+Gatekeeper-friendly build friends can open.
+
+The script signs the bundled `relay` helper first, smoke-tests it under the
+hardened runtime, signs the app, submits a temporary zip to Apple notarization,
+staples the ticket to the `.app`, validates the stapled app, and only then
+writes `dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`.
+
 ## Payment model
 
 When Pro licensing is needed, prefer a direct-download license-key flow:

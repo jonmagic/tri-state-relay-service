@@ -96,6 +96,16 @@ through xcodebuild. The direct profile is the primary dogfooding and
 distribution path. Signing/notarization should copy and sign the bundled
 `relay` helper before sealing the app bundle.
 
+Create a signed and notarized direct-download zip:
+
+```sh
+TSRS_NOTARYTOOL_PROFILE=tsrs npm run package:macos:direct
+```
+
+The packaging script requires a `Developer ID Application` certificate. Set
+`TSRS_CODESIGN_IDENTITY` if more than one is installed. Apple Development
+certificates are not enough for friends to open the app through Gatekeeper.
+
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue
 controls, speech claims, and playback in Swift. The app reads and mutates the
 local SQLite queue directly without scraping or exposing message text. Right
