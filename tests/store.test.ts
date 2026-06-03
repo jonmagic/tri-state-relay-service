@@ -127,6 +127,27 @@ test('active line setting and line counts are persisted', () => {
   store.close()
 })
 
+test('first accepted relay becomes active line when unset', () => {
+  const store = new RelayStore(temporaryDatabasePath())
+
+  const queued = store.enqueue({ line: 'Brain', message: 'The plan is ready.' })
+  store.enqueue({ line: 'TSRS', message: 'The app is ready.' })
+
+  assert.equal(queued.line, 'Brain')
+  assert.equal(store.getState().activeLine, 'Brain')
+  store.close()
+})
+
+test('first accepted relay through line policy becomes active line when unset', () => {
+  const store = new RelayStore(temporaryDatabasePath())
+
+  const queued = store.enqueueWithLinePolicy({ line: 'Brain', message: 'The plan is ready.' })
+
+  assert.equal(queued?.line, 'Brain')
+  assert.equal(store.getState().activeLine, 'Brain')
+  store.close()
+})
+
 test('stale relay expiry removes old menu lines without expiring important queued work', () => {
   const store = new RelayStore(temporaryDatabasePath())
   const now = new Date('2026-05-31T15:00:00.000Z')

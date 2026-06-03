@@ -141,7 +141,9 @@ export class RelayStore {
 
   enqueue(input: NewRelayInput): Relay {
     const relay = normalizeRelay(input)
-    return this.insertRelay(relay)
+    const inserted = this.insertRelay(relay)
+    this.setInitialActiveLine(inserted.line)
+    return inserted
   }
 
   enqueueWithLinePolicy(input: NewRelayInput, combine?: InactiveLineCombinerFunction): Relay | undefined {
@@ -149,7 +151,9 @@ export class RelayStore {
     const state = this.getState()
 
     if (state.activeLine === undefined || relay.line === state.activeLine) {
-      return this.insertRelay(relay)
+      const inserted = this.insertRelay(relay)
+      this.setInitialActiveLine(inserted.line)
+      return inserted
     }
 
     if (state.inactiveLineCombiner === 'none' || combine === undefined) {
@@ -787,6 +791,13 @@ export class RelayStore {
       VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(key, value)
+  }
+
+  private setInitialActiveLine(line: string): void {
+    this.database.prepare(`
+      INSERT OR IGNORE INTO settings (key, value)
+      VALUES ('active_line', ?)
+    `).run(line)
   }
 
   private migratedInactiveLineCombinerCommand(): string {
