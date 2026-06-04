@@ -1051,7 +1051,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
-            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32),
+            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 50),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
             settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
             settingsTabView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),

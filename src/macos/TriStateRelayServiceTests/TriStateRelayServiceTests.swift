@@ -68,7 +68,7 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("window.titleVisibility = .hidden"))
         XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
         XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 40)"))
-        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32)"))
+        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 50)"))
     }
 
     func testStatusMenuOrderKeepsCoreActionsSimple() throws {
