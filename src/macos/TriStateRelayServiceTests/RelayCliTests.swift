@@ -2,6 +2,11 @@ import XCTest
 @testable import Tri_State_Relay_Service
 
 final class RelayCliTests: XCTestCase {
+    override func tearDown() {
+        unsetenv("TSRS_DB_PATH")
+        super.tearDown()
+    }
+
     func testVersionPrintsRelayVersion() {
         let result = runRelayCli(["--version"])
 
@@ -59,4 +64,51 @@ final class RelayCliTests: XCTestCase {
         XCTAssertTrue(result.stderr.contains("unknown command: frobnicate"))
         XCTAssertTrue(result.stderr.contains("Usage: relay"))
     }
+
+    func testEnqueueListAndStateUseIsolatedDatabase() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let enqueue = runRelayCli([
+            "--line", " Brain ",
+            "--message", " hello   world ",
+            "--type", "complete",
+            "--priority", "high",
+            "--session", "session-1",
+            "--app", "Copilot",
+        ])
+
+        XCTAssertEqual(enqueue.stdout, "queued relay #1 Brain: hello world")
+        XCTAssertEqual(enqueue.stderr, "")
+        XCTAssertEqual(enqueue.exitCode, 0)
+
+        let list = runRelayCli(["list"])
+        XCTAssertEqual(list.stdout, "mode=focus muted=false\n#1 [queued] [high] Brain: hello world")
+        XCTAssertEqual(list.exitCode, 0)
+
+        let state = runRelayCli(["state"])
+        XCTAssertEqual(state.stdout, "focus, active-line=Brain, inactive-line-combiner=none")
+        XCTAssertEqual(state.exitCode, 0)
+    }
+
+    func testModeMuteAndClearCommandsUseDatabase() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        XCTAssertEqual(runRelayCli(["ready"]).stdout, "ready to release one relay")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "ready, active-line=none, inactive-line-combiner=none")
+        XCTAssertEqual(runRelayCli(["mute"]).stdout, "muted")
+        XCTAssertEqual(runRelayCli(["ready"]).stdout, "release queued, but muted is on")
+        XCTAssertEqual(runRelayCli(["unmute"]).stdout, "unmuted")
+        XCTAssertEqual(runRelayCli(["focus"]).stdout, "focus mode on")
+
+        _ = runRelayCli(["--line", "Brain", "--message", "clear me"])
+        XCTAssertEqual(runRelayCli(["clear"]).stdout, "cleared 1 relays")
+        XCTAssertEqual(runRelayCli(["list"]).stdout, "mode=focus muted=false")
+    }
+}
+
+private func isolatedDatabasePath() -> String {
+    FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        .appendingPathComponent("relay.db")
+        .path
 }
