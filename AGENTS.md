@@ -161,3 +161,4 @@ When an agent miss happens:
 - Swift code should keep queue state and command results explicit and testable.
 - Small functions over large managers.
 - Shell scripts use long flags where practical and must not speak directly.
+- Keep user-facing Markdown prose unwrapped: use one line per paragraph while leaving headings, lists, tables, and code blocks readable.

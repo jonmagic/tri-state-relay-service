@@ -1,58 +1,132 @@
 # Tri-State Relay Service user guide
 
-Tri-State Relay Service is a quiet local inbox for agent status updates. Agents
-send short relays with the `relay` CLI, and the macOS menu bar app lets you hear
-or manage those relays when you are ready.
+Tri-State Relay Service is a quiet local inbox for updates from your coding agents. Instead of leaving every agent to interrupt you in its own way, agents send short relays to the macOS menu bar app. You stay in control of when one is played.
 
-## Install the app and CLI
+The basic idea is simple:
 
-1. Build or install the direct-download macOS app.
-2. Launch Tri-State Relay Service from the app bundle.
-3. On first launch, Settings opens automatically on the Setup panel.
-4. Install the bundled `relay` CLI up front, then choose a command-palette
-   shortcut and voice.
+1. Install the app and the `relay` command.
+2. Tell your agents when to send short status updates.
+3. Let relays queue quietly while you work.
+4. Press Play Next when you are ready to hear one.
 
-The recommended CLI install path is `~/.local/bin/relay` because agents can use
-it from any project once `~/.local/bin` is on `PATH`. TSRS updates TSRS-owned
-copies at that path but refuses to overwrite a different binary. If you prefer
-not to install it, use the Setup panel copy button to copy the full bundled
-app-contents CLI path and put that full path in your agent instructions.
+## Start with the app
 
-## First setup
+Launch Tri-State Relay Service from the macOS app bundle. On first launch, Settings opens automatically and walks you through the essentials.
 
-The first-run Settings screen opens with the CLI install action visible first,
-then helps you make three choices before normal use:
+The first thing to set up is the command-line tool. The app can install `relay` for you at:
 
-1. Install or locate the `relay` CLI so agents can enqueue updates.
-2. Record the command-palette shortcut by pressing the combination you want.
-   The default is `Control` + `Option` + `Command` + `Space`.
-3. Choose the voice used by app-owned playback.
-
-This setup is part of the normal Settings window, not a heavyweight onboarding
-wizard. TSRS remains in Focus mode during setup, so relays queue quietly until
-you explicitly play one. You can return to Settings later to change the shortcut, reinstall or locate the
-CLI, copy the bundled CLI path, or change the voice.
-
-## Send a relay
-
-Use intentionally authored messages, not raw command output:
-
-```sh
-relay --line "Brain" --type update --priority normal --cwd "$PWD" --message "I am drafting the project summary."
-relay --line "Brain" --type complete --priority normal --cwd "$PWD" --message "The summary is ready."
+```text
+~/.local/bin/relay
 ```
 
-Good relays are short progress updates, phase changes, blockers, requests for
-human input, and completion notes. Do not send code, logs, secrets, private data,
-or long explanations.
+That location works well because agents can use the same command from any project once `~/.local/bin` is on your `PATH`. If you would rather not install a copy, Settings can also show the full bundled app path so you can paste that into agent instructions instead.
 
-## Listen safely
+After the CLI step, choose a keyboard shortcut and a voice. The default shortcut is `Control` + `Option` + `Command` + `Space`. You can change it by clicking the shortcut button and pressing the combination you want.
 
-TSRS starts quiet. Focus mode queues relays without speaking. Ready mode releases
-one eligible relay and then returns to focus. Mute prevents playback even when
-relays are queued.
+TSRS stays quiet during setup. Anything that arrives is queued until you choose to hear it.
 
-Useful commands:
+## Your first relay
+
+A relay is a short, human-readable update from an agent. It should sound like a teammate briefly saying what changed, not like a log dump.
+
+For example:
+
+```sh
+relay --line "My Project" --message "I’m starting the next implementation slice."
+```
+
+When that command runs, the update appears in TSRS. If you are in Focus mode, it waits silently. When you are ready, use Play Next from the menu bar app or run:
+
+```sh
+relay ready
+```
+
+TSRS plays one eligible relay, then returns to quiet mode.
+
+## What makes a good relay
+
+Good relays are short and intentional. Use them for:
+
+1. Starting a meaningful work slice.
+2. Switching phases, such as from investigation to implementation.
+3. Getting blocked or needing human input.
+4. Finishing something useful.
+
+Avoid sending raw command output, logs, code, secrets, private data, or long explanations. If the message would be annoying to hear out loud, it is probably too much for a relay.
+
+Good examples:
+
+```sh
+relay --line "My Project" --type update --message "The tests are running now."
+relay --line "My Project" --type complete --message "The draft is ready to review."
+relay --line "My Project" --priority high --message "I’m blocked and need your choice before continuing."
+```
+
+## Lines keep work streams separate
+
+A line is a named work stream. If you only have one agent working on one project, one line may be enough. If you have several agents working at once, lines make it much easier to understand which update belongs where.
+
+For example, you might use:
+
+```sh
+relay --line "Website" --message "I found the broken image path."
+relay --line "API" --message "The auth test failure is isolated."
+```
+
+You can also use more specific line names when several agents are working inside the same project:
+
+```sh
+relay --line "TSRS icon" --message "The app icon was rebuilt."
+relay --line "TSRS docs" --message "The user guide rewrite is in progress."
+```
+
+The active line is the line TSRS plays from automatically when you ask for the next relay. Other lines stay queued until you switch to them or pull from them directly.
+
+Useful line commands:
+
+```sh
+relay line
+relay line "Website"
+relay list
+```
+
+## Add TSRS to your agent instructions
+
+The easiest way to make TSRS useful is to add a small instruction to your highest-level agent instructions. Put it wherever your coding agent reads its global or project instructions.
+
+Start simple:
+
+```text
+When using tools or doing multi-step work, send short Tri-State Relay Service updates with:
+
+relay --line "My Project" --type update --priority normal --cwd "$PWD" --message "I’m starting the next work slice."
+
+Use --type complete when a meaningful task is done. Keep messages brief and human-authored. Do not send code, logs, secrets, private data, or raw terminal output.
+```
+
+If you often run more than one agent in the same project, ask the agent to choose or confirm a line name at the start of the session. That gives each work stream a separate lane without changing projects.
+
+Example:
+
+```text
+At the start of each session, ask me what the Tri-State Relay Service line should be called. An empty answer is fine and means to use the current project or folder name. Use that line for all TSRS updates during the session.
+```
+
+You can combine that with a default line rule:
+
+```text
+Choose the default line from the current working directory. Prefer the git repository or project name. Mention cross-project research in the message text instead of changing the line.
+```
+
+The goal is not to make agents chatty. The goal is to make their important state changes easy to notice without watching every terminal.
+
+## Everyday controls
+
+TSRS is designed to be quiet by default.
+
+Focus mode queues relays without speaking. Ready mode releases one relay, then returns to Focus. Mute prevents playback even if relays are queued.
+
+Common commands:
 
 ```sh
 relay list
@@ -63,112 +137,50 @@ relay acknowledge
 relay clear-delivered
 ```
 
-The app owns playback. The CLI never speaks directly.
+In the menu bar app, left click for the fastest Play Next path. Right click opens the command palette. Your keyboard shortcut opens the command palette with Play Next selected, so pressing Return immediately plays the next eligible relay.
 
-## Lines
+The app owns playback. The CLI submits and manages relays, but it does not speak directly.
 
-Lines separate different work contexts. For example, use one line for `Brain`
-work and another for `Tri-State Relay Service` development:
+## Voice and shortcut settings
+
+Open Settings whenever you want to change the CLI install, keyboard shortcut, or voice.
+
+Changing the voice is quiet. Use Preview only when you explicitly want to hear a sample. To add more macOS voices, open System Settings > Accessibility > Spoken Content.
+
+Direct-download builds use app-owned playback and can use installed macOS voices that work with the system speech engine. Natural voices are favored when available, and System Default remains available.
+
+## When many updates pile up
+
+When you are focused on one line, other lines may collect several updates. TSRS can keep this manageable by showing or playing the latest useful update for an inactive line instead of making you hear every stale intermediate message.
+
+For many people, the default behavior is enough. You can work on one line, then switch lines when you are ready to catch up.
+
+## Advanced: the inactive-line Combiner
+
+The Combiner is for people who want an external agent or command to summarize many queued inactive-line updates into one short relay. It is useful when you run several agents at once and want a catch-up that sounds like a concise teammate summary.
+
+You can inspect or change the Combiner from the CLI:
 
 ```sh
-relay line
-relay line "Tri-State Relay Service"
+relay combiner
+relay combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
+relay combiner --command none
 ```
 
-The active line is the line TSRS plays automatically when unmuted. Other lines
-stay queued until you switch lines or explicitly pull a relay from that line.
+The command template receives the inactive-line updates as input and should return one safe, short message. Leave the Combiner unset if you prefer the simpler latest-update behavior.
 
-## Menu bar controls
+Combiner output should follow the same rules as any other relay: no secrets, no raw logs, no code dumps, and no long explanations.
 
-Left click the menu bar icon for the fastest Play Next path. Right click opens
-the command palette with an empty search. The configurable keyboard shortcut
-opens the command palette with Play Next selected, so pressing Return immediately
-plays the next eligible relay. The default shortcut is `Control` + `Option` +
-`Command` + `Space`; change it in the Setup panel by clicking the shortcut
-button and pressing a valid combination. TSRS rejects invalid or reserved
-combinations, including `Control` + `Option` + `Command` + `V`, instead of
-silently falling back.
+## If something does not work
 
-The command palette shows safe action context such as line names and counts. It
-should not show relay message bodies by default.
+If agents cannot find `relay`, open Settings and install the CLI to `~/.local/bin/relay`, then make sure `~/.local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
 
-## Voice
+If relays queue but do not speak, check whether TSRS is focused, muted, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
 
-Choose a voice in Settings during first setup or later normal use. Direct-download
-builds currently preserve Siri/say voice behavior through app-owned playback: the
-voice menu is built from installed macOS voices that can be passed to
-`/usr/bin/say -v <name>`. Natural installed voices are favored when available,
-while System Default remains available.
-
-Changing the voice selection is quiet. Use Preview only when you explicitly want
-to hear a sample. Install additional macOS voices in System Settings >
-Accessibility > Spoken Content.
-
-## Troubleshooting
-
-If agents cannot find `relay`, open Settings > CLI and install it to
-`~/.local/bin/relay`, then make sure `~/.local/bin` is on `PATH`. If you do not
-want to install it, copy the bundled app-contents CLI path from Settings > CLI
-and use that full path directly. If relays queue but do not speak, check whether
-TSRS is focused, muted, or waiting because the microphone appears active.
-
-The queue is stored locally at:
+The local queue lives on your Mac at:
 
 ```text
 ~/Library/Application Support/Tri-State Relay Service/relay.db
 ```
 
-### Development first-start verification
-
-Existing local installs may not show first setup because they already have
-configuration.
-
-To re-test the first-start prompt without wiping relays, reset only the
-setup-completion key:
-
-```sh
-relay first-start reset
-```
-
-Then restart the app with `scripts/restart-macos-app.sh`; Settings should open
-again. Restore the normal configured state with:
-
-```sh
-relay first-start complete
-```
-
-If you are testing before that CLI command is installed, run the equivalent
-SQLite update against the local queue database:
-
-```sh
-sqlite3 "$HOME/Library/Application Support/Tri-State Relay Service/relay.db" \
-  "INSERT INTO settings (key, value) VALUES ('first_start_setup_complete', 'false')
-   ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
-```
-
-This targeted reset does not clear queued or delivered relays. Avoid deleting
-`relay.db` unless you explicitly want to wipe all local queue data.
-
-For a true fresh first-start run from a rebuilt app, use the development helper:
-
-```sh
-scripts/fresh-start-macos-app.sh
-```
-
-It uses the bundled CLI from `dist/macos/Tri-State Relay Service.app`, clears the
-development database, and restarts the rebuilt app. If you only want to clear the
-database without restarting the app, run:
-
-```sh
-"dist/macos/Tri-State Relay Service.app/Contents/MacOS/relay" first-start dev-reset-database --confirm
-```
-
-This removes the configured app database and its SQLite sidecar files
-(`relay.db`, `relay.db-wal`, and `relay.db-shm`), which clears queued,
-delivered, handled, skipped, expired, and failed relays plus local settings such
-as active line, voice, shortcut, and setup completion. The command then
-recreates an empty database that defaults to first-start needs-setup. It is not
-called by normal app launch paths.
-
-Shortcut setup records a custom key combination in Settings. Use a combination
-with `Command` plus at least one of `Control`, `Option`, or `Shift`.
+You usually do not need to touch that file. It is listed here only so you know where your local queue data lives.
