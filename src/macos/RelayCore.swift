@@ -1331,7 +1331,7 @@ private final class RelayCliStore {
     }
 }
 
-private func relayCliDatabasePath() -> String {
+func relayCliDatabasePath() -> String {
     let environment = ProcessInfo.processInfo.environment
 
     if let path = environment["TSRS_DB_PATH"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1501,7 +1501,7 @@ private func bind(_ values: [String?], to statement: OpaquePointer) {
     }
 }
 
-private func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {
+func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {
     guard sqlite3_column_type(statement, index) != SQLITE_NULL, let text = sqlite3_column_text(statement, index) else {
         return nil
     }
@@ -1509,7 +1509,7 @@ private func columnString(_ statement: OpaquePointer, _ index: Int32) -> String?
     return String(cString: text)
 }
 
-private func sqliteError(_ database: OpaquePointer) -> String {
+func sqliteError(_ database: OpaquePointer) -> String {
     if let message = sqlite3_errmsg(database) {
         return String(cString: message)
     }
@@ -1528,7 +1528,7 @@ private func jsonString(_ object: Any) throws -> String {
     return String(data: data, encoding: .utf8) ?? "{}"
 }
 
-private func commandIsEnabled(_ command: String?) -> Bool {
+func commandIsEnabled(_ command: String?) -> Bool {
     guard let command else {
         return false
     }
@@ -1544,11 +1544,11 @@ private func commandIsEnabled(_ command: String?) -> Bool {
     return false
 }
 
-private func resetBlankCommand(_ command: String, fallback: String) -> String {
+func resetBlankCommand(_ command: String, fallback: String) -> String {
     commandIsEnabled(command) ? command : fallback
 }
 
-private let defaultInactiveLineCombinerCommand = """
+let defaultInactiveLineCombinerCommand = """
 # Inactive line combiner command.
 # Leave this commented to use latest-only inactive-line behavior.
 # The command must print a JSON object: {"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short relay"}
@@ -1561,7 +1561,7 @@ private let defaultInactiveLineCombinerCommand = """
 # apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>
 """
 
-private let defaultSpeechCommand = """
+let defaultSpeechCommand = """
 # Speech command.
 # /usr/bin/say ships with macOS, so no extra install is required.
 # Placeholders are inserted as single argv values, not shell-expanded.
