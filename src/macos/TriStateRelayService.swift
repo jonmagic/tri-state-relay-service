@@ -1529,7 +1529,7 @@ struct CommandPaletteCommand {
 final class CommandPaletteWindowController: NSWindowController, NSTextFieldDelegate {
     private static let panelWidth: CGFloat = 560
     private static let outerPadding: CGFloat = 12
-    private static let contentInset: CGFloat = 24
+    private static let contentInset: CGFloat = 18
     private static let searchHeight: CGFloat = 34
     private static let searchToDividerSpacing: CGFloat = 2
     private static let dividerToResultsSpacing: CGFloat = 8
@@ -1860,9 +1860,9 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         NSLayoutConstraint.activate([
             row.heightAnchor.constraint(equalToConstant: Self.rowHeight),
-            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.contentInset * 2)),
-            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -10),
+            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.outerPadding * 2)),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.contentInset - Self.outerPadding),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -(Self.contentInset - Self.outerPadding)),
             stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         ])
 
