@@ -71,7 +71,7 @@ Do not add StoreKit unless the App Store becomes a primary target again.
 Direct download does not mean “keep shelling out forever.” Prefer moving
 normal app behavior into Swift/Xcode and native macOS APIs:
 
-1. Native speech through AVFoundation or another current Apple API.
+1. App-owned speech. The direct profile currently uses Swift-launched `/usr/bin/say` for Siri voice fidelity; replacing it needs an explicit product decision and parity check.
 2. Native line-scoped source actions through AppKit APIs.
 3. Native settings UI.
 4. Native queue/storage access when the persistence boundary is ready.
@@ -94,7 +94,7 @@ reduction exercise, but it is not the main release target. Keep the profile
 when it helps enforce good boundaries:
 
 1. No arbitrary command execution from the app surface.
-2. Native app-owned playback.
+2. AVFoundation app-owned playback with no external speech commands.
 3. Native line-scoped source actions.
 4. Clear capability reporting.
 

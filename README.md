@@ -29,7 +29,7 @@ relay status
 The invariant is more important than the surface: many producers can enqueue relays, but only the app-owned playback path may speak.
 
 1. The CLI never calls `/usr/bin/say` directly.
-2. The app owns relay playback with native AVFoundation speech.
+2. The app owns relay playback. Direct builds currently use Swift-launched `/usr/bin/say` for Siri voice fidelity; App Store-safe builds use AVFoundation.
 3. The SQLite store owns message state and persistent mode.
 4. Focus mode is the safe default.
 5. Ready mode releases exactly one relay, then returns to focus.
@@ -116,8 +116,10 @@ lines stay quiet and can be pulled from their line submenu.
 Both macOS profiles are packaged from the CLI-only native build and do not
 bundle or launch the legacy processor. The App Store-safe profile keeps terminal
 enqueueing disabled and hides external inactive-line combiner command templates.
-Playback is claimed and spoken by the app with AVFoundation speech using the
-configured native voice.
+Playback is claimed and spoken by the app. Direct builds currently launch
+`/usr/bin/say` from Swift so configured Siri/say voices keep working, while the
+App Store-safe profile uses AVFoundation and does not launch external speech
+commands.
 
 The direct app can install or update the bundled `relay` CLI from the menu. On
 first launch, it prompts when the CLI is missing or stale, copies the bundled
@@ -205,9 +207,10 @@ The command is parsed into argv without a shell. Placeholders such as
 Pipes, redirects, command substitution, and shell expansion are intentionally
 unsupported.
 
-The Settings window has a Voice tab for choosing the native AVFoundation voice
-used by the menu bar app. Speech command templates are legacy
-processor/terminal compatibility settings and are not exposed in the app.
+The Settings window has a Voice tab for choosing the voice used by the menu bar
+app. Direct builds include Siri/say voice options; App Store-safe builds use
+AVFoundation voices. Speech command templates are legacy processor/terminal
+compatibility settings and are not exposed in the app.
 
 ## Lines
 

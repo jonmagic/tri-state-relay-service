@@ -31,7 +31,7 @@ The App Store-safe profile:
 
 The direct profile keeps:
 
-1. Swift-owned AVFoundation app playback.
+1. Swift-owned app playback that may launch `/usr/bin/say` to preserve Siri/say voice behavior.
 2. Configurable inactive-line combiner command templates.
 3. Line-scoped app source actions for direct terminal use context.
 4. Native voice selection in the app settings window.

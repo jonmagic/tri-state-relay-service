@@ -81,7 +81,7 @@ Recommended next slice: direct-download signing/notarization packaging or Swift/
 
 Swift migration update:
 
-1. Direct and App Store-safe macOS app profiles now own playback in Swift through AVFoundation.
+1. Direct and App Store-safe macOS app profiles now own playback in Swift. Direct builds use Swift-launched `/usr/bin/say` for Siri/say voice fidelity; App Store-safe builds use AVFoundation.
 2. The macOS app no longer launches or supervises the legacy relay processor loop.
 3. Both macOS app profiles package only the CLI helper binary, `relay`.
 4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.

@@ -6,7 +6,7 @@ Tri-State Relay Service is a local macOS agent relay queue. Agents are implement
 
 1. Do not estimate timelines unless the user explicitly asks for an estimate.
 2. Use red-green-refactor wherever practical.
-3. The CLI must never speak directly. App playback is owned by Swift native speech; `relay-processor` is legacy compatibility and must not be bundled into the macOS app.
+3. The CLI must never speak directly. App playback is owned by the Swift app; direct builds currently use Swift-launched `/usr/bin/say` for Siri voice fidelity, App Store-safe builds use AVFoundation, and `relay-processor` is legacy compatibility that must not be bundled into the macOS app.
 4. Preserve the single-writer invariant for claiming and speaking messages.
 5. Focus mode is the safe default. Ready mode releases one relay, then returns to focus.
 6. Reject or scrub unsafe message input rather than speaking arbitrary terminal output.
@@ -36,7 +36,7 @@ explicitly say they remain uncommitted for review.
 
 ## Product rules
 
-Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`.
+Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`. In the direct profile, the Swift app may launch `/usr/bin/say` itself to preserve Siri/say voice behavior. In the App Store-safe profile, playback uses AVFoundation and must not launch external speech commands.
 
 The primary distribution direction is signed direct download with a standard
 local `relay` CLI and future license-key Pro unlocks. The App Store-safe
@@ -120,8 +120,8 @@ Use this order unless there is a strong reason to change it:
 15. Terminal-specific focus adapters where reliable.
 16. Signed direct-download packaging: signing, notarization, and standard CLI installation.
 17. Swift/Xcode migration for app-owned queue, settings, source actions, and playback behavior.
-18. App Store-safe profile hardening: native speech, no external command templates, and bundle inspection.
-19. Remove app dependence on `relay-processor`; playback is now Swift-native in both profiles.
+18. App Store-safe profile hardening: AVFoundation speech, no external command templates, and bundle inspection.
+19. Remove app dependence on `relay-processor`; playback is app-owned in both profiles, with direct-profile `/usr/bin/say` preserved until an explicit product decision replaces the Siri voice path.
 
 ## Task exit criteria
 
