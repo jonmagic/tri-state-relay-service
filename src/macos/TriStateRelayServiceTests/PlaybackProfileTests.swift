@@ -15,6 +15,33 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertFalse(source.contains("relay-processor"))
     }
 
+    func testSayArgumentsUsePersistedSayVoiceName() throws {
+        let option = SpeechVoiceOption(identifier: "say:Samantha", name: "Samantha", title: "Samantha")
+
+        XCTAssertEqual(sayArguments(text: "Relay ready", option: option), ["-v", "Samantha", "Relay ready"])
+    }
+
+    func testSpeechVoiceOptionsStayValidForSayPlayback() throws {
+        for option in availableSpeechVoiceOptions() where option.identifier.hasPrefix("say:") {
+            XCTAssertEqual(sayArguments(text: "Relay ready", option: option), ["-v", option.name, "Relay ready"])
+            XCTAssertFalse(option.name.isEmpty)
+        }
+    }
+
+    func testChangingVoiceSelectionDoesNotAutoPreview() throws {
+        let source = try triStateRelayServiceSource()
+        guard let selectVoiceRange = source.range(of: "@objc private func selectVoice") else {
+            return XCTFail("selectVoice action is missing")
+        }
+        let remainder = source[selectVoiceRange.lowerBound...]
+        guard let endRange = remainder.range(of: "    @objc private func selectShortcut") else {
+            return XCTFail("selectVoice action boundary is missing")
+        }
+        let selectVoiceBody = remainder[..<endRange.lowerBound]
+
+        XCTAssertFalse(selectVoiceBody.contains("previewSelectedVoice"))
+    }
+
     func testCommandPaletteShortcutDefaultsToPlayNextShortcut() throws {
         let shortcut = KeyboardShortcut(identifier: nil)
         let plan = GlobalHotKeyRegistrationPlan.commandPalette(shortcut: shortcut)
@@ -27,14 +54,13 @@ final class PlaybackProfileTests: XCTestCase {
     }
 
     func testCommandPaletteShortcutRoundTripsPersistedIdentifiers() throws {
-        for option in KeyboardShortcut.availableCommandPaletteShortcuts {
-            let decoded = KeyboardShortcut(identifier: option.identifier)
-            let plan = GlobalHotKeyRegistrationPlan.commandPalette(shortcut: decoded)
+        let decoded = KeyboardShortcut(identifier: "control-option-shift-command-p")
+        let plan = GlobalHotKeyRegistrationPlan.commandPalette(shortcut: decoded)
 
-            XCTAssertEqual(decoded, option)
-            XCTAssertEqual(plan.keyCode, option.keyCode)
-            XCTAssertEqual(plan.modifiers, option.modifiers)
-        }
+        XCTAssertEqual(decoded.identifier, "control-option-shift-command-p")
+        XCTAssertEqual(decoded.displayName, "Control + Option + Shift + Command + P")
+        XCTAssertEqual(plan.keyCode, UInt32(kVK_ANSI_P))
+        XCTAssertEqual(plan.modifiers, UInt32(cmdKey | optionKey | controlKey | shiftKey))
     }
 
     func testCommandPaletteShortcutRejectsUnknownPersistedIdentifier() throws {
@@ -55,7 +81,39 @@ final class PlaybackProfileTests: XCTestCase {
     }
 
     func testCommandPaletteShortcutOptionsExcludeFormerVShortcut() throws {
-        XCTAssertFalse(KeyboardShortcut.availableCommandPaletteShortcuts.contains { $0.identifier == "control-option-command-v" })
-        XCTAssertFalse(KeyboardShortcut.availableCommandPaletteShortcuts.contains { $0.keyCode == UInt32(kVK_ANSI_V) })
+        let result = KeyboardShortcut.recording(
+            keyCode: UInt32(kVK_ANSI_V),
+            modifierFlags: [.control, .option, .command]
+        )
+
+        guard case .invalid(let message) = result else {
+            return XCTFail("Expected Control + Option + Command + V to be rejected")
+        }
+        XCTAssertTrue(message.contains("reserved"))
+    }
+
+    func testShortcutRecordingAcceptsArbitraryValidCombo() throws {
+        let result = KeyboardShortcut.recording(
+            keyCode: UInt32(kVK_ANSI_Y),
+            modifierFlags: [.control, .shift, .command]
+        )
+
+        guard case .valid(let shortcut) = result else {
+            return XCTFail("Expected custom shortcut to be accepted")
+        }
+        XCTAssertEqual(shortcut.identifier, "control-shift-command-y")
+        XCTAssertEqual(shortcut.displayName, "Control + Shift + Command + Y")
+    }
+
+    func testShortcutRecordingRejectsInvalidCombosWithoutSilentFallback() throws {
+        let result = KeyboardShortcut.recording(
+            keyCode: UInt32(kVK_ANSI_Y),
+            modifierFlags: [.command]
+        )
+
+        guard case .invalid(let message) = result else {
+            return XCTFail("Expected Command-only shortcut to be rejected")
+        }
+        XCTAssertTrue(message.contains("Include Control, Option, or Shift"))
     }
 }

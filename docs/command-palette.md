@@ -94,15 +94,16 @@ message bodies in palette results by default.
 1. Commands are modeled in Swift and rendered by the command palette.
 2. The native AppKit palette supports search, selection, Return, Escape, and
    line-scoped command groups.
-3. The Settings > Shortcut choice opens the palette with `play next` selected;
+3. The Settings > Shortcut recorder opens the palette with `play next` selected;
    the default is Control-Option-Command-Space.
 4. Right click opens the palette with an empty query.
 5. Left click remains Play Next.
-6. Control-Option-Command-V is intentionally not registered as a global palette shortcut.
+6. Control-Option-Command-V is intentionally rejected and not registered as a global palette shortcut.
 7. The compact menu remains focused on essential status/settings actions.
 
-Shortcut registration is modeled separately from AppKit so tests can verify the
-default and persisted shortcut without registering a real global hotkey.
+Shortcut mapping and validation are modeled separately from AppKit so tests can
+verify the default, custom recorded shortcuts, reserved-combo rejection, and
+persisted shortcuts without registering a real global hotkey.
 
 ## Guardrails
 

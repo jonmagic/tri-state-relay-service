@@ -47,9 +47,9 @@ final class NativeRelayStoreTests: XCTestCase {
         }
 
         let store = NativeRelayStore(profile: "direct")
-        store.saveCommandPaletteShortcut(KeyboardShortcut(identifier: "control-option-command-p"))
+        store.saveCommandPaletteShortcut(KeyboardShortcut(identifier: "control-shift-command-y"))
 
-        XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().commandPaletteShortcut.identifier, "control-option-command-p")
+        XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().commandPaletteShortcut.identifier, "control-shift-command-y")
     }
 
     func testFirstStartSetupCompletionPersistsAndDoesNotRetrigger() throws {

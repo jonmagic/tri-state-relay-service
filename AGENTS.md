@@ -100,10 +100,14 @@ the next agent sees the current state instead of stale guidance:
 
 1. Replace the preset-only command-palette shortcut selector with press-a-combo
    capture so first-start setup supports recording a custom shortcut.
-2. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
-3. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
-4. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
-5. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
+2. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
+3. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
+4. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
+
+Completed milestone: the CLI install panel is the first Settings panel shown
+during first-start setup, encourages `~/.local/bin/relay`, preserves safe
+overwrite behavior, and offers a copy button for the full bundled app-contents
+CLI path.
 
 Completed milestone: direct-download builds are arm64-only by default. Use
 `TSRS_MACOS_ARCHS="arm64 x86_64"` only for a deliberate future universal build

@@ -708,14 +708,28 @@ struct KeyboardShortcut: Equatable {
         modifiers: UInt32(cmdKey | optionKey | controlKey)
     )
 
-    static let availableCommandPaletteShortcuts = [
-        defaultCommandPalette,
-        KeyboardShortcut(identifier: "control-option-command-p", displayName: "Control + Option + Command + P", keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(cmdKey | optionKey | controlKey)),
-        KeyboardShortcut(identifier: "control-option-command-k", displayName: "Control + Option + Command + K", keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey | controlKey)),
+    private static let keyNamesByCode: [UInt32: String] = [
+        UInt32(kVK_ANSI_A): "A", UInt32(kVK_ANSI_B): "B", UInt32(kVK_ANSI_C): "C", UInt32(kVK_ANSI_D): "D",
+        UInt32(kVK_ANSI_E): "E", UInt32(kVK_ANSI_F): "F", UInt32(kVK_ANSI_G): "G", UInt32(kVK_ANSI_H): "H",
+        UInt32(kVK_ANSI_I): "I", UInt32(kVK_ANSI_J): "J", UInt32(kVK_ANSI_K): "K", UInt32(kVK_ANSI_L): "L",
+        UInt32(kVK_ANSI_M): "M", UInt32(kVK_ANSI_N): "N", UInt32(kVK_ANSI_O): "O", UInt32(kVK_ANSI_P): "P",
+        UInt32(kVK_ANSI_Q): "Q", UInt32(kVK_ANSI_R): "R", UInt32(kVK_ANSI_S): "S", UInt32(kVK_ANSI_T): "T",
+        UInt32(kVK_ANSI_U): "U", UInt32(kVK_ANSI_V): "V", UInt32(kVK_ANSI_W): "W", UInt32(kVK_ANSI_X): "X",
+        UInt32(kVK_ANSI_Y): "Y", UInt32(kVK_ANSI_Z): "Z", UInt32(kVK_ANSI_0): "0", UInt32(kVK_ANSI_1): "1",
+        UInt32(kVK_ANSI_2): "2", UInt32(kVK_ANSI_3): "3", UInt32(kVK_ANSI_4): "4", UInt32(kVK_ANSI_5): "5",
+        UInt32(kVK_ANSI_6): "6", UInt32(kVK_ANSI_7): "7", UInt32(kVK_ANSI_8): "8", UInt32(kVK_ANSI_9): "9",
+        UInt32(kVK_Space): "Space", UInt32(kVK_Return): "Return", UInt32(kVK_Tab): "Tab",
+        UInt32(kVK_F1): "F1", UInt32(kVK_F2): "F2", UInt32(kVK_F3): "F3", UInt32(kVK_F4): "F4",
+        UInt32(kVK_F5): "F5", UInt32(kVK_F6): "F6", UInt32(kVK_F7): "F7", UInt32(kVK_F8): "F8",
+        UInt32(kVK_F9): "F9", UInt32(kVK_F10): "F10", UInt32(kVK_F11): "F11", UInt32(kVK_F12): "F12",
     ]
 
     init(identifier: String?, fallback: KeyboardShortcut = .defaultCommandPalette) {
-        guard let identifier, let shortcut = Self.availableCommandPaletteShortcuts.first(where: { $0.identifier == identifier }) else {
+        guard
+            let identifier,
+            let shortcut = Self.shortcut(identifier: identifier),
+            shortcut.identifier != "control-option-command-v"
+        else {
             self = fallback
             return
         }
@@ -723,11 +737,159 @@ struct KeyboardShortcut: Equatable {
         self = shortcut
     }
 
+    static func recording(keyCode: UInt32, modifierFlags: NSEvent.ModifierFlags) -> ShortcutValidationResult {
+        let carbonModifiers = carbonModifiers(from: modifierFlags)
+        guard carbonModifiers != 0 else {
+            return .invalid("Press a shortcut with modifier keys.")
+        }
+        guard (carbonModifiers & UInt32(cmdKey)) != 0 else {
+            return .invalid("Include Command so normal typing is not captured.")
+        }
+        guard (carbonModifiers & UInt32(optionKey | controlKey | shiftKey)) != 0 else {
+            return .invalid("Include Control, Option, or Shift with Command.")
+        }
+        guard let shortcut = shortcut(keyCode: keyCode, modifiers: carbonModifiers) else {
+            return .invalid("That key is not supported for a global shortcut.")
+        }
+        guard !isReserved(shortcut) else {
+            return .invalid("Control + Option + Command + V is reserved and is not registered by TSRS.")
+        }
+        guard !isSystemReserved(shortcut) else {
+            return .invalid("\(shortcut.displayName) is reserved by macOS or TSRS.")
+        }
+        return .valid(shortcut)
+    }
+
+    private static func shortcut(identifier: String) -> KeyboardShortcut? {
+        let parts = identifier.split(separator: "-").map(String.init)
+        guard let keyPart = parts.last else {
+            return nil
+        }
+        let modifierParts = Set(parts.dropLast())
+        var modifiers: UInt32 = 0
+        if modifierParts.contains("control") { modifiers |= UInt32(controlKey) }
+        if modifierParts.contains("option") { modifiers |= UInt32(optionKey) }
+        if modifierParts.contains("shift") { modifiers |= UInt32(shiftKey) }
+        if modifierParts.contains("command") { modifiers |= UInt32(cmdKey) }
+        guard modifierParts.count == parts.count - 1 else {
+            return nil
+        }
+        guard let keyCode = keyNamesByCode.first(where: { $0.value.lowercased() == keyPart })?.key else {
+            return nil
+        }
+        guard let shortcut = shortcut(keyCode: keyCode, modifiers: modifiers), !isReserved(shortcut) else {
+            return nil
+        }
+        return shortcut
+    }
+
+    private static func shortcut(keyCode: UInt32, modifiers: UInt32) -> KeyboardShortcut? {
+        guard let keyName = keyNamesByCode[keyCode] else {
+            return nil
+        }
+        let normalizedModifiers = modifiers & UInt32(cmdKey | optionKey | controlKey | shiftKey)
+        let modifierNames = modifierDisplayNames(modifiers: normalizedModifiers)
+        guard !modifierNames.isEmpty else {
+            return nil
+        }
+        let identifierParts = modifierNames.map { $0.lowercased() } + [keyName.lowercased()]
+        return KeyboardShortcut(
+            identifier: identifierParts.joined(separator: "-"),
+            displayName: (modifierNames + [keyName]).joined(separator: " + "),
+            keyCode: keyCode,
+            modifiers: normalizedModifiers
+        )
+    }
+
+    private static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var modifiers: UInt32 = 0
+        if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
+        if flags.contains(.option) { modifiers |= UInt32(optionKey) }
+        if flags.contains(.control) { modifiers |= UInt32(controlKey) }
+        if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
+        return modifiers
+    }
+
+    private static func modifierDisplayNames(modifiers: UInt32) -> [String] {
+        var names: [String] = []
+        if (modifiers & UInt32(controlKey)) != 0 { names.append("Control") }
+        if (modifiers & UInt32(optionKey)) != 0 { names.append("Option") }
+        if (modifiers & UInt32(shiftKey)) != 0 { names.append("Shift") }
+        if (modifiers & UInt32(cmdKey)) != 0 { names.append("Command") }
+        return names
+    }
+
+    private static func isSystemReserved(_ shortcut: KeyboardShortcut) -> Bool {
+        shortcut.identifier == "command-space" || shortcut.identifier == "control-command-space"
+    }
+
+    private static func isReserved(_ shortcut: KeyboardShortcut) -> Bool {
+        shortcut.identifier == "control-option-command-v"
+    }
+
     private init(identifier: String, displayName: String, keyCode: UInt32, modifiers: UInt32) {
         self.identifier = identifier
         self.displayName = displayName
         self.keyCode = keyCode
         self.modifiers = modifiers
+    }
+}
+
+enum ShortcutValidationResult: Equatable {
+    case valid(KeyboardShortcut)
+    case invalid(String)
+}
+
+final class ShortcutRecorderButton: NSButton {
+    var shortcut: KeyboardShortcut = .defaultCommandPalette {
+        didSet {
+            if !isRecording {
+                title = shortcut.displayName
+            }
+        }
+    }
+    var onShortcut: ((ShortcutValidationResult) -> Void)?
+    private var isRecording = false
+
+    init() {
+        super.init(frame: .zero)
+        title = KeyboardShortcut.defaultCommandPalette.displayName
+        bezelStyle = .rounded
+        setButtonType(.momentaryPushIn)
+        target = self
+        action = #selector(startRecording)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    @objc private func startRecording() {
+        isRecording = true
+        title = "Press shortcut…"
+        window?.makeFirstResponder(self)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard isRecording else {
+            super.keyDown(with: event)
+            return
+        }
+
+        isRecording = false
+        onShortcut?(KeyboardShortcut.recording(keyCode: UInt32(event.keyCode), modifierFlags: event.modifierFlags))
+    }
+
+    override func resignFirstResponder() -> Bool {
+        if isRecording {
+            isRecording = false
+            title = shortcut.displayName
+        }
+        return super.resignFirstResponder()
     }
 }
 
@@ -747,19 +909,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let onInstallRelayCli: () -> Void
     private let onSave: () -> Void
     private let setupIntroView = NSTextField(labelWithString: "")
-    private let setupInstallCliButton = NSButton(title: "Install relay CLI", target: nil, action: nil)
+    private let cliStatusView = NSTextField(labelWithString: "")
+    private let setupInstallCliButton = NSButton(title: "Install relay CLI to ~/.local/bin", target: nil, action: nil)
+    private let copyBundledCliPathButton = NSButton(title: "Copy bundled CLI path", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
-    private let shortcutPopUpButton = NSPopUpButton()
+    private let shortcutRecorderButton = ShortcutRecorderButton()
+    private let shortcutStatusView = NSTextField(labelWithString: "")
+    private let setupShortcutRecorderButton = ShortcutRecorderButton()
+    private let setupShortcutStatusView = NSTextField(labelWithString: "")
+    private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
+    private let cliSectionButton = NSButton(title: "CLI", target: nil, action: nil)
     private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
     private let shortcutSectionButton = NSButton(title: "Shortcut", target: nil, action: nil)
     private let secondarySectionButton = NSButton(title: settingsSecondarySectionTitle, target: nil, action: nil)
+    private let cliSectionRow = SidebarRowView()
     private let voiceSectionRow = SidebarRowView()
     private let shortcutSectionRow = SidebarRowView()
     private let secondarySectionRow = SidebarRowView()
+    private let cliIconView = NSImageView(image: sidebarIcon(systemName: "terminal"))
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
     private let shortcutIconView = NSImageView(image: sidebarIcon(systemName: "keyboard"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
@@ -775,11 +946,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.material = .sidebar
         sidebar.blendingMode = .withinWindow
         sidebar.state = .active
-        configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: true)
+        configureSidebarRow(cliSectionRow, button: cliSectionButton, iconView: cliIconView, selected: true)
+        configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: false)
         configureSidebarRow(shortcutSectionRow, button: shortcutSectionButton, iconView: shortcutIconView, selected: false)
         configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
         settingsTabView.translatesAutoresizingMaskIntoConstraints = false
         settingsTabView.tabViewType = .noTabsNoBorder
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "CLI"))
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Voice"))
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Shortcut"))
 #if APP_STORE
@@ -788,31 +961,37 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         settingsTabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
 #endif
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 360))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 430))
         content.addSubview(sidebar)
+        sidebar.addSubview(cliSectionRow)
         sidebar.addSubview(voiceSectionRow)
         sidebar.addSubview(shortcutSectionRow)
         sidebar.addSubview(secondarySectionRow)
         content.addSubview(settingsTabView)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Tri-State Relay Service Settings"
-        window.minSize = NSSize(width: 560, height: 320)
+        window.minSize = NSSize(width: 560, height: 400)
         window.contentView = content
         window.center()
 
         super.init(window: window)
         window.delegate = self
         configureSetupIntroView()
-        settingsTabView.tabViewItem(at: 0).label = "Voice"
-        settingsTabView.tabViewItem(at: 0).view = voiceTabView()
-        settingsTabView.tabViewItem(at: 1).label = "Shortcut"
-        settingsTabView.tabViewItem(at: 1).view = shortcutTabView()
+        configureCliStatusView()
+        settingsTabView.tabViewItem(at: 0).label = "CLI"
+        settingsTabView.tabViewItem(at: 0).view = cliTabView()
+        settingsTabView.tabViewItem(at: 1).label = "Voice"
+        settingsTabView.tabViewItem(at: 1).view = voiceTabView()
+        settingsTabView.tabViewItem(at: 2).label = "Shortcut"
+        settingsTabView.tabViewItem(at: 2).view = shortcutTabView()
+        cliSectionButton.target = self
+        cliSectionButton.action = #selector(selectCliSection)
         voiceSectionButton.target = self
         voiceSectionButton.action = #selector(selectVoiceSection)
         shortcutSectionButton.target = self
@@ -823,19 +1002,29 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePopUpButton.action = #selector(selectVoice(_:))
         voicePreviewButton.target = self
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
-        shortcutPopUpButton.target = self
-        shortcutPopUpButton.action = #selector(selectShortcut(_:))
+        shortcutRecorderButton.onShortcut = { [weak self] result in
+            self?.recordShortcut(result)
+        }
+        setupShortcutRecorderButton.onShortcut = { [weak self] result in
+            self?.recordShortcut(result)
+        }
         setupInstallCliButton.target = self
         setupInstallCliButton.action = #selector(installRelayCliFromSetup)
+        copyBundledCliPathButton.target = self
+        copyBundledCliPathButton.action = #selector(copyBundledRelayCliPath)
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
             sidebar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             sidebar.widthAnchor.constraint(equalToConstant: 160),
-            voiceSectionRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            cliSectionRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            cliSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 28),
+            cliSectionRow.heightAnchor.constraint(equalToConstant: 38),
+            voiceSectionRow.leadingAnchor.constraint(equalTo: cliSectionRow.leadingAnchor),
             voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
-            voiceSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 28),
-            voiceSectionRow.heightAnchor.constraint(equalToConstant: 38),
+            voiceSectionRow.topAnchor.constraint(equalTo: cliSectionRow.bottomAnchor, constant: 6),
+            voiceSectionRow.heightAnchor.constraint(equalTo: cliSectionRow.heightAnchor),
             shortcutSectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
             shortcutSectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             shortcutSectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
@@ -866,19 +1055,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSApp.setActivationPolicy(.accessory)
     }
 
-    @objc private func selectVoiceSection() {
+    @objc private func selectCliSection() {
         settingsTabView.selectTabViewItem(at: 0)
         updateSidebarSelection(selectedIndex: 0)
     }
 
-    @objc private func selectShortcutSection() {
+    @objc private func selectVoiceSection() {
         settingsTabView.selectTabViewItem(at: 1)
         updateSidebarSelection(selectedIndex: 1)
     }
 
-    @objc private func selectSecondarySection() {
+    @objc private func selectShortcutSection() {
         settingsTabView.selectTabViewItem(at: 2)
         updateSidebarSelection(selectedIndex: 2)
+    }
+
+    @objc private func selectSecondarySection() {
+        settingsTabView.selectTabViewItem(at: 3)
+        updateSidebarSelection(selectedIndex: 3)
     }
 
     @objc private func selectVoice(_ sender: Any?) {
@@ -886,18 +1080,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         model.completeFirstStartSetup()
         updateSetupIntroVisibility()
         onSave()
-        previewSelectedVoice(sender)
-    }
-
-    @objc private func selectShortcut(_ sender: Any?) {
-        model.saveCommandPaletteShortcut(selectedShortcut())
-        model.completeFirstStartSetup()
-        updateSetupIntroVisibility()
-        onSave()
     }
 
     @objc private func installRelayCliFromSetup() {
         onInstallRelayCli()
+        reloadCliStatus()
+    }
+
+    @objc private func copyBundledRelayCliPath() {
+#if !APP_STORE
+        model.copyRelayCliBundledPath()
+        reloadCliStatus()
+#endif
     }
 
     @objc private func previewSelectedVoice(_ sender: Any?) {
@@ -917,8 +1111,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
-        reloadShortcutMenu(selectedShortcut: settings.commandPaletteShortcut)
+        reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         updateSetupIntroVisibility()
+        reloadCliStatus()
     }
 
     private func saveCombinerIfNeeded() {
@@ -926,7 +1121,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         model.saveSettings(
             inactiveLineCombinerCommand: combinerTextView.string,
             voiceIdentifier: selectedVoiceIdentifier(),
-            commandPaletteShortcut: selectedShortcut()
+            commandPaletteShortcut: currentShortcut
         )
         model.completeFirstStartSetup()
         updateSetupIntroVisibility()
@@ -935,18 +1130,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func configureSetupIntroView() {
-        setupIntroView.stringValue = "First setup: install or locate the relay CLI, choose a shortcut, and choose a voice. TSRS stays in Focus mode until you explicitly play a relay."
+        setupIntroView.stringValue = "First setup: install the relay CLI where agents can find it, then choose a shortcut and voice. TSRS stays in Focus mode until you explicitly play a relay."
         setupIntroView.textColor = .secondaryLabelColor
         setupIntroView.font = NSFont.systemFont(ofSize: 12)
         setupIntroView.lineBreakMode = .byWordWrapping
         setupIntroView.maximumNumberOfLines = 0
     }
 
+    private func configureCliStatusView() {
+        cliStatusView.textColor = .secondaryLabelColor
+        cliStatusView.font = NSFont.systemFont(ofSize: 12)
+        cliStatusView.lineBreakMode = .byWordWrapping
+        cliStatusView.maximumNumberOfLines = 0
+        setupShortcutStatusView.textColor = .secondaryLabelColor
+        setupShortcutStatusView.font = NSFont.systemFont(ofSize: 12)
+        setupShortcutStatusView.lineBreakMode = .byWordWrapping
+        setupShortcutStatusView.maximumNumberOfLines = 0
+    }
+
     private func updateSetupIntroVisibility() {
         let needsSetup = model.needsFirstStartSetup()
         setupIntroView.isHidden = !needsSetup
-        setupInstallCliButton.isHidden = !needsSetup
     }
+
+#if !APP_STORE
+    private func reloadCliStatus() {
+        let status = model.relayCliInstallStatus()
+        cliStatusView.stringValue = relayCliSettingsMessage(status)
+        setupInstallCliButton.title = status.status == "stale" ? "Update relay CLI at \(status.targetPath)" : "Install relay CLI to \(status.targetPath)"
+    }
+#else
+    private func reloadCliStatus() {}
+#endif
 
     private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
         textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -982,7 +1197,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -1019,7 +1234,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: "Command Palette Shortcut")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Choose the global shortcut that opens the command palette with Play Next selected. Right click still opens an empty palette.")
+        let subtitle = NSTextField(labelWithString: "Record the global shortcut that opens the command palette with Play Next selected. Right click still opens an empty palette.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 0
@@ -1027,20 +1242,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let shortcutLabel = NSTextField(labelWithString: "Keyboard shortcut")
         shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
-        let note = NSTextField(labelWithString: "The default is Control + Option + Command + Space. Control + Option + Command + V is intentionally unavailable.")
+        shortcutStatusView.textColor = .secondaryLabelColor
+        shortcutStatusView.font = NSFont.systemFont(ofSize: 12)
+        shortcutStatusView.lineBreakMode = .byWordWrapping
+        shortcutStatusView.maximumNumberOfLines = 0
+
+        let note = NSTextField(labelWithString: "Click Record Shortcut, then press a key combination. Include Command with at least one modifier. Control + Option + Command + V is reserved and will be rejected.")
         note.textColor = .secondaryLabelColor
         note.font = NSFont.systemFont(ofSize: 12)
         note.lineBreakMode = .byWordWrapping
         note.maximumNumberOfLines = 0
 
-        let stack = NSStackView(views: [setupIntroView, setupInstallCliButton, title, subtitle, shortcutLabel, shortcutPopUpButton, note])
+        let stack = NSStackView(views: [title, subtitle, shortcutLabel, shortcutRecorderButton, shortcutStatusView, note])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        shortcutPopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
-        setupIntroView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        shortcutRecorderButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
         subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
 
@@ -1054,11 +1273,65 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return container
     }
 
+    private func cliTabView() -> NSView {
+        let title = NSTextField(labelWithString: "Install relay CLI")
+        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+
+        let subtitle = NSTextField(labelWithString: "Install `relay` into an accessible command path so agents can enqueue updates from any project. The installer updates TSRS-owned copies but refuses to overwrite a different binary.")
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byWordWrapping
+        subtitle.maximumNumberOfLines = 0
+
+        let pathNote = NSTextField(labelWithString: "Recommended path: ~/.local/bin/relay. If you do not install it, copy the bundled app-contents CLI path and use that full path in agent instructions.")
+        pathNote.textColor = .secondaryLabelColor
+        pathNote.font = NSFont.systemFont(ofSize: 12)
+        pathNote.lineBreakMode = .byWordWrapping
+        pathNote.maximumNumberOfLines = 0
+
+        let buttonRow = NSStackView(views: [setupInstallCliButton, copyBundledCliPathButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 8
+
+        let shortcutLabel = NSTextField(labelWithString: "Command palette shortcut")
+        shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let shortcutNote = NSTextField(labelWithString: "Record this up front so the keyboard-first palette is ready before normal use.")
+        shortcutNote.textColor = .secondaryLabelColor
+        shortcutNote.font = NSFont.systemFont(ofSize: 12)
+        shortcutNote.lineBreakMode = .byWordWrapping
+        shortcutNote.maximumNumberOfLines = 0
+
+        let stack = NSStackView(views: [setupIntroView, title, subtitle, cliStatusView, buttonRow, pathNote, shortcutLabel, setupShortcutRecorderButton, setupShortcutStatusView, shortcutNote])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        setupIntroView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        cliStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        pathNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        return container
+    }
+
     private func voiceTabView() -> NSView {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Choose how relay updates sound when TSRS speaks.")
+        let subtitle = NSTextField(labelWithString: "Choose how relay updates sound when TSRS speaks. Direct builds use the app-owned /usr/bin/say path, so listed voices map to installed say voice names.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 0
@@ -1071,7 +1344,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceRow.alignment = .centerY
         voiceRow.spacing = 8
 
-        let note = NSTextField(labelWithString: "Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
+        let note = NSTextField(labelWithString: "Natural installed voices are listed first when available. Changing the selection is quiet; use Preview when you explicitly want to hear a sample. Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
         note.textColor = .secondaryLabelColor
         note.font = NSFont.systemFont(ofSize: 12)
         note.lineBreakMode = .byWordWrapping
@@ -1100,23 +1373,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return container
     }
 
-    private func reloadShortcutMenu(selectedShortcut: KeyboardShortcut) {
-        shortcutPopUpButton.removeAllItems()
-
-        for shortcut in KeyboardShortcut.availableCommandPaletteShortcuts {
-            shortcutPopUpButton.addItem(withTitle: shortcut.displayName)
-            shortcutPopUpButton.lastItem?.representedObject = shortcut.identifier
-        }
-
-        if let item = shortcutPopUpButton.itemArray.first(where: { $0.representedObject as? String == selectedShortcut.identifier }) {
-            shortcutPopUpButton.select(item)
-        } else {
-            shortcutPopUpButton.selectItem(at: 0)
-        }
+    private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
+        currentShortcut = selectedShortcut
+        shortcutRecorderButton.shortcut = selectedShortcut
+        setupShortcutRecorderButton.shortcut = selectedShortcut
+        shortcutStatusView.stringValue = "Current shortcut: \(selectedShortcut.displayName)"
+        setupShortcutStatusView.stringValue = "Current shortcut: \(selectedShortcut.displayName)"
+        shortcutStatusView.textColor = .secondaryLabelColor
+        setupShortcutStatusView.textColor = .secondaryLabelColor
     }
 
-    private func selectedShortcut() -> KeyboardShortcut {
-        KeyboardShortcut(identifier: shortcutPopUpButton.selectedItem?.representedObject as? String)
+    private func recordShortcut(_ result: ShortcutValidationResult) {
+        switch result {
+        case .valid(let shortcut):
+            currentShortcut = shortcut
+            shortcutRecorderButton.shortcut = shortcut
+            setupShortcutRecorderButton.shortcut = shortcut
+            shortcutStatusView.stringValue = "Saved shortcut: \(shortcut.displayName)"
+            setupShortcutStatusView.stringValue = "Saved shortcut: \(shortcut.displayName)"
+            shortcutStatusView.textColor = .secondaryLabelColor
+            setupShortcutStatusView.textColor = .secondaryLabelColor
+            model.saveCommandPaletteShortcut(shortcut)
+            model.completeFirstStartSetup()
+            updateSetupIntroVisibility()
+            onSave()
+        case .invalid(let message):
+            shortcutRecorderButton.shortcut = currentShortcut
+            setupShortcutRecorderButton.shortcut = currentShortcut
+            shortcutStatusView.stringValue = message
+            setupShortcutStatusView.stringValue = message
+            shortcutStatusView.textColor = .systemRed
+            setupShortcutStatusView.textColor = .systemRed
+        }
     }
 
     private func reloadVoiceMenu(selectedIdentifier: String?) {
@@ -1145,15 +1433,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateSidebarSelection(selectedIndex: Int) {
-        let voiceSelected = selectedIndex == 0
-        let shortcutSelected = selectedIndex == 1
-        let secondarySelected = selectedIndex == 2
+        let cliSelected = selectedIndex == 0
+        let voiceSelected = selectedIndex == 1
+        let shortcutSelected = selectedIndex == 2
+        let secondarySelected = selectedIndex == 3
+        configureSidebarButton(cliSectionButton, selected: cliSelected)
         configureSidebarButton(voiceSectionButton, selected: voiceSelected)
         configureSidebarButton(shortcutSectionButton, selected: shortcutSelected)
         configureSidebarButton(secondarySectionButton, selected: secondarySelected)
+        cliIconView.contentTintColor = cliSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         voiceIconView.contentTintColor = voiceSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         shortcutIconView.contentTintColor = shortcutSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         secondaryIconView.contentTintColor = secondarySelected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        cliSectionRow.selected = cliSelected
         voiceSectionRow.selected = voiceSelected
         shortcutSectionRow.selected = shortcutSelected
         secondarySectionRow.selected = secondarySelected
@@ -1775,29 +2067,37 @@ struct SpeechVoiceOption {
     let identifier: String
     let name: String
     let title: String
+    let isNatural: Bool
+
+    init(identifier: String, name: String, title: String, isNatural: Bool = false) {
+        self.identifier = identifier
+        self.name = name
+        self.title = title
+        self.isNatural = isNatural
+    }
 }
 
-private let systemSayVoiceIdentifier = "system-say-default"
-private let defaultSpeechVoiceIdentifier = systemSayVoiceIdentifier
-private let defaultSpeechVoiceOption = SpeechVoiceOption(identifier: systemSayVoiceIdentifier, name: "System Default", title: "System Default (say)")
+let systemSayVoiceIdentifier = "system-say-default"
+let defaultSpeechVoiceIdentifier = systemSayVoiceIdentifier
+let defaultSpeechVoiceOption = SpeechVoiceOption(identifier: systemSayVoiceIdentifier, name: "System Default", title: "System Default (say)")
 
-private func availableSpeechVoiceOptions() -> [SpeechVoiceOption] {
+func availableSpeechVoiceOptions() -> [SpeechVoiceOption] {
 #if APP_STORE
     return availableRelayVoices().map { voice in
-        SpeechVoiceOption(identifier: voice.identifier, name: voice.name, title: "\(voice.name) (\(voice.language))")
+        SpeechVoiceOption(identifier: voice.identifier, name: voice.name, title: speechVoiceTitle(name: voice.name, language: voice.language, isNatural: isNaturalVoice(identifier: voice.identifier, name: voice.name)), isNatural: isNaturalVoice(identifier: voice.identifier, name: voice.name))
     }
 #else
-    return directSpeechVoiceOptions
+    return directSpeechVoiceOptions()
 #endif
 }
 
-private func speechVoiceOption(identifier: String?) -> SpeechVoiceOption {
+func speechVoiceOption(identifier: String?) -> SpeechVoiceOption {
     availableSpeechVoiceOptions().first { $0.identifier == identifier } ?? defaultSpeechVoiceOption
 }
 
-private func sayArguments(text: String, option: SpeechVoiceOption) -> [String] {
-    if option.identifier.hasPrefix("say:") {
-        return ["-v", option.name, text]
+func sayArguments(text: String, option: SpeechVoiceOption) -> [String] {
+    if let sayVoiceName = option.sayVoiceName {
+        return ["-v", sayVoiceName, text]
     }
 
     return [text]
@@ -1917,14 +2217,61 @@ private let noveltySayVoiceNames = Set([
     "Zarvox",
 ])
 
-private let directSpeechVoiceOptions = [
-    defaultSpeechVoiceOption,
-    SpeechVoiceOption(identifier: "say:Samantha", name: "Samantha", title: "Samantha"),
-    SpeechVoiceOption(identifier: "say:Alex", name: "Alex", title: "Alex"),
-    SpeechVoiceOption(identifier: "say:Daniel", name: "Daniel", title: "Daniel"),
-    SpeechVoiceOption(identifier: "say:Karen", name: "Karen", title: "Karen"),
-    SpeechVoiceOption(identifier: "say:Moira", name: "Moira", title: "Moira"),
-]
+private func directSpeechVoiceOptions() -> [SpeechVoiceOption] {
+    let installedOptions = NSSpeechSynthesizer.availableVoices.compactMap(saySpeechVoiceOption)
+    return [defaultSpeechVoiceOption] + installedOptions.sorted(by: speechVoiceSort)
+}
+
+private func saySpeechVoiceOption(_ voice: NSSpeechSynthesizer.VoiceName) -> SpeechVoiceOption? {
+    let attributes = NSSpeechSynthesizer.attributes(forVoice: voice)
+    let name = (attributes[.name] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let language = (attributes[.localeIdentifier] as? String) ?? ""
+
+    guard !name.isEmpty, language.hasPrefix("en"), !noveltySayVoiceNames.contains(name) else {
+        return nil
+    }
+
+    let identifier = "say:\(name)"
+    let natural = isNaturalVoice(identifier: voice.rawValue, name: name)
+    return SpeechVoiceOption(identifier: identifier, name: name, title: speechVoiceTitle(name: name, language: language, isNatural: natural), isNatural: natural)
+}
+
+private func speechVoiceTitle(name: String, language: String, isNatural: Bool) -> String {
+    let suffix = isNatural ? "Natural" : language
+    return suffix.isEmpty ? name : "\(name) (\(suffix))"
+}
+
+private func speechVoiceSort(_ left: SpeechVoiceOption, _ right: SpeechVoiceOption) -> Bool {
+    if left.isNatural != right.isNatural {
+        return left.isNatural
+    }
+
+    let leftUS = left.title.contains("en_US") || left.title.contains("en-US")
+    let rightUS = right.title.contains("en_US") || right.title.contains("en-US")
+    if leftUS != rightUS {
+        return leftUS
+    }
+
+    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+}
+
+private func isNaturalVoice(identifier: String, name: String) -> Bool {
+    let haystack = "\(identifier) \(name)".lowercased()
+    return haystack.contains("premium")
+        || haystack.contains("enhanced")
+        || haystack.contains("siri")
+        || haystack.contains("natural")
+}
+
+private extension SpeechVoiceOption {
+    var sayVoiceName: String? {
+        guard identifier.hasPrefix("say:") else {
+            return nil
+        }
+
+        return String(identifier.dropFirst("say:".count))
+    }
+}
 
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
@@ -2103,6 +2450,10 @@ final class MenuBarModel {
         relayCliStatusFromBundledCommand()
     }
 
+    func copyRelayCliBundledPath() {
+        copyNativeSource(relayCliInstallStatus().sourcePath)
+    }
+
     func relayCliMenuTitle() -> String {
         switch relayCliInstallStatus().status {
         case "current":
@@ -2154,6 +2505,7 @@ final class MenuBarModel {
         guard command.status == 0 else {
             return RelayCliInstallStatus(
                 status: "source-missing",
+                sourcePath: nil,
                 sourceSignature: nil,
                 targetPath: "~/.local/bin/relay",
                 targetDirectoryOnPath: false,
@@ -2394,6 +2746,7 @@ struct SettingsSnapshot {
 #if !APP_STORE
 struct RelayCliInstallStatus {
     let status: String
+    let sourcePath: String?
     let sourceSignature: String?
     let targetPath: String
     let targetDirectoryOnPath: Bool
@@ -2424,6 +2777,7 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
     else {
         return RelayCliInstallStatus(
             status: "source-missing",
+            sourcePath: nil,
             sourceSignature: nil,
             targetPath: "~/.local/bin/relay",
             targetDirectoryOnPath: false,
@@ -2433,6 +2787,7 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
     }
 
     let status = object["status"] as? String ?? "source-missing"
+    let sourcePath = object["sourcePath"] as? String
     let targetPath = object["targetPath"] as? String ?? "~/.local/bin/relay"
     let targetDirectoryOnPath = object["targetDirectoryOnPath"] as? Bool ?? false
     let version = object["version"] as? String ?? "unknown"
@@ -2441,6 +2796,7 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
 
     return RelayCliInstallStatus(
         status: status,
+        sourcePath: sourcePath,
         sourceSignature: sourceSignature,
         targetPath: targetPath,
         targetDirectoryOnPath: targetDirectoryOnPath,
@@ -2451,6 +2807,25 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
 
 private func deletingLastPathComponent(_ path: String) -> String {
     URL(fileURLWithPath: path).deletingLastPathComponent().path
+}
+
+private func relayCliSettingsMessage(_ status: RelayCliInstallStatus) -> String {
+    let pathNote = status.targetDirectoryOnPath
+        ? "Agents should be able to run `relay` directly from that path."
+        : "Add \(deletingLastPathComponent(status.targetPath)) to PATH so agents can run `relay` without a full path."
+
+    switch status.status {
+    case "current":
+        return "Installed at \(status.targetPath). \(pathNote)"
+    case "stale":
+        return "An older TSRS relay CLI is installed at \(status.targetPath). Update it to match bundled version \(status.version). \(pathNote)"
+    case "foreign":
+        return "\(status.targetPath) already exists but does not look like TSRS relay. Safe overwrite is blocked; choose another accessible path or move the existing binary."
+    case "source-missing":
+        return "The bundled app-contents CLI could not be found. Rebuild or reinstall the app."
+    default:
+        return "Not installed at \(status.targetPath). Install there for normal agent use, or copy the bundled app-contents path for manual agent instructions. \(pathNote)"
+    }
 }
 #endif
 

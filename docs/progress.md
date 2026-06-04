@@ -158,3 +158,23 @@ First-start setup update:
    this path.
 7. Shortcut setup still uses preset choices; press-a-combo capture is a required
    follow-up for the configurable shortcut milestone.
+
+CLI install panel update:
+
+1. Settings now opens with the CLI panel first, so first-start setup shows the
+   install action before shortcut and voice choices.
+2. The CLI panel recommends installing to `~/.local/bin/relay`, explains that
+   agents need an accessible command path, and preserves safe overwrite behavior
+   by relying on the existing TSRS-owned install checks.
+3. Settings includes a copy button for the full bundled app-contents `relay`
+   path for users who prefer not to install into their shell `PATH`.
+
+## Voice selection milestone
+
+1. Direct-profile Settings now builds voice choices from installed macOS voices
+   that map to valid `/usr/bin/say -v <name>` names, with natural voices sorted
+   first when available.
+2. Persisted voice identifiers are validated against the same options used by
+   Settings and direct app-owned playback.
+3. Selecting a voice is quiet; Preview remains the explicit action that speaks a
+   sample.

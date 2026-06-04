@@ -8,28 +8,30 @@ or manage those relays when you are ready.
 
 1. Build or install the direct-download macOS app.
 2. Launch Tri-State Relay Service from the app bundle.
-3. On first launch, Settings opens automatically.
-4. Use the first-setup prompt in Settings to install the bundled `relay` CLI,
-   choose a command-palette shortcut, and choose a voice.
+3. On first launch, Settings opens automatically on the CLI panel.
+4. Install the bundled `relay` CLI up front, then choose a command-palette
+   shortcut and voice.
 
-The recommended CLI install path is `~/.local/bin/relay`. TSRS refuses to
-overwrite a different binary at that path. If you prefer not to install it, copy
-the full bundled CLI path from Settings and use that path in your agent
-instructions.
+The recommended CLI install path is `~/.local/bin/relay` because agents can use
+it from any project once `~/.local/bin` is on `PATH`. TSRS updates TSRS-owned
+copies at that path but refuses to overwrite a different binary. If you prefer
+not to install it, use the Settings > CLI copy button to copy the full bundled
+app-contents CLI path and put that full path in your agent instructions.
 
 ## First setup
 
-The first-run Settings screen helps you make three choices before normal use:
+The first-run Settings screen opens with the CLI install action visible first,
+then helps you make three choices before normal use:
 
 1. Install or locate the `relay` CLI so agents can enqueue updates.
-2. Choose the command-palette shortcut. The default is `Control` + `Option` +
-   `Command` + `Space`.
+2. Record the command-palette shortcut by pressing the combination you want.
+   The default is `Control` + `Option` + `Command` + `Space`.
 3. Choose the voice used by app-owned playback.
 
 This setup is part of the normal Settings window, not a heavyweight onboarding
 wizard. TSRS remains in Focus mode during setup, so relays queue quietly until
-you explicitly play one. You can return to Settings later to change the
-shortcut, CLI install, or voice.
+you explicitly play one. You can return to Settings later to change the shortcut, reinstall or locate the
+CLI, copy the bundled CLI path, or change the voice.
 
 ## Send a relay
 
@@ -82,21 +84,32 @@ Left click the menu bar icon for the fastest Play Next path. Right click opens
 the command palette with an empty search. The configurable keyboard shortcut
 opens the command palette with Play Next selected, so pressing Return immediately
 plays the next eligible relay. The default shortcut is `Control` + `Option` +
-`Command` + `Space`; change it in Settings > Shortcut.
+`Command` + `Space`; change it in Settings > Shortcut by clicking Record
+Shortcut and pressing a valid combination. TSRS rejects invalid or reserved
+combinations, including `Control` + `Option` + `Command` + `V`, instead of
+silently falling back.
 
 The command palette shows safe action context such as line names and counts. It
 should not show relay message bodies by default.
 
 ## Voice
 
-Choose a voice in Settings. Direct-download builds currently preserve Siri/say
-voice behavior through app-owned playback. If native speech replaces that path
-later, TSRS should prefer natural voices over robotic defaults.
+Choose a voice in Settings during first setup or later normal use. Direct-download
+builds currently preserve Siri/say voice behavior through app-owned playback: the
+voice menu is built from installed macOS voices that can be passed to
+`/usr/bin/say -v <name>`. Natural installed voices are favored when available,
+while System Default remains available.
+
+Changing the voice selection is quiet. Use Preview only when you explicitly want
+to hear a sample. Install additional macOS voices in System Settings >
+Accessibility > Spoken Content.
 
 ## Troubleshooting
 
-If agents cannot find `relay`, install the CLI from Settings or copy the bundled
-CLI path and use it directly. If relays queue but do not speak, check whether
+If agents cannot find `relay`, open Settings > CLI and install it to
+`~/.local/bin/relay`, then make sure `~/.local/bin` is on `PATH`. If you do not
+want to install it, copy the bundled app-contents CLI path from Settings > CLI
+and use that full path directly. If relays queue but do not speak, check whether
 TSRS is focused, muted, or waiting because the microphone appears active.
 
 The queue is stored locally at:
@@ -150,6 +163,5 @@ as active line, voice, shortcut, and setup completion. The command then
 recreates an empty database that defaults to first-start needs-setup. It is not
 called by normal app launch paths.
 
-Current shortcut setup uses the available shortcut choices in Settings. The next
-shortcut milestone must support recording a custom key combination rather than
-only choosing from presets.
+Shortcut setup records a custom key combination in Settings. Use a combination
+with `Command` plus at least one of `Control`, `Option`, or `Shift`.
