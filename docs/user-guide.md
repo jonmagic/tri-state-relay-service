@@ -21,7 +21,7 @@ The first thing to set up is the command-line tool. The app can install `relay` 
 
 That location works well for normal macOS users because `/usr/local/bin` is commonly already on the shell path. If you would rather not install a copy, Settings can also show the full bundled app path so you can paste that into agent instructions instead.
 
-After the CLI step, choose a keyboard shortcut and a voice. The default shortcut is `Control` + `Option` + `Command` + `Space`. You can change it by clicking the shortcut button and pressing the combination you want.
+After the CLI step, choose a keyboard shortcut and decide whether TSRS should open at login. The default shortcut is `Control` + `Option` + `Command` + `Space`. You can change it by clicking the shortcut button and pressing the combination you want. Open at Login is optional and starts TSRS in Focus mode, so relays still queue quietly until you ask to hear one.
 
 TSRS stays quiet during setup. Anything that arrives is queued until you choose to hear it.
 
@@ -143,7 +143,7 @@ The app owns playback. The CLI submits and manages relays, but it does not speak
 
 ## Voice and shortcut settings
 
-Open Settings whenever you want to change the CLI install, keyboard shortcut, or voice.
+Open Settings whenever you want to change the CLI install, keyboard shortcut, Open at Login, or voice.
 
 Changing the voice is quiet. Use Preview only when you explicitly want to hear a sample. To add more macOS voices, open System Settings > Accessibility > Spoken Content.
 

@@ -18,6 +18,16 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("Click the button, then press a valid key combination."))
     }
 
+    func testSetupViewIncludesOpenAtLoginOption() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("import ServiceManagement"))
+        XCTAssertTrue(source.contains("3. Open at Login"))
+        XCTAssertTrue(source.contains("Open Tri-State Relay Service at login"))
+        XCTAssertTrue(source.contains("SMAppService.mainApp.register()"))
+        XCTAssertTrue(source.contains("SMAppService.mainApp.unregister()"))
+    }
+
     func testAppDoesNotPromptForCliInstallOnLaunch() throws {
         let source = try triStateRelayServiceSource()
 

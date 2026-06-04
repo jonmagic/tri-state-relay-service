@@ -135,6 +135,10 @@ data, or `relay first-start dev-reset-database --confirm` for an explicit
 destructive fresh database reset. Normal app launch paths must never wipe user
 queue data.
 
+Completed milestone: Setup includes an explicit opt-in Open at Login checkbox
+backed by `SMAppService.mainApp`; TSRS still starts in Focus mode so login launch
+does not speak automatically.
+
 ## Task exit criteria
 
 Every implementation task should end with:

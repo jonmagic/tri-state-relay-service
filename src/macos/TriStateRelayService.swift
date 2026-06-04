@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Carbon.HIToolbox
 import CoreAudio
+import ServiceManagement
 import SQLite3
 
 #if APP_STORE
@@ -966,6 +967,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
+    private let openAtLoginCheckbox = NSButton(checkboxWithTitle: "Open Tri-State Relay Service at login", target: nil, action: nil)
+    private let openAtLoginStatusView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
@@ -1162,6 +1165,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         combinerTextView.string = settings.inactiveLineCombinerCommand
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
+        reloadOpenAtLogin()
         updateSetupIntroVisibility()
         reloadCliStatus()
     }
@@ -1196,6 +1200,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         setupShortcutStatusView.font = NSFont.systemFont(ofSize: 12)
         setupShortcutStatusView.lineBreakMode = .byWordWrapping
         setupShortcutStatusView.maximumNumberOfLines = 0
+        openAtLoginStatusView.textColor = .secondaryLabelColor
+        openAtLoginStatusView.font = NSFont.systemFont(ofSize: 12)
+        openAtLoginStatusView.lineBreakMode = .byWordWrapping
+        openAtLoginStatusView.maximumNumberOfLines = 0
     }
 
     private func updateSetupIntroVisibility() {
@@ -1211,6 +1219,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #else
     private func reloadCliStatus() {}
 #endif
+
+    private func reloadOpenAtLogin() {
+        let enabled = model.openAtLoginEnabled()
+        openAtLoginCheckbox.state = enabled ? .on : .off
+        openAtLoginStatusView.stringValue = enabled
+            ? "TSRS will open automatically when you log in."
+            : "Leave this off if you prefer to start TSRS manually."
+    }
 
     private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
         textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -1311,6 +1327,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         shortcutNote.lineBreakMode = .byWordWrapping
         shortcutNote.maximumNumberOfLines = 0
 
+        let openAtLoginLabel = NSTextField(labelWithString: "3. Open at Login")
+        openAtLoginLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+
+        openAtLoginCheckbox.target = self
+        openAtLoginCheckbox.action = #selector(toggleOpenAtLogin(_:))
+
+        let openAtLoginNote = NSTextField(labelWithString: "Optional. TSRS starts in Focus mode, so relays still queue quietly until you ask to hear one.")
+        openAtLoginNote.textColor = .secondaryLabelColor
+        openAtLoginNote.font = NSFont.systemFont(ofSize: 12)
+        openAtLoginNote.lineBreakMode = .byWordWrapping
+        openAtLoginNote.maximumNumberOfLines = 0
+
         let cliSection = NSStackView(views: [cliLabel, cliStatusView, buttonRow, pathNote])
         cliSection.orientation = .vertical
         cliSection.alignment = .leading
@@ -1323,7 +1351,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         shortcutSection.spacing = 8
         shortcutSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [title, subtitle, cliSection, shortcutSection])
+        let openAtLoginSection = NSStackView(views: [openAtLoginLabel, openAtLoginCheckbox, openAtLoginNote, openAtLoginStatusView])
+        openAtLoginSection.orientation = .vertical
+        openAtLoginSection.alignment = .leading
+        openAtLoginSection.spacing = 8
+        openAtLoginSection.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [title, subtitle, cliSection, shortcutSection, openAtLoginSection])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -1335,12 +1369,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 460).isActive = true
         setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        openAtLoginNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        openAtLoginStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         cliSection.setCustomSpacing(10, after: cliLabel)
         shortcutSection.setCustomSpacing(10, after: shortcutLabel)
+        openAtLoginSection.setCustomSpacing(10, after: openAtLoginLabel)
         stack.setCustomSpacing(22, after: subtitle)
         stack.setCustomSpacing(22, after: cliSection)
+        stack.setCustomSpacing(22, after: shortcutSection)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 330))
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1349,6 +1387,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         ])
 
         return container
+    }
+
+    @objc private func toggleOpenAtLogin(_ sender: NSButton) {
+        let enabled = sender.state == .on
+
+        do {
+            try model.setOpenAtLoginEnabled(enabled)
+            model.completeFirstStartSetup()
+            updateSetupIntroVisibility()
+            reloadOpenAtLogin()
+            onSave()
+        } catch {
+            sender.state = model.openAtLoginEnabled() ? .on : .off
+            openAtLoginStatusView.stringValue = "Could not update Open at Login: \(error.localizedDescription)"
+        }
     }
 
     private func voiceTabView() -> NSView {
@@ -2491,6 +2544,20 @@ final class MenuBarModel {
     func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
         store.saveCommandPaletteShortcut(shortcut)
         refresh()
+    }
+
+    func openAtLoginEnabled() -> Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    func setOpenAtLoginEnabled(_ enabled: Bool) throws {
+        if enabled {
+            if SMAppService.mainApp.status != .enabled {
+                try SMAppService.mainApp.register()
+            }
+        } else if SMAppService.mainApp.status == .enabled {
+            try SMAppService.mainApp.unregister()
+        }
     }
 
 #if !APP_STORE
