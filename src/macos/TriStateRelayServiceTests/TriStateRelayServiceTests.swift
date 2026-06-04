@@ -135,6 +135,7 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(paletteSource.contains("let content = NSVisualEffectView"))
         XCTAssertTrue(paletteSource.contains("content.material = .popover"))
         XCTAssertTrue(paletteSource.contains("private static let contentInset: CGFloat = 18"))
+        XCTAssertTrue(paletteSource.contains("private static let rowOuterPadding: CGFloat = 6"))
         XCTAssertTrue(paletteSource.contains("private static let searchHeight: CGFloat = 34"))
         XCTAssertTrue(paletteSource.contains("private static let searchToDividerSpacing: CGFloat = 2"))
         XCTAssertTrue(paletteSource.contains("private let headerDivider = NSBox()"))

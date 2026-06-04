@@ -1530,6 +1530,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
     private static let panelWidth: CGFloat = 560
     private static let outerPadding: CGFloat = 12
     private static let contentInset: CGFloat = 18
+    private static let rowOuterPadding: CGFloat = 6
     private static let searchHeight: CGFloat = 34
     private static let searchToDividerSpacing: CGFloat = 2
     private static let dividerToResultsSpacing: CGFloat = 8
@@ -1606,7 +1607,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.font = NSFont.systemFont(ofSize: 22, weight: .regular)
-        searchField.placeholderString = "Search TSRS actions..."
+        searchField.placeholderString = "Search Tri-State Relay Service actions..."
         searchField.delegate = self
 
         headerDivider.translatesAutoresizingMaskIntoConstraints = false
@@ -1640,8 +1641,8 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
             headerDivider.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             headerDivider.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             resultsStack.topAnchor.constraint(equalTo: headerDivider.bottomAnchor, constant: Self.dividerToResultsSpacing),
-            resultsStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.outerPadding),
-            resultsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.outerPadding),
+            resultsStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.rowOuterPadding),
+            resultsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.rowOuterPadding),
         ])
     }
 
@@ -1860,9 +1861,9 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         NSLayoutConstraint.activate([
             row.heightAnchor.constraint(equalToConstant: Self.rowHeight),
-            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.outerPadding * 2)),
-            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.contentInset - Self.outerPadding),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -(Self.contentInset - Self.outerPadding)),
+            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.rowOuterPadding * 2)),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.contentInset - Self.rowOuterPadding),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -(Self.contentInset - Self.rowOuterPadding)),
             stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         ])
 
@@ -1880,7 +1881,7 @@ final class CommandPaletteSearchField: NSTextField {
         focusRingType = .none
         textColor = .labelColor
         placeholderAttributedString = NSAttributedString(
-            string: "Search TSRS actions...",
+            string: "Search Tri-State Relay Service actions...",
             attributes: [
                 .foregroundColor: NSColor.placeholderTextColor,
                 .font: NSFont.systemFont(ofSize: 22, weight: .regular),
