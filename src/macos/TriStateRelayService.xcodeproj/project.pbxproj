@@ -7,16 +7,45 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		494AB3E4132FC06748332977 /* PlaybackProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */; };
+		6C027FAEF730B843C4623A0C /* NativeRelayStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D652781C9722ACAD54FC5DCA /* NativeRelayStoreTests.swift */; };
 		A10000000000000000000001 /* TriStateRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* TriStateRelayService.swift */; };
+		B9A14C0212CB6E308E5BBC00 /* MessageValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46D65056BE2A85D0F47C9BC6 /* MessageValidationTests.swift */; };
+		C85B89218BD0045DF6FCDDB8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C2881AB93EF12383180FAB7 /* Cocoa.framework */; };
+		F753A9D8D275331BB1C16159 /* TriStateRelayServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BF79CF9510CD591AB08B7B /* TriStateRelayServiceTests.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6B1F4302D17406CAF08C0217 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000009;
+			remoteInfo = "Tri-State Relay Service";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		46D65056BE2A85D0F47C9BC6 /* MessageValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageValidationTests.swift; path = TriStateRelayServiceTests/MessageValidationTests.swift; sourceTree = "<group>"; };
+		72BF79CF9510CD591AB08B7B /* TriStateRelayServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TriStateRelayServiceTests.swift; path = TriStateRelayServiceTests/TriStateRelayServiceTests.swift; sourceTree = "<group>"; };
+		88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackProfileTests.swift; path = TriStateRelayServiceTests/PlaybackProfileTests.swift; sourceTree = "<group>"; };
+		8C2881AB93EF12383180FAB7 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		A10000000000000000000002 /* TriStateRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriStateRelayService.swift; sourceTree = "<group>"; };
 		A10000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000004 /* Tri-State Relay Service.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Tri-State Relay Service.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1695E7DC8AB544F35FC64A9 /* TriStateRelayServiceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TriStateRelayServiceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D652781C9722ACAD54FC5DCA /* NativeRelayStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TriStateRelayServiceTests/NativeRelayStoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		80E20F9DF1A9999BD1D58B7F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C85B89218BD0045DF6FCDDB8 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A10000000000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -27,15 +56,36 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		179040D8927958933244EFD6 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				8C2881AB93EF12383180FAB7 /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		735ED73B881B384CCDBEADDB /* TriStateRelayServiceTests */ = {
+			isa = PBXGroup;
+			children = (
+				72BF79CF9510CD591AB08B7B /* TriStateRelayServiceTests.swift */,
+				D652781C9722ACAD54FC5DCA /* NativeRelayStoreTests.swift */,
+				46D65056BE2A85D0F47C9BC6 /* MessageValidationTests.swift */,
+				88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */,
+			);
+			name = TriStateRelayServiceTests;
+			sourceTree = "<group>";
+		};
 		A10000000000000000000006 = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000007 /* Sources */,
+				A10000000000000000000007 /* . */,
 				A10000000000000000000008 /* Products */,
+				C46A979F62BFD240ADE002B3 /* Frameworks */,
+				735ED73B881B384CCDBEADDB /* TriStateRelayServiceTests */,
 			);
 			sourceTree = "<group>";
 		};
-		A10000000000000000000007 /* Sources */ = {
+		A10000000000000000000007 /* . */ = {
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* TriStateRelayService.swift */,
@@ -48,8 +98,17 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000004 /* Tri-State Relay Service.app */,
+				B1695E7DC8AB544F35FC64A9 /* TriStateRelayServiceTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C46A979F62BFD240ADE002B3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				179040D8927958933244EFD6 /* OS X */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -70,6 +129,24 @@
 			productName = "Tri-State Relay Service";
 			productReference = A10000000000000000000004 /* Tri-State Relay Service.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C969E59FC4AA91E224F71C20 /* TriStateRelayServiceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E72C4F766105539528D67C85 /* Build configuration list for PBXNativeTarget "TriStateRelayServiceTests" */;
+			buildPhases = (
+				6D8B7C96267A31BE29316C48 /* Sources */,
+				80E20F9DF1A9999BD1D58B7F /* Frameworks */,
+				FA597566C3B1D92F39B6F7F2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				47B996433C53B7A2824C6E8B /* PBXTargetDependency */,
+			);
+			name = TriStateRelayServiceTests;
+			productName = TriStateRelayServiceTests;
+			productReference = B1695E7DC8AB544F35FC64A9 /* TriStateRelayServiceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -100,11 +177,33 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000009 /* Tri-State Relay Service */,
+				C969E59FC4AA91E224F71C20 /* TriStateRelayServiceTests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		FA597566C3B1D92F39B6F7F2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		6D8B7C96267A31BE29316C48 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F753A9D8D275331BB1C16159 /* TriStateRelayServiceTests.swift in Sources */,
+				6C027FAEF730B843C4623A0C /* NativeRelayStoreTests.swift in Sources */,
+				B9A14C0212CB6E308E5BBC00 /* MessageValidationTests.swift in Sources */,
+				494AB3E4132FC06748332977 /* PlaybackProfileTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A10000000000000000000011 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,7 +214,38 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		47B996433C53B7A2824C6E8B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "Tri-State Relay Service";
+			target = A10000000000000000000009 /* Tri-State Relay Service */;
+			targetProxy = 6B1F4302D17406CAF08C0217 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		56F85957F6158C3937A96583 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_MODULE_NAME = TriStateRelayServiceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Tri-State Relay Service.app/Contents/MacOS/Tri-State Relay Service";
+			};
+			name = Debug;
+		};
+		7E0450E56DD663B118854EED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_MODULE_NAME = TriStateRelayServiceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Tri-State Relay Service.app/Contents/MacOS/Tri-State Relay Service";
+			};
+			name = Release;
+		};
 		A10000000000000000000014 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -156,6 +286,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -187,6 +318,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A10000000000000000000010 /* Build configuration list for PBXNativeTarget "Tri-State Relay Service" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000016 /* Debug */,
+				A10000000000000000000017 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A10000000000000000000013 /* Build configuration list for PBXProject "TriStateRelayService" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -196,11 +336,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A10000000000000000000010 /* Build configuration list for PBXNativeTarget "Tri-State Relay Service" */ = {
+		E72C4F766105539528D67C85 /* Build configuration list for PBXNativeTarget "TriStateRelayServiceTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A10000000000000000000016 /* Debug */,
-				A10000000000000000000017 /* Release */,
+				7E0450E56DD663B118854EED /* Release */,
+				56F85957F6158C3937A96583 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

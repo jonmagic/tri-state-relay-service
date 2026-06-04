@@ -23,6 +23,25 @@
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
+   <TestAction
+     buildConfiguration = "Debug"
+     selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+     selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+     shouldUseLaunchSchemeArgsEnv = "YES"
+     shouldAutocreateTestPlan = "YES">
+     <Testables>
+        <TestableReference
+           skipped = "NO">
+           <BuildableReference
+              BuildableIdentifier = "primary"
+              BlueprintIdentifier = "C969E59FC4AA91E224F71C20"
+              BuildableName = "TriStateRelayServiceTests.xctest"
+              BlueprintName = "TriStateRelayServiceTests"
+              ReferencedContainer = "container:TriStateRelayService.xcodeproj">
+           </BuildableReference>
+        </TestableReference>
+     </Testables>
+   </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
