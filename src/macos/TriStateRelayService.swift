@@ -1142,7 +1142,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func configureSetupIntroView() {
-        setupIntroView.stringValue = "Two quick choices. TSRS stays quiet in Focus mode."
+        setupIntroView.stringValue = ""
         setupIntroView.textColor = .secondaryLabelColor
         setupIntroView.font = NSFont.systemFont(ofSize: 12)
         setupIntroView.lineBreakMode = .byWordWrapping
@@ -1161,8 +1161,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateSetupIntroVisibility() {
-        let needsSetup = model.needsFirstStartSetup()
-        setupIntroView.isHidden = !needsSetup
+        setupIntroView.isHidden = true
     }
 
 #if !APP_STORE
@@ -1268,7 +1267,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let shortcutLabel = NSTextField(labelWithString: "2. Record the shortcut")
         shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-        let shortcutNote = NSTextField(labelWithString: "Click the button, then press a valid combo. Control + Option + Command + V is reserved.")
+        let shortcutNote = NSTextField(labelWithString: "Click the button, then press a valid key combination.")
         shortcutNote.textColor = .secondaryLabelColor
         shortcutNote.font = NSFont.systemFont(ofSize: 12)
         shortcutNote.lineBreakMode = .byWordWrapping
@@ -1280,23 +1279,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cliSection.spacing = 8
         cliSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let shortcutSection = NSStackView(views: [shortcutLabel, setupShortcutRecorderButton, setupShortcutStatusView, shortcutNote])
+        let shortcutSection = NSStackView(views: [shortcutLabel, setupShortcutRecorderButton, shortcutNote, setupShortcutStatusView])
         shortcutSection.orientation = .vertical
         shortcutSection.alignment = .leading
         shortcutSection.spacing = 8
         shortcutSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [setupIntroView, title, subtitle, cliSection, shortcutSection])
+        let stack = NSStackView(views: [title, subtitle, cliSection, shortcutSection])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        setupIntroView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         cliStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         pathNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 460).isActive = true
         setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         cliSection.setCustomSpacing(10, after: cliLabel)
@@ -1364,7 +1362,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
         currentShortcut = selectedShortcut
         setupShortcutRecorderButton.shortcut = selectedShortcut
-        setupShortcutStatusView.stringValue = "Current shortcut: \(selectedShortcut.displayName)"
+        setupShortcutStatusView.stringValue = ""
+        setupShortcutStatusView.isHidden = true
         setupShortcutStatusView.textColor = .secondaryLabelColor
     }
 
@@ -1374,6 +1373,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             currentShortcut = shortcut
             setupShortcutRecorderButton.shortcut = shortcut
             setupShortcutStatusView.stringValue = "Saved shortcut: \(shortcut.displayName)"
+            setupShortcutStatusView.isHidden = false
             setupShortcutStatusView.textColor = .secondaryLabelColor
             model.saveCommandPaletteShortcut(shortcut)
             model.completeFirstStartSetup()
@@ -1382,6 +1382,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         case .invalid(let message):
             setupShortcutRecorderButton.shortcut = currentShortcut
             setupShortcutStatusView.stringValue = message
+            setupShortcutStatusView.isHidden = false
             setupShortcutStatusView.textColor = .systemRed
         }
     }
