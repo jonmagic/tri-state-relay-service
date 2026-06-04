@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import json
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 
 def command_exists(cmd):
-    return subprocess.run(["sh", "-c", f"command -v {cmd}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    return shutil.which(cmd) is not None
 
 def extract_json(text):
     start = text.find('{')
@@ -27,7 +27,7 @@ def run_candidate(tool, input_text, root):
     if tool == 'apfel':
         return run_cmd(['apfel', '--system-file', combine_prompt_path, '--max-tokens', '160', '--temperature', '0', '--output', 'plain', input_text], cwd=root)
     elif tool == 'llm':
-        with open(combine_prompt_path, 'r') as f:
+        with open(combine_prompt_path, 'r', encoding='utf-8') as f:
             combine_prompt = f.read()
         return run_cmd(['llm', 'prompt', input_text, '--system', combine_prompt, '--no-stream', '--no-log'], cwd=root)
     raise Exception(f"unsupported tool: {tool}")
@@ -39,7 +39,7 @@ def run_judge(tool, fixture, candidate_text, root):
     if tool == 'apfel':
         output = run_cmd(['apfel', '--system-file', evaluator_prompt_path, '--max-tokens', '120', '--temperature', '0', '--output', 'plain', judge_input], cwd=root)
     else:
-        with open(evaluator_prompt_path, 'r') as f:
+        with open(evaluator_prompt_path, 'r', encoding='utf-8') as f:
             evaluator_prompt = f.read()
         output = run_cmd(['llm', 'prompt', judge_input, '--system', evaluator_prompt, '--no-stream', '--no-log'], cwd=root)
         
@@ -87,7 +87,7 @@ def main():
     fixtures_path = os.path.join(root, 'evals/inactive-line-fixtures.json')
     output_path = os.path.join(root, 'evals/results/inactive-line-results.json')
     
-    with open(fixtures_path, 'r') as f:
+    with open(fixtures_path, 'r', encoding='utf-8') as f:
         fixtures = json.load(f)
         
     requested_tools = [t.strip() for t in os.environ.get('TSRS_EVAL_TOOLS', 'apfel,llm').split(',') if t.strip()]
@@ -121,7 +121,7 @@ def main():
             })
             
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2)
         f.write('\n')
         

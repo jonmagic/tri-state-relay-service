@@ -1,5 +1,9 @@
 dist/
 .DS_Store
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+.build/
 *.db
 *.db-shm
 *.db-wal
