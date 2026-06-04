@@ -69,8 +69,8 @@ up. The legacy processor entrypoint must not be bundled into the macOS app.
 Build and run the direct-download macOS menu bar app:
 
 ```sh
-npm run build:macos
-open "dist/macos/Tri-State Relay Service.app"
+scripts/build-macos.sh direct
+scripts/restart-macos-app.sh
 ```
 
 The macOS app is built through
@@ -92,7 +92,7 @@ bundled `relay` helper before sealing the app bundle.
 Create a signed and notarized direct-download zip:
 
 ```sh
-TSRS_NOTARYTOOL_PROFILE=tsrs npm run package:macos:direct
+TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
 ```
 
 The packaging script requires a `Developer ID Application` certificate. Set

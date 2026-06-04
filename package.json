@@ -9,7 +9,7 @@
     "relay-processor": "./dist/src/processor.js"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts && tests/macos-bundle-validation.test.sh",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "build:native:cli": "mkdir -p dist/native && perry compile src/cli.ts -o dist/native/relay",
@@ -18,8 +18,8 @@
     "build:macos:direct": "scripts/build-macos.sh direct",
     "build:macos:app-store": "scripts/build-macos.sh app-store",
     "package:macos:direct": "scripts/package-macos-direct.sh",
-    "restart:macos": "node scripts/restart-macos-app.mjs",
-    "eval:inactive-line": "node scripts/eval-inactive-line.mjs",
+    "restart:macos": "scripts/restart-macos-app.sh",
+    "eval:inactive-line": "scripts/eval-inactive-line.py",
     "perry:check": "perry check src/ --check-deps",
     "validate": "npm test && npm run typecheck && npm run perry:check && npm run build"
   },

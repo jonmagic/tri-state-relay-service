@@ -71,9 +71,11 @@ Safe deletion order:
 
 1. Expand the native Swift `relay-native` CLI target until it can write to the
    same SQLite store and cover the full direct-download command surface.
-2. Build a Swift parity harness from this inventory against the current
-   `dist/native/relay` oracle, prioritizing direct-download behavior and keeping
-   legacy App Store-profile behavior as reference only.
+2. Keep `scripts/swift-cli-parity.sh` passing against the current
+   `dist/native/relay` oracle while expanding it from the shared direct-profile
+   command surface to the remaining full-parity gaps. Prioritize
+   direct-download behavior and keep legacy App Store-profile behavior as
+   reference only.
 3. Finish porting CLI install/update safety from `src/core/cli-install.ts` and
    validate the app install/update flow against the bundled Swift helper.
 4. Finish moving release wrappers off Perry: Xcode or SwiftPM builds the app and
@@ -95,7 +97,7 @@ Safe deletion order:
 
 The concrete next engineering slice is therefore: expand the Swift CLI target
 from core queue/install commands to the remaining direct-profile command matrix,
-then add a direct-profile parity harness against `dist/native/relay`.
+then tighten the direct-profile parity harness against `dist/native/relay`.
 
 Probe environment:
 
@@ -307,6 +309,13 @@ prefix. Non-update relay types include a type prefix, for example
    as CLI/profile reporting, not the full app runtime truth.
 
 ## Parity harness recommendations
+
+`scripts/swift-cli-parity.sh` is the current non-Node direct-profile parity
+harness. It runs the Perry oracle and bundled Swift CLI against repository-local
+isolated `TSRS_DB_PATH` databases, compares stable human output exactly, compares
+JSON semantically, and snapshots SQLite state. By default it reports known Swift
+coverage gaps without failing so it can be used during incremental porting; set
+`TSRS_PARITY_STRICT=1` to make reported gaps fail.
 
 1. Compare JSON commands by parsing JSON and allowing dynamic fields such as ids,
    timestamps, signatures, and absolute paths to be normalized.

@@ -2,23 +2,25 @@
   {
     "fixture": "routine-progress",
     "tool": "apfel",
-    "ok": true,
+    "ok": false,
     "contract": {
-      "ok": true,
-      "errors": [],
+      "ok": false,
+      "errors": [
+        "message missing Hamzo"
+      ],
       "candidate": {
         "action": "replace",
         "type": "update",
         "priority": "normal",
-        "message": "Hamzo update: I found the failing fixture, patched the parser path, and tests are running now."
+        "message": "<inactiveLine> update: I found the failing fixture, patched the parser path, and tests are running now."
       }
     },
     "judge": {
-      "score": 9,
+      "score": 7,
       "verdict": "keep",
-      "reason": "Excellent voicemail that clearly communicates the progress and resolves the issue without unnecessary details or jargon."
+      "reason": "The candidate text is concise and effectively communicates the necessary updates without inventing facts or including unnecessary language. It preserves the important points from the source messages and escalates the high-priority information (tests are running now)."
     },
-    "candidateText": "```json\n{\n  \"action\": \"replace\",\n  \"type\": \"update\",\n  \"priority\": \"normal\",\n  \"message\": \"Hamzo update: I found the failing fixture, patched the parser path, and tests are running now.\"\n}\n```"
+    "candidateText": "```json\n{\"action\":\"replace\",\"type\":\"update\",\"priority\":\"normal\",\"message\":\"<inactiveLine> update: I found the failing fixture, patched the parser path, and tests are running now.\"}\n```"
   },
   {
     "fixture": "routine-progress",
@@ -37,7 +39,7 @@
     "judge": {
       "score": 9,
       "verdict": "keep",
-      "reason": "The candidate text is concise, accurately reflects the updates, and avoids unnecessary language. It effectively communicates the necessary information without inventing facts or including irrelevant details."
+      "reason": "Excellent candidate. It accurately reflects the updates and maintains the intended format without unnecessary details or language."
     },
     "candidateText": "```json\n{\"action\":\"replace\",\"type\":\"update\",\"priority\":\"normal\",\"message\":\"Hamzo update: I found the failing fixture, patched the parser path, and tests are running now.\"}\n```"
   },
@@ -58,9 +60,9 @@
     "judge": {
       "score": 9,
       "verdict": "keep",
-      "reason": "The candidate text effectively communicates the blocker and its priority, while also addressing the need for a decision on preserving legacy behavior. It aligns with the evaluation criteria and provides a clear escalation point."
+      "reason": "The candidate text is concise, clearly communicates the blocker's status, and includes the necessary details for escalation. It avoids unnecessary information and adheres to the evaluation criteria."
     },
-    "candidateText": "```json\n{\n  \"action\": \"promote\",\n  \"type\": \"blocked\",\n  \"priority\": \"high\",\n  \"message\": \"Hamzo is blocked: the parser fix works, but I need a decision on preserving legacy behavior.\"\n}\n```"
+    "candidateText": "```json\n{\"action\":\"promote\",\"type\":\"blocked\",\"priority\":\"high\",\"message\":\"Hamzo is blocked: the parser fix works, but I need a decision on preserving legacy behavior.\"}\n```"
   },
   {
     "fixture": "blocked-after-progress",
@@ -77,35 +79,32 @@
       }
     },
     "judge": {
-      "score": 9,
+      "score": 7,
       "verdict": "keep",
-      "reason": "The voicemail effectively communicates the blocker and its urgency, while also addressing the need for a decision on preserving legacy behavior. It maintains the integrity of the source message and avoids unnecessary details."
+      "reason": "The candidate text is concise and effectively communicates the blocker's status and the need for a decision. It avoids unnecessary details and maintains clarity."
     },
-    "candidateText": "```json\n{\"action\":\"promote\",\"type\":\"blocked\",\"priority\":\"high\",\"message\":\"Hamzo is blocked: the parser fix works locally, but I need a decision on whether to preserve legacy behavior.\"}\n```"
+    "candidateText": "{\"action\":\"promote\",\"type\":\"blocked\",\"priority\":\"high\",\"message\":\"Hamzo is blocked: the parser fix works locally, but I need a decision on whether to preserve legacy behavior.\"}"
   },
   {
     "fixture": "completion-wins",
     "tool": "apfel",
-    "ok": false,
+    "ok": true,
     "contract": {
-      "ok": false,
-      "errors": [
-        "expected type complete",
-        "message missing validation"
-      ],
+      "ok": true,
+      "errors": [],
       "candidate": {
         "action": "replace",
-        "type": "update",
+        "type": "complete",
         "priority": "normal",
-        "message": "Spamurai update: I fixed the status parser and the queue count bug is resolved."
+        "message": "Spamurai is done: the parser fix is in, validation passed, and there are no known follow-ups."
       }
     },
     "judge": {
       "score": 9,
       "verdict": "keep",
-      "reason": "Completion should become the final point."
+      "reason": "Excellent candidate. It clearly states the completion of the task, avoids unnecessary details, and meets all the evaluation criteria."
     },
-    "candidateText": "```json\n{\n  \"action\": \"replace\",\n  \"type\": \"update\",\n  \"priority\": \"normal\",\n  \"message\": \"Spamurai update: I fixed the status parser and the queue count bug is resolved.\"\n}\n```"
+    "candidateText": "```json\n{\"action\":\"replace\",\"type\":\"complete\",\"priority\":\"normal\",\"message\":\"Spamurai is done: the parser fix is in, validation passed, and there are no known follow-ups.\"}\n```"
   },
   {
     "fixture": "completion-wins",
@@ -124,7 +123,7 @@
     "judge": {
       "score": 9,
       "verdict": "keep",
-      "reason": "Completion message is concise, accurately reflects the updates, and avoids unnecessary details."
+      "reason": "Excellent candidate. It accurately captures the completion of the task, avoids unnecessary details, and maintains clarity. It effectively communicates the outcome without introducing any invented facts or errors."
     },
     "candidateText": "```json\n{\"action\":\"replace\",\"type\":\"complete\",\"priority\":\"normal\",\"message\":\"Spamurai is done: reproduced the queue count bug, fixed the status parser, and validation confirms the menu count now updates correctly.\"}\n```"
   },
@@ -147,7 +146,7 @@
     "judge": {
       "score": 7,
       "verdict": "keep",
-      "reason": "Replaces the existing message with a brief update, preserving the important point without inventing facts or errors."
+      "reason": "Preserves the current important point from the source messages."
     },
     "candidateText": "```json\n{\"action\":\"replace\",\"type\":\"update\",\"priority\":\"normal\",\"message\":\"Brain update: indexing is still running.\"}\n```"
   },
@@ -168,8 +167,8 @@
     "judge": {
       "score": 7,
       "verdict": "keep",
-      "reason": "Brief reason."
+      "reason": "The candidate text is concise and accurately reflects the current status of the routine. It avoids unnecessary details and maintains clarity, which is essential for a useful relay."
     },
-    "candidateText": "```json\n{\"action\":\"drop\",\"type\":\"update\",\"priority\":\"low\",\"message\":\"Brain update: indexing is still running.\"}\n```"
+    "candidateText": "{\"action\":\"drop\",\"type\":\"update\",\"priority\":\"low\",\"message\":\"Brain update: indexing is still running.\"}"
   }
 ]
