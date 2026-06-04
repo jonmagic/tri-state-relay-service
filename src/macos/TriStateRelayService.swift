@@ -929,6 +929,38 @@ final class ShortcutRecorderButton: NSButton {
     }
 }
 
+final class SettingsWindow: NSWindow {
+    var onMoveSection: ((Int) -> Void)?
+    var onDismiss: (() -> Void)?
+    var onQuit: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_UpArrow:
+            onMoveSection?(-1)
+        case kVK_DownArrow:
+            onMoveSection?(1)
+        case kVK_Escape:
+            onDismiss?()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        onDismiss?()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "q" {
+            onQuit?()
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 struct GlobalHotKeyRegistrationPlan: Equatable {
     let id: UInt32
     let keyCode: UInt32
@@ -997,7 +1029,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.addSubview(secondarySectionRow)
         content.addSubview(settingsTabView)
 
-        let window = NSWindow(
+        let window = SettingsWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -1010,6 +1042,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+        window.onMoveSection = { [weak self] offset in
+            self?.selectAdjacentSection(offset)
+        }
+        window.onDismiss = { [weak self] in
+            self?.close()
+        }
+        window.onQuit = {
+            NSApplication.shared.terminate(nil)
+        }
         configureSetupIntroView()
         configureCliStatusView()
         settingsTabView.tabViewItem(at: 0).label = "Setup"
@@ -1085,6 +1126,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func selectSecondarySection() {
         settingsTabView.selectTabViewItem(at: 2)
         updateSidebarSelection(selectedIndex: 2)
+    }
+
+    private func selectAdjacentSection(_ offset: Int) {
+        let currentIndex = settingsTabView.indexOfTabViewItem(settingsTabView.selectedTabViewItem ?? settingsTabView.tabViewItem(at: 0))
+        let maxIndex = settingsTabView.numberOfTabViewItems - 1
+        let nextIndex = min(max(currentIndex + offset, 0), maxIndex)
+        settingsTabView.selectTabViewItem(at: nextIndex)
+        updateSidebarSelection(selectedIndex: nextIndex)
     }
 
     @objc private func selectVoice(_ sender: Any?) {

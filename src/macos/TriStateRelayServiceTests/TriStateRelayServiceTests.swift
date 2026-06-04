@@ -17,6 +17,18 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertFalse(source.contains("Control + Option + Command + V is reserved."))
         XCTAssertTrue(source.contains("Click the button, then press a valid key combination."))
     }
+
+    func testSettingsWindowSupportsKeyboardNavigationAndDismissal() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("final class SettingsWindow: NSWindow"))
+        XCTAssertTrue(source.contains("case kVK_UpArrow:"))
+        XCTAssertTrue(source.contains("case kVK_DownArrow:"))
+        XCTAssertTrue(source.contains("case kVK_Escape:"))
+        XCTAssertTrue(source.contains("override func cancelOperation(_ sender: Any?)"))
+        XCTAssertTrue(source.contains("event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == \"q\""))
+        XCTAssertTrue(source.contains("NSApplication.shared.terminate(nil)"))
+    }
 }
 
 func triStateRelayServiceSource() throws -> String {
