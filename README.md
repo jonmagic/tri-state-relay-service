@@ -127,7 +127,7 @@ For the user-facing walkthrough, see `docs/user-guide.md`.
 
 ## Next slices
 
-1. Remove the second global command-palette shortcut and make the remaining shortcut configurable.
+1. Make the remaining command-palette shortcut configurable.
 2. Add a first-run settings experience that guides CLI installation, shortcut configuration, and voice selection.
 3. Make direct-download builds arm64-only by default to reduce binary and release size.
 4. Keep trimming internal-only documentation from the user-facing path while preserving useful implementation notes.

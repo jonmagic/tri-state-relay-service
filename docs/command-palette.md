@@ -99,9 +99,8 @@ message bodies in palette results by default.
 5. Left click remains Play Next.
 6. The compact menu remains focused on essential status/settings actions.
 
-Next hardening should remove the second global shortcut, make the remaining
-shortcut configurable in Settings, and keep command availability testable without
-AppKit UI.
+Next hardening should make the remaining shortcut configurable in Settings and
+keep command availability testable without AppKit UI.
 
 ## Guardrails
 

@@ -98,14 +98,13 @@ Use this order unless there is a strong reason to change it. After each item is
 completed and committed, update this section and any directly related docs so
 the next agent sees the current state instead of stale guidance:
 
-1. Remove `Control` + `Option` + `Command` + `V` as a global command-palette shortcut. Keep right click for an empty-query palette and preserve `Control` + `Option` + `Command` + `Space` as the current default for Play Next.
-2. Make the command-palette shortcut configurable in Settings. Default to the current Play Next shortcut, but persist the user's choice and keep shortcut registration testable without AppKit UI.
-3. Require first-start configuration before normal app use. Open Settings on first launch and guide the user through CLI installation, shortcut selection, and voice selection without using a heavy "wizard" pattern.
-4. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
-5. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
-6. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
-7. Make direct-download builds arm64-only by default to reduce binary and release size. Preserve a deliberate path for universal builds only if a future distribution need appears.
-8. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
+1. Make the command-palette shortcut configurable in Settings. Default to the current Play Next shortcut, but persist the user's choice and keep shortcut registration testable without AppKit UI.
+2. Require first-start configuration before normal app use. Open Settings on first launch and guide the user through CLI installation, shortcut selection, and voice selection without using a heavy "wizard" pattern.
+3. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
+4. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
+5. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
+6. Make direct-download builds arm64-only by default to reduce binary and release size. Preserve a deliberate path for universal builds only if a future distribution need appears.
+7. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
 
 ## Task exit criteria
 

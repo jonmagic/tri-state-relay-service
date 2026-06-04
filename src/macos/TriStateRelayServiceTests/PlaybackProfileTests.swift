@@ -12,4 +12,12 @@ final class PlaybackProfileTests: XCTestCase {
         let source = try triStateRelayServiceSource()
         XCTAssertFalse(source.contains("relay-processor"))
     }
+
+    func testOnlyPlayNextGlobalHotKeyIsRegistered() throws {
+        let source = try triStateRelayServiceSource()
+        XCTAssertTrue(source.contains("Control-Option-Command-Space"))
+        XCTAssertTrue(source.contains("kVK_Space"))
+        XCTAssertFalse(source.contains("Control-Option-Command-V"))
+        XCTAssertFalse(source.contains("kVK_ANSI_V"))
+    }
 }

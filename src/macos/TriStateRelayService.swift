@@ -21,7 +21,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
     private var commandPaletteWindowController: CommandPaletteWindowController?
     private var playCurrentLineHotKey: EventHotKeyRef?
-    private var openMenuHotKey: EventHotKeyRef?
     private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
         self?.model.refresh()
         self?.refreshStatusItem()
@@ -305,10 +304,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
 
         commandPaletteWindowController?.show(commands: commands, initialQuery: initialQuery)
-    }
-
-    private func showMenuFromHotKey() {
-        showCommandPalette(initialQuery: "")
     }
 
 #if !APP_STORE
@@ -628,8 +623,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 switch hotKeyID.id {
                 case 1:
                     TriStateRelayServiceApp.sharedDelegate?.playCurrentLineFromHotKey()
-                case 2:
-                    TriStateRelayServiceApp.sharedDelegate?.showMenuFromHotKey()
                 default:
                     break
                 }
@@ -640,7 +633,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         let modifiers = UInt32(cmdKey | optionKey | controlKey)
         playCurrentLineHotKey = registerHotKey(keyCode: UInt32(kVK_Space), modifiers: modifiers, id: 1, label: "Control-Option-Command-Space")
-        openMenuHotKey = registerHotKey(keyCode: UInt32(kVK_ANSI_V), modifiers: modifiers, id: 2, label: "Control-Option-Command-V")
     }
 
     private func registerHotKey(keyCode: UInt32, modifiers: UInt32, id: UInt32, label: String) -> EventHotKeyRef? {
@@ -664,10 +656,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private func unregisterGlobalHotKeys() {
         if let playCurrentLineHotKey {
             UnregisterEventHotKey(playCurrentLineHotKey)
-        }
-
-        if let openMenuHotKey {
-            UnregisterEventHotKey(openMenuHotKey)
         }
     }
 
@@ -3059,4 +3047,3 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 private func appStoreUnavailableCommand(_ feature: String) -> String {
     "# External \(feature) command execution is unavailable in the App Store-safe profile."
 }
-
