@@ -166,6 +166,22 @@ Commands:
   mute                 Mute playback.
   unmute               Unmute playback.
   clear                Clear queued and delivered relays.
+  clear-line --line <line>
+                       Clear queued relays for one line.
+  clear-delivered [--line <line>]
+                       Clear delivered relays.
+  skip-next [--line <line>]
+                       Skip the next queued relay.
+  acknowledge [--line <line>]
+                       Mark the latest delivered relay handled.
+  replay-last [--line <line>]
+                       Replay the latest delivered relay.
+  line [line|--line <line>]
+                       Get or set active line.
+  combiner [--command <command>]
+                       Get or set inactive-line combiner command.
+  settings [--combiner-command <command>]
+                       Print settings JSON.
   normalize --line <line> --message <message> [--type <type>] [--priority <priority>]
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and normalize a relay without writing to the queue.
@@ -236,6 +252,43 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
             let count = try store.clear()
             return RelayCliResult(stdout: "cleared \(count) relays", stderr: "", exitCode: 0)
         }
+    case "clear-line":
+        return runLineRequiredCommand(Array(arguments.dropFirst())) { store, line in
+            let count = try store.clearQueued(line: line)
+            return RelayCliResult(stdout: "cleared \(count) queued relays from \(line)", stderr: "", exitCode: 0)
+        }
+    case "clear-delivered", "clear-heard":
+        return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
+            let count = try store.clearHeard(line: line)
+            return RelayCliResult(stdout: "cleared \(count) delivered relays", stderr: "", exitCode: 0)
+        }
+    case "skip-next":
+        return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
+            if let skipped = try store.skipNextQueued(line: line) {
+                return RelayCliResult(stdout: "skipped relay #\(skipped.id)", stderr: "", exitCode: 0)
+            }
+            return RelayCliResult(stdout: "no queued relay to skip", stderr: "", exitCode: 0)
+        }
+    case "acknowledge", "mark-handled":
+        return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
+            if let handled = try store.markLatestHeardHandled(line: line) {
+                return RelayCliResult(stdout: "handled relay #\(handled.id)", stderr: "", exitCode: 0)
+            }
+            return RelayCliResult(stdout: "no delivered relay to mark handled", stderr: "", exitCode: 0)
+        }
+    case "replay-last":
+        return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
+            if let replayed = try store.replayLatestHeard(line: line) {
+                return RelayCliResult(stdout: "queued relay #\(replayed.id) for replay", stderr: "", exitCode: 0)
+            }
+            return RelayCliResult(stdout: "no delivered relay to replay", stderr: "", exitCode: 0)
+        }
+    case "line":
+        return runLineCommand(Array(arguments.dropFirst()))
+    case "combiner":
+        return runCombinerCommand(Array(arguments.dropFirst()))
+    case "settings":
+        return runSettingsCommand(Array(arguments.dropFirst()))
     case "cli-status":
         return runCliStatusCommand(Array(arguments.dropFirst()))
     case "install-cli":
@@ -318,6 +371,102 @@ private func runInstallCliCommand(_ arguments: [String]) -> RelayCliResult {
         return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
     } catch {
         return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runOptionalLineCommand(_ arguments: [String], action: (RelayCliStore, String?) throws -> RelayCliResult) -> RelayCliResult {
+        do {
+            let flags = try parseRelayFlags(arguments, knownFlags: ["line"])
+            return withRelayCliStore { store in
+                try action(store, flags["line"])
+            }
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+}
+
+private func runLineRequiredCommand(_ arguments: [String], action: (RelayCliStore, String) throws -> RelayCliResult) -> RelayCliResult {
+        do {
+            let flags = try parseRelayFlags(arguments, knownFlags: ["line"])
+            guard let line = flags["line"] else {
+                return RelayCliResult(stdout: "", stderr: "line is required", exitCode: 1)
+            }
+            return withRelayCliStore { store in
+                try action(store, line)
+            }
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+}
+
+private func runLineCommand(_ arguments: [String]) -> RelayCliResult {
+        if arguments.isEmpty {
+            return withRelayCliStore { store in
+                RelayCliResult(stdout: try store.state().activeLine ?? "none", stderr: "", exitCode: 0)
+            }
+        }
+
+        do {
+            let line: String
+            if arguments.first == "--line" {
+                let flags = try parseRelayFlags(arguments, knownFlags: ["line"])
+                guard let requested = flags["line"] else {
+                    return RelayCliResult(stdout: "", stderr: "line is required", exitCode: 1)
+                }
+                line = requested
+            } else {
+                line = arguments[0]
+            }
+
+            return withRelayCliStore { store in
+                let state = try store.setActiveLine(line)
+                return RelayCliResult(stdout: "active line set to \(state.activeLine ?? line)", stderr: "", exitCode: 0)
+            }
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+}
+
+private func runCombinerCommand(_ arguments: [String]) -> RelayCliResult {
+        if arguments.isEmpty {
+            return withRelayCliStore { store in
+                RelayCliResult(stdout: try store.inactiveLineCombinerCommand(), stderr: "", exitCode: 0)
+            }
+        }
+
+        do {
+            let flags = try parseRelayFlags(arguments, knownFlags: ["command", "tool"])
+            let requested = flags["command"] ?? flags["tool"] ?? ""
+            return withRelayCliStore { store in
+                let state = try store.setInactiveLineCombinerCommand(requested == "none" ? "" : requested)
+                return RelayCliResult(stdout: "inactive line combiner set to \(state.inactiveLineCombiner)", stderr: "", exitCode: 0)
+            }
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+}
+
+private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
+        do {
+            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command"])
+            return withRelayCliStore { store in
+                if let command = flags["combiner-command"] {
+                    _ = try store.setInactiveLineCombinerCommand(command)
+                }
+                return RelayCliResult(stdout: try store.settingsJSON(), stderr: "", exitCode: 0)
+            }
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
     }
 }
 
@@ -517,6 +666,25 @@ private final class RelayCliStore {
         return try jsonString(object)
     }
 
+    func settingsJSON() throws -> String {
+        let state = try state()
+        let object: [String: Any] = [
+            "profile": "direct",
+            "inactiveLineCombiner": state.inactiveLineCombiner,
+            "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
+            "speechCommand": try rawSettings()["speech_command"] ?? defaultSpeechCommand,
+            "capabilities": [
+                "profile": "direct",
+                "nativeSpeech": false,
+                "terminalEnqueue": true,
+                "externalSpeechCommand": true,
+                "externalInactiveLineCombiner": true,
+                "lineSourceActions": true,
+            ],
+        ]
+        return try jsonString(object)
+    }
+
     func setMode(_ mode: String) throws -> RelayCliQueueState {
         try setSetting(key: "mode", value: mode)
         return try state()
@@ -526,11 +694,55 @@ private final class RelayCliStore {
         try setSetting(key: "muted", value: String(muted))
     }
 
+    func setActiveLine(_ line: String) throws -> RelayCliQueueState {
+        let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            throw RelayCliStoreError(message: "line is required")
+        }
+        try setSetting(key: "active_line", value: normalized)
+        return try state()
+    }
+
+    func inactiveLineCombinerCommand() throws -> String {
+        try rawSettings()["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
+    }
+
+    func setInactiveLineCombinerCommand(_ command: String) throws -> RelayCliQueueState {
+        try setSetting(key: "inactive_line_combiner_command", value: resetBlankCommand(command, fallback: defaultInactiveLineCombinerCommand))
+        return try state()
+    }
+
     func clear() throws -> Int {
         try changes("""
             DELETE FROM relays
             WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
         """)
+    }
+
+    func clearQueued(line: String) throws -> Int {
+        try changes("""
+            DELETE FROM relays
+            WHERE status = 'queued' AND line = ?
+        """, [line])
+    }
+
+    func clearHeard(line: String?) throws -> Int {
+        try changes("""
+            DELETE FROM relays
+            WHERE status = 'heard' AND (? IS NULL OR line = ?)
+        """, [line, line])
+    }
+
+    func skipNextQueued(line: String?) throws -> RelayCliStoredRelay? {
+        try markFirstMatchingStatus(from: "queued", to: "skipped", line: line)
+    }
+
+    func markLatestHeardHandled(line: String?) throws -> RelayCliStoredRelay? {
+        try markLatestMatchingStatus(from: "heard", to: "handled", line: line)
+    }
+
+    func replayLatestHeard(line: String?) throws -> RelayCliStoredRelay? {
+        try markLatestMatchingStatus(from: "heard", to: "queued", line: line)
     }
 
     private func migrate() throws {
@@ -651,6 +863,50 @@ private final class RelayCliStore {
         }
 
         return relay
+    }
+
+    private func optionalReturningRelay(_ sql: String, _ values: [String?]) throws -> RelayCliStoredRelay? {
+        var relay: RelayCliStoredRelay?
+        try query(sql, values) { statement in
+            relay = mapRelay(statement)
+        }
+        return relay
+    }
+
+    private func markFirstMatchingStatus(from: String, to: String, line: String?) throws -> RelayCliStoredRelay? {
+        try optionalReturningRelay("""
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = ? AND (? IS NULL OR line = ?)
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status
+        """, [to, nowString(), from, line, line])
+    }
+
+    private func markLatestMatchingStatus(from: String, to: String, line: String?) throws -> RelayCliStoredRelay? {
+        try optionalReturningRelay("""
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = ? AND (? IS NULL OR line = ?)
+              ORDER BY updated_at DESC, id DESC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status
+        """, [to, nowString(), from, line, line])
     }
 
     private func changes(_ sql: String, _ values: [String?] = []) throws -> Int {
@@ -913,6 +1169,10 @@ private func commandIsEnabled(_ command: String?) -> Bool {
     }
 
     return false
+}
+
+private func resetBlankCommand(_ command: String, fallback: String) -> String {
+    commandIsEnabled(command) ? command : fallback
 }
 
 private let defaultInactiveLineCombinerCommand = """

@@ -140,6 +140,30 @@ final class RelayCliTests: XCTestCase {
         let current = runRelayCli(["cli-status", "--source", source, "--target", target])
         XCTAssertEqual(try jsonObject(current.stdout)["status"] as? String, "current")
     }
+
+    func testLineCombinerSettingsAndLifecycleCommands() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        XCTAssertEqual(runRelayCli(["line"]).stdout, "none")
+        XCTAssertEqual(runRelayCli(["line", "Brain"]).stdout, "active line set to Brain")
+        XCTAssertEqual(runRelayCli(["line"]).stdout, "Brain")
+
+        XCTAssertTrue(runRelayCli(["combiner"]).stdout.contains("Inactive line combiner command."))
+        XCTAssertEqual(runRelayCli(["combiner", "--command", "llm prompt <input>"]).stdout, "inactive line combiner set to custom")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=Brain, inactive-line-combiner=custom")
+
+        let settings = try jsonObject(runRelayCli(["settings"]).stdout)
+        XCTAssertEqual(settings["inactiveLineCombiner"] as? String, "custom")
+        XCTAssertEqual(settings["inactiveLineCombinerCommand"] as? String, "llm prompt <input>")
+
+        _ = runRelayCli(["--line", "Brain", "--message", "first"])
+        _ = runRelayCli(["--line", "Brain", "--message", "second"])
+        XCTAssertEqual(runRelayCli(["skip-next"]).stdout, "skipped relay #1")
+        XCTAssertEqual(runRelayCli(["clear-line", "--line", "Brain"]).stdout, "cleared 1 queued relays from Brain")
+        XCTAssertEqual(runRelayCli(["clear-delivered"]).stdout, "cleared 0 delivered relays")
+        XCTAssertEqual(runRelayCli(["acknowledge"]).stdout, "no delivered relay to mark handled")
+        XCTAssertEqual(runRelayCli(["replay-last"]).stdout, "no delivered relay to replay")
+    }
 }
 
 private func isolatedDatabasePath() -> String {
