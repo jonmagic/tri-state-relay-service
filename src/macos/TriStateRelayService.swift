@@ -2461,6 +2461,41 @@ final class NativeRelayStore {
         }
     }
 
+    func enqueue(_ input: NewRelayInput) throws -> NativeRelay? {
+        let relay = try normalizeRelay(input)
+        var inserted: NativeRelay?
+
+        write { database in
+            inserted = returningRelay(database, """
+                INSERT INTO relays (
+                  line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+                RETURNING id, line, message, type, priority, status, created_at, updated_at
+            """, [
+                relay.line,
+                relay.message,
+                relay.type,
+                relay.priority,
+                relay.session,
+                relay.app,
+                relay.cwd,
+                relay.url,
+                nowString(),
+                nowString()
+            ])
+
+            if inserted != nil {
+                execute(database, """
+                    INSERT OR IGNORE INTO settings (key, value)
+                    VALUES ('active_line', ?)
+                """, [relay.line])
+            }
+        }
+
+        return inserted
+    }
+
     func clear() {
         write { database in
             execute(database, """
@@ -2555,9 +2590,11 @@ final class NativeRelayStore {
 
     private func withDatabase<T>(_ read: (OpaquePointer) -> T?) -> T? {
         var database: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        let path = databasePath()
+        createDatabaseDirectory(path)
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
 
-        guard sqlite3_open_v2(databasePath(), &database, flags, nil) == SQLITE_OK, let database else {
+        guard sqlite3_open_v2(path, &database, flags, nil) == SQLITE_OK, let database else {
             if let database {
                 sqlite3_close(database)
             }
@@ -2565,6 +2602,7 @@ final class NativeRelayStore {
         }
 
         sqlite3_busy_timeout(database, 2_000)
+        migrate(database)
         defer {
             sqlite3_close(database)
         }
@@ -2585,9 +2623,11 @@ final class NativeRelayStore {
 
     private func withWriteDatabase<T>(_ mutation: (OpaquePointer) -> T?) -> T? {
         var database: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        let path = databasePath()
+        createDatabaseDirectory(path)
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
 
-        guard sqlite3_open_v2(databasePath(), &database, flags, nil) == SQLITE_OK, let database else {
+        guard sqlite3_open_v2(path, &database, flags, nil) == SQLITE_OK, let database else {
             if let database {
                 NSLog("TSRS native store write open failed: \(sqliteError(database))")
                 sqlite3_close(database)
@@ -2598,11 +2638,47 @@ final class NativeRelayStore {
         }
 
         sqlite3_busy_timeout(database, 2_000)
+        migrate(database)
         defer {
             sqlite3_close(database)
         }
 
         return mutation(database)
+    }
+
+    private func migrate(_ database: OpaquePointer) {
+        executeBatch(database, """
+            PRAGMA journal_mode = WAL;
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+              version INTEGER PRIMARY KEY
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS relays (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              line TEXT NOT NULL,
+              message TEXT NOT NULL,
+              type TEXT NOT NULL,
+              priority TEXT NOT NULL,
+              session TEXT,
+              app TEXT,
+              cwd TEXT,
+              url TEXT,
+              status TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+        """)
+
+        execute(database, "INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
+        setSettingIfMissing(database, key: "mode", value: "focus")
+        setSettingIfMissing(database, key: "muted", value: "false")
+        setSettingIfMissing(database, key: "inactive_line_combiner", value: "none")
+        setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
+        setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
+        migrateLegacyCombinerSetting(database)
     }
 
     private func loadRawSettings(_ database: OpaquePointer) -> [String: String] {
@@ -2753,6 +2829,17 @@ final class NativeRelayStore {
         }
     }
 
+    private func executeBatch(_ database: OpaquePointer, _ sql: String) {
+        var error: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(database, sql, nil, nil, &error)
+
+        if result != SQLITE_OK {
+            let message = error.map { String(cString: $0) } ?? sqliteError(database)
+            sqlite3_free(error)
+            NSLog("TSRS native store migration failed: \(message)")
+        }
+    }
+
     private func returningRelay(_ database: OpaquePointer, _ sql: String, _ values: [String?]) -> NativeRelay? {
         var statement: OpaquePointer?
 
@@ -2787,6 +2874,41 @@ final class NativeRelayStore {
             VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """, [key, value])
+    }
+
+    private func setSettingIfMissing(_ database: OpaquePointer, key: String, value: String) {
+        execute(database, """
+            INSERT OR IGNORE INTO settings (key, value)
+            VALUES (?, ?)
+        """, [key, value])
+    }
+
+    private func migratedInactiveLineCombinerCommand(_ database: OpaquePointer) -> String {
+        let legacy = loadRawSettings(database)["inactive_line_combiner"]
+
+        if legacy == "llm" {
+            return "llm prompt <input> --system <system> --no-stream --no-log"
+        }
+
+        if legacy == "apfel" {
+            return "apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>"
+        }
+
+        return defaultInactiveLineCombinerCommand
+    }
+
+    private func migrateLegacyCombinerSetting(_ database: OpaquePointer) {
+        let settings = loadRawSettings(database)
+
+        guard settings["inactive_line_combiner_command"] == defaultInactiveLineCombinerCommand else {
+            return
+        }
+
+        let migrated = migratedInactiveLineCombinerCommand(database)
+
+        if migrated != defaultInactiveLineCombinerCommand {
+            setSetting(database, key: "inactive_line_combiner_command", value: migrated)
+        }
     }
 
     private func queuedCount(_ database: OpaquePointer, line: String) -> Int {
@@ -3031,6 +3153,16 @@ private func databasePath() -> String {
 
     let home = environment["HOME"] ?? NSHomeDirectory()
     return "\(home)/Library/Application Support/Tri-State Relay Service/relay.db"
+}
+
+private func createDatabaseDirectory(_ path: String) {
+    let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+
+    do {
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    } catch {
+        NSLog("TSRS native store could not create database directory \(directory): \(error.localizedDescription)")
+    }
 }
 
 private func defaultStatus() -> QueueStatus {
