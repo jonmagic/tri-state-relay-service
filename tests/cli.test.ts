@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -37,6 +37,43 @@ test('direct profile allows terminal relay enqueueing', () => {
 
   assert.equal(queued.status, 0)
   assert.match(queued.stdout, /queued relay #1 Brain/)
+})
+
+test('version command identifies TSRS relay binary', () => {
+  const dbPath = temporaryDatabasePath()
+
+  const version = runCli(dbPath, ['--version'])
+
+  assert.equal(version.status, 0)
+  assert.equal(version.stdout, 'relay 0.1.0')
+})
+
+test('cli install commands report and install user-local relay', () => {
+  const dbPath = temporaryDatabasePath()
+  const tempDir = mkdtempSync(join(tmpdir(), 'tsrs-cli-command-'))
+  const source = executableFile(tempDir, 'bundled-relay', relayScript('0.1.0', 'bundled'))
+  const target = join(tempDir, 'bin', 'relay')
+
+  const missing = runCli(dbPath, ['cli-status', '--source', source, '--target', target])
+  const installed = runCli(dbPath, ['install-cli', '--source', source, '--target', target])
+  const current = runCli(dbPath, ['cli-status', '--source', source, '--target', target])
+
+  assert.equal(JSON.parse(missing.stdout).status, 'missing')
+  assert.equal(installed.status, 0)
+  assert.equal(JSON.parse(installed.stdout).status, 'current')
+  assert.equal(JSON.parse(current.stdout).status, 'current')
+})
+
+test('cli install command refuses to overwrite foreign relay', () => {
+  const dbPath = temporaryDatabasePath()
+  const tempDir = mkdtempSync(join(tmpdir(), 'tsrs-cli-command-'))
+  const source = executableFile(tempDir, 'bundled-relay', relayScript('0.1.0', 'bundled'))
+  const target = executableFile(join(tempDir, 'bin'), 'relay', '#!/bin/sh\necho "foreign"\n')
+
+  const denied = runCli(dbPath, ['install-cli', '--source', source, '--target', target])
+
+  assert.notEqual(denied.status, 0)
+  assert.match(denied.stderr, /does not look like a TSRS relay CLI/)
 })
 
 test('authorized app helper command claims one relay for native speech', () => {
@@ -113,4 +150,22 @@ function runCli(dbPath: string, args: string[], env: Record<string, string> = {}
 
 function temporaryDatabasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'tsrs-')), 'relay.db')
+}
+
+function executableFile(dir: string, name: string, content: string): string {
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, name)
+  writeFileSync(path, content)
+  chmodSync(path, 0o755)
+  return path
+}
+
+function relayScript(version: string, marker: string): string {
+  return `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "relay ${version}"
+  exit 0
+fi
+echo "${marker}"
+`
 }

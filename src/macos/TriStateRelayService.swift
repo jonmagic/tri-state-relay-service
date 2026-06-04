@@ -59,6 +59,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             self?.schedulePlaybackRefresh()
         }
         registerGlobalHotKeys()
+#if !APP_STORE
+        promptForRelayCliInstallIfNeeded()
+#endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -234,6 +237,14 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
+#if !APP_STORE
+    @objc private func installRelayCli() {
+        let result = model.installRelayCli()
+        showRelayCliInstallResult(result)
+        refreshStatusItem()
+    }
+#endif
+
     @objc private func linePlayNext() {
         model.ready()
         nativePlayback.playNext()
@@ -267,6 +278,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
         }
+#if !APP_STORE
+        menu.addItem(menuItem(model.relayCliMenuTitle(), action: #selector(installRelayCli), enabled: true))
+#endif
         menu.addItem(menuItem("Settings...", action: #selector(showSettingsWindow), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
@@ -295,6 +309,44 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private func showMenuFromHotKey() {
         showCommandPalette(initialQuery: "")
     }
+
+#if !APP_STORE
+    private func promptForRelayCliInstallIfNeeded() {
+        let status = model.relayCliInstallStatus()
+
+        guard status.shouldPrompt else {
+            return
+        }
+
+        let suppressionKey = "relayCliInstallPromptSuppressed.\(status.status).\(status.sourceSignature ?? status.version)"
+
+        if UserDefaults.standard.bool(forKey: suppressionKey) {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = status.status == "stale" ? "Update the relay CLI?" : "Install the relay CLI?"
+        alert.informativeText = "TSRS works best when agents can run `relay` from any project. The CLI will be copied to \(status.targetPath)."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: status.status == "stale" ? "Update" : "Install")
+        alert.addButton(withTitle: "Not Now")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            showRelayCliInstallResult(model.installRelayCli())
+        } else {
+            UserDefaults.standard.set(true, forKey: suppressionKey)
+        }
+    }
+
+    private func showRelayCliInstallResult(_ result: RelayCliInstallResult) {
+        let alert = NSAlert()
+        alert.messageText = result.title
+        alert.informativeText = result.detail
+        alert.alertStyle = result.succeeded ? .informational : .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+#endif
 
     private func menuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -331,6 +383,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 NSApplication.shared.terminate(nil)
             },
         ])
+
+#if !APP_STORE
+        commands.append(CommandPaletteCommand(title: model.relayCliMenuTitle(), subtitle: "Install or update the relay command line tool", aliases: ["install", "cli", "relay"], restoresPreviousFocus: false) { [weak self] in
+            self?.installRelayCli()
+        })
+#endif
 
         if model.status.muted {
             commands.append(CommandPaletteCommand(title: "Unmute", subtitle: "Allow relays to speak") { [weak self] in
@@ -1818,6 +1876,103 @@ final class MenuBarModel {
         refresh()
     }
 
+#if !APP_STORE
+    func relayCliInstallStatus() -> RelayCliInstallStatus {
+        relayCliStatusFromBundledCommand()
+    }
+
+    func relayCliMenuTitle() -> String {
+        switch relayCliInstallStatus().status {
+        case "current":
+            return "Reinstall relay CLI..."
+        case "stale":
+            return "Update relay CLI..."
+        case "foreign":
+            return "Resolve relay CLI Conflict..."
+        default:
+            return "Install relay CLI..."
+        }
+    }
+
+    func installRelayCli() -> RelayCliInstallResult {
+        let command = runBundledRelay(arguments: ["install-cli"])
+
+        guard command.status == 0 else {
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: command.stderr.isEmpty ? command.stdout : command.stderr
+            )
+        }
+
+        let status = parseRelayCliInstallStatus(command.stdout)
+
+        guard status.status == "current" else {
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: status.message
+            )
+        }
+
+        let pathNote = status.targetDirectoryOnPath
+            ? ""
+            : "\n\nAdd \(deletingLastPathComponent(status.targetPath)) to PATH so agents can run `relay` without a full path."
+
+        return RelayCliInstallResult(
+            succeeded: true,
+            title: "relay CLI installed",
+            detail: "Installed \(status.targetPath).\(pathNote)"
+        )
+    }
+
+    private func relayCliStatusFromBundledCommand() -> RelayCliInstallStatus {
+        let command = runBundledRelay(arguments: ["cli-status"])
+
+        guard command.status == 0 else {
+            return RelayCliInstallStatus(
+                status: "source-missing",
+                sourceSignature: nil,
+                targetPath: "~/.local/bin/relay",
+                targetDirectoryOnPath: false,
+                version: "unknown",
+                message: command.stderr.isEmpty ? command.stdout : command.stderr
+            )
+        }
+
+        return parseRelayCliInstallStatus(command.stdout)
+    }
+
+    private func runBundledRelay(arguments: [String]) -> RelayCliCommandResult {
+        guard let executableURL = Bundle.main.executableURL else {
+            return RelayCliCommandResult(status: 1, stdout: "", stderr: "could not locate app executable")
+        }
+
+        let relayURL = executableURL.deletingLastPathComponent().appendingPathComponent("relay")
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = relayURL
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return RelayCliCommandResult(status: 1, stdout: "", stderr: error.localizedDescription)
+        }
+
+        return RelayCliCommandResult(
+            status: Int(process.terminationStatus),
+            stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+            stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        )
+    }
+#endif
+
     func refresh() {
         status = loadStatus()
     }
@@ -2011,6 +2166,69 @@ struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let speechVoiceIdentifier: String?
 }
+
+#if !APP_STORE
+struct RelayCliInstallStatus {
+    let status: String
+    let sourceSignature: String?
+    let targetPath: String
+    let targetDirectoryOnPath: Bool
+    let version: String
+    let message: String
+
+    var shouldPrompt: Bool {
+        status == "missing" || status == "stale"
+    }
+}
+
+struct RelayCliInstallResult {
+    let succeeded: Bool
+    let title: String
+    let detail: String
+}
+
+struct RelayCliCommandResult {
+    let status: Int
+    let stdout: String
+    let stderr: String
+}
+
+private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus {
+    guard
+        let data = json.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+        return RelayCliInstallStatus(
+            status: "source-missing",
+            sourceSignature: nil,
+            targetPath: "~/.local/bin/relay",
+            targetDirectoryOnPath: false,
+            version: "unknown",
+            message: "could not parse relay CLI status"
+        )
+    }
+
+    let status = object["status"] as? String ?? "source-missing"
+    let targetPath = object["targetPath"] as? String ?? "~/.local/bin/relay"
+    let targetDirectoryOnPath = object["targetDirectoryOnPath"] as? Bool ?? false
+    let version = object["version"] as? String ?? "unknown"
+    let message = object["message"] as? String ?? "relay CLI status unavailable"
+    let sourceSignature = object["sourceSignature"] as? String
+
+    return RelayCliInstallStatus(
+        status: status,
+        sourceSignature: sourceSignature,
+        targetPath: targetPath,
+        targetDirectoryOnPath: targetDirectoryOnPath,
+        version: version,
+        message: message
+    )
+}
+
+private func deletingLastPathComponent(_ path: String) -> String {
+    URL(fileURLWithPath: path).deletingLastPathComponent().path
+}
+#endif
 
 final class NativeRelayStore {
     private let profile: String

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 
 import { processorIsAppAuthorized } from './core/app-authorization.ts'
 import { relayCapabilities } from './core/capabilities.ts'
+import { cliInstallStatus, installRelayCli, relayVersion } from './core/cli-install.ts'
 import { buildCommandInvocation, commandIsEnabled } from './core/command-template.ts'
 import { distributionProfile, isAppStoreProfile } from './core/distribution-profile.ts'
 import { messageTypes, priorities, spokenText } from './core/message.ts'
@@ -25,6 +26,29 @@ try {
 }
 
 function run(parsed: ParsedCommand): void {
+  if (parsed.command === 'version' || parsed.command === '--version') {
+    console.log(`relay ${relayVersion}`)
+    return
+  }
+
+  if (parsed.command === 'cli-status') {
+    const status = cliInstallStatus({
+      sourcePath: parsed.flags.source,
+      targetPath: parsed.flags.target,
+    })
+    console.log(JSON.stringify(status))
+    return
+  }
+
+  if (parsed.command === 'install-cli') {
+    const status = installRelayCli({
+      sourcePath: parsed.flags.source,
+      targetPath: parsed.flags.target,
+    })
+    console.log(JSON.stringify(status))
+    return
+  }
+
   if (parsed.command === 'enqueue') {
     if (isAppStoreProfile()) {
       throw new Error('terminal relay enqueueing is direct-profile-only until an App Store-safe storage model is chosen')
@@ -251,6 +275,10 @@ function parseArgs(args: string[]): ParsedCommand {
     return { command: 'help', args: [], flags: {} }
   }
 
+  if (args[0] === '--version') {
+    return { command: '--version', args: [], flags: {} }
+  }
+
   if (!args[0].startsWith('--')) {
     const [command, ...rest] = args
     const parsed = parseCommandArgs(rest)
@@ -344,6 +372,9 @@ function printHelp(): void {
   relay settings
   relay state
   relay status
+  relay cli-status
+  relay install-cli
+  relay --version
 
   Relay is the supported CLI.`)
 }

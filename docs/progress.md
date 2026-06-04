@@ -32,6 +32,7 @@ Current state:
 24. Left-click playback makes the line it pulls from active before speaking.
 25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and speech command templates.
 26. The menu bar app registers global hotkeys: Control-Option-Command-Space plays the current line, and Control-Option-Command-V opens the menu.
+27. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
 

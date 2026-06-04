@@ -119,6 +119,12 @@ enqueueing disabled and hides external inactive-line combiner command templates.
 Playback is claimed and spoken by the app with AVFoundation speech using the
 configured native voice.
 
+The direct app can install or update the bundled `relay` CLI from the menu. On
+first launch, it prompts when the CLI is missing or stale, copies the bundled
+binary to `~/.local/bin/relay`, refuses to overwrite a foreign `relay`, and tells
+the user when `~/.local/bin` is not on `PATH`. The CLI exposes the same
+mechanism through `relay cli-status`, `relay install-cli`, and `relay --version`.
+
 Before claiming a relay for speech, the app checks whether the default input
 device appears to be actively captured by another app. When microphone capture
 is active, TSRS leaves relays queued and retries later instead of speaking over
