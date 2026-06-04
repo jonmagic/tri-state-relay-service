@@ -4,6 +4,99 @@ This is the parity oracle for replacing the Perry/Node CLI with native Swift.
 It records behavior from the shipped compiled binary, `dist/native/relay`, not
 from the TypeScript source path.
 
+## Native Swift cutover readiness
+
+The current repository is not ready to delete `package.json`,
+`package-lock.json`, TypeScript sources/tests, npm scripts, Perry, or generated
+`dist` JavaScript in one safe step. The exact blockers from the current tree
+are:
+
+1. `dist/native/relay` is still the shipped CLI oracle and bundled helper. The
+   macOS build wrapper copies it into `dist/macos/Tri-State Relay
+   Service.app/Contents/MacOS/relay`, the direct app shells out to that helper
+   for `cli-status` and `install-cli`, and dogfooding instructions use it to
+   enqueue relays. Deleting it first would remove the agent integration surface.
+2. There is no standalone Swift CLI target or Swift command dispatcher yet.
+   `src/macos/TriStateRelayService.swift` owns app playback, native SQLite menu
+   state, and some shared validation/storage logic, but it does not currently
+   parse `CommandLine.arguments` into the full `relay` command surface.
+3. The current CLI behavior still lives in `src/cli.ts`, including enqueue,
+   list, status, state, ready/focus/mute/unmute, line, combiner, settings,
+   replay/skip/acknowledge/clear, app helper commands, `cli-status`,
+   `install-cli`, `--version`, direct-vs-legacy-profile capability reporting,
+   and external inactive-line combiner execution.
+4. The current persistent queue contract still has TypeScript as its most
+   complete implementation in `src/storage/store.ts`. Swift has native app
+   storage coverage, but the cutover still needs explicit parity for CLI
+   enqueue policy, inactive-line latest-only/custom combination behavior,
+   aggregate status JSON, install status JSON, stale expiry, and all command
+   mutations.
+5. `src/core/cli-install.ts` owns the install/update safety rules for copying
+   `relay` to `~/.local/bin/relay`: source and target signatures, stale/current
+   detection, foreign-binary refusal, executable mode preservation, version
+   output, and PATH diagnostics. The Swift app currently delegates those checks
+   to the bundled CLI.
+6. `package.json` is still the single entry point for validation and release
+   wrappers: `npm test`, `npm run typecheck`, `npm run build`,
+   `npm run build:native:cli`, `npm run build:macos:direct`,
+   `npm run package:macos:direct`, `npm run restart:macos`, and
+   `npm run eval:inactive-line`.
+7. Perry remains in the active direct-build path because
+   `scripts/build-macos.mjs` runs `npm run build:native:cli` before Xcode and
+   then bundles `dist/native/relay`. `package:macos:direct` signs and
+   smoke-tests that bundled helper before signing and notarizing the app.
+8. The tracked TypeScript test suite is the broadest regression harness for the
+   CLI, storage, command-template parsing, direct-vs-legacy capabilities,
+   processor compatibility, bundle validation, and app shell seams. Swift XCTest
+   coverage exists for message validation, playback profile behavior, and the
+   native relay store, but not yet for the full CLI oracle in this inventory.
+9. `scripts/*.mjs` still provide release/build/eval automation. Even after the
+   CLI moves to Swift, replacing `package.json` also requires either SwiftPM,
+   Xcode schemes, Makefile-style wrappers, or another non-Node automation path
+   for build, restart, notarization packaging, bundle inspection, and inactive
+   line evaluation.
+10. `dist/src/**/*.js` and `dist/tests/**/*.js` are ignored TypeScript build
+    outputs, not source of truth. They can be removed locally, but `npm run
+    build` will recreate them until the TypeScript build and validation path is
+    retired.
+11. `dist/native/relay-processor` is already absent from the current ignored
+    build output and the app bundle must not include `relay-processor`, but
+    `src/processor.ts`, processor tests, and the `build:native` script still
+    carry legacy compatibility coverage. Removing them is safe only after an
+    explicit product decision that no terminal/legacy processor path remains.
+
+Safe deletion order:
+
+1. Add a native Swift `relay` CLI target or executable mode that can run outside
+   the app bundle and write to the same SQLite store.
+2. Build a Swift parity harness from this inventory against the current
+   `dist/native/relay` oracle, prioritizing direct-download behavior and keeping
+   legacy App Store-profile behavior as reference only.
+3. Port CLI install/update safety from `src/core/cli-install.ts` so the app no
+   longer shells out to the bundled Node/Perry helper for `cli-status` or
+   `install-cli`.
+4. Move release wrappers off npm/Perry: Xcode or SwiftPM builds the app and CLI,
+   packaging signs and smoke-tests the Swift `relay`, and bundle validation still
+   proves `relay-processor` is absent.
+5. Migrate or retire TypeScript tests by replacing their coverage with XCTest or
+   another non-Node test runner for CLI output, SQLite side effects, command
+   template safety, bundle inspection, and direct-download customization.
+6. Flip docs and app packaging to the Swift `relay`; keep `dist/native/relay`
+   only as a temporary oracle until the parity harness passes.
+7. Remove Perry scripts and dependency entries, then delete `src/cli.ts`,
+   `src/storage/**`, `src/core/**`, `src/app/**`, `src/processor.ts`, and
+   `tests/**/*.ts` only after their Swift replacements or retirements are
+   validated.
+8. Delete `package.json`, `package-lock.json`, `tsconfig.json`, `node_modules`,
+   `.perry-cache`, and ignored `dist/src`/`dist/tests` outputs last, once no
+   documented build, validation, packaging, dogfooding, or app install path uses
+   npm, TypeScript, Perry, or generated JavaScript.
+
+The concrete next engineering slice is therefore: create the Swift CLI target
+and a direct-profile parity test harness for this command matrix, then change
+`scripts/build-macos.mjs` or its replacement to bundle the Swift-built `relay`
+instead of `dist/native/relay`.
+
 Probe environment:
 
 - Oracle: `./dist/native/relay`
