@@ -1307,12 +1307,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let cliLabel = NSTextField(labelWithString: "1. Install the CLI")
         cliLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-        let pathNote = NSTextField(labelWithString: "Recommended: /usr/local/bin/relay. Or copy the bundled path for agent instructions.")
-        pathNote.textColor = .secondaryLabelColor
-        pathNote.font = NSFont.systemFont(ofSize: 12)
-        pathNote.lineBreakMode = .byWordWrapping
-        pathNote.maximumNumberOfLines = 0
-
         let buttonRow = NSStackView(views: [setupInstallCliButton, copyBundledCliPathButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
@@ -1333,52 +1327,44 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         openAtLoginCheckbox.target = self
         openAtLoginCheckbox.action = #selector(toggleOpenAtLogin(_:))
 
-        let openAtLoginNote = NSTextField(labelWithString: "Optional. TSRS starts in Focus mode, so relays still queue quietly until you ask to hear one.")
-        openAtLoginNote.textColor = .secondaryLabelColor
-        openAtLoginNote.font = NSFont.systemFont(ofSize: 12)
-        openAtLoginNote.lineBreakMode = .byWordWrapping
-        openAtLoginNote.maximumNumberOfLines = 0
-
-        let cliSection = NSStackView(views: [cliLabel, cliStatusView, buttonRow, pathNote])
+        let cliSection = NSStackView(views: [cliLabel, buttonRow, cliStatusView])
         cliSection.orientation = .vertical
         cliSection.alignment = .leading
-        cliSection.spacing = 8
+        cliSection.spacing = 7
         cliSection.translatesAutoresizingMaskIntoConstraints = false
 
         let shortcutSection = NSStackView(views: [shortcutLabel, setupShortcutRecorderButton, shortcutNote, setupShortcutStatusView])
         shortcutSection.orientation = .vertical
         shortcutSection.alignment = .leading
-        shortcutSection.spacing = 8
+        shortcutSection.spacing = 7
         shortcutSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let openAtLoginSection = NSStackView(views: [openAtLoginLabel, openAtLoginCheckbox, openAtLoginNote, openAtLoginStatusView])
+        let openAtLoginSection = NSStackView(views: [openAtLoginLabel, openAtLoginCheckbox, openAtLoginStatusView])
         openAtLoginSection.orientation = .vertical
         openAtLoginSection.alignment = .leading
-        openAtLoginSection.spacing = 8
+        openAtLoginSection.spacing = 7
         openAtLoginSection.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView(views: [title, subtitle, cliSection, shortcutSection, openAtLoginSection])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 16
+        stack.spacing = 14
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         cliStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        pathNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 460).isActive = true
         setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        openAtLoginNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         openAtLoginStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        cliSection.setCustomSpacing(10, after: cliLabel)
-        shortcutSection.setCustomSpacing(10, after: shortcutLabel)
-        openAtLoginSection.setCustomSpacing(10, after: openAtLoginLabel)
-        stack.setCustomSpacing(22, after: subtitle)
-        stack.setCustomSpacing(22, after: cliSection)
-        stack.setCustomSpacing(22, after: shortcutSection)
+        cliSection.setCustomSpacing(9, after: cliLabel)
+        shortcutSection.setCustomSpacing(9, after: shortcutLabel)
+        openAtLoginSection.setCustomSpacing(9, after: openAtLoginLabel)
+        stack.setCustomSpacing(18, after: subtitle)
+        stack.setCustomSpacing(18, after: cliSection)
+        stack.setCustomSpacing(18, after: shortcutSection)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 330))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 270))
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
