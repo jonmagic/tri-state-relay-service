@@ -63,8 +63,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 #if !APP_STORE
         if model.needsFirstStartSetup() {
             showSettingsWindow()
-        } else {
-            promptForRelayCliInstallIfNeeded()
         }
 #else
         if model.needsFirstStartSetup() {
@@ -321,33 +319,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
 #if !APP_STORE
-    private func promptForRelayCliInstallIfNeeded() {
-        let status = model.relayCliInstallStatus()
-
-        guard status.shouldPrompt else {
-            return
-        }
-
-        let suppressionKey = "relayCliInstallPromptSuppressed.\(status.status).\(status.sourceSignature ?? status.version)"
-
-        if UserDefaults.standard.bool(forKey: suppressionKey) {
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = status.status == "stale" ? "Update the relay CLI?" : "Install the relay CLI?"
-        alert.informativeText = "TSRS works best when agents can run `relay` from any project. The CLI will be copied to \(status.targetPath)."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: status.status == "stale" ? "Update" : "Install")
-        alert.addButton(withTitle: "Not Now")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            showRelayCliInstallResult(model.installRelayCli())
-        } else {
-            UserDefaults.standard.set(true, forKey: suppressionKey)
-        }
-    }
-
     private func showRelayCliInstallResult(_ result: RelayCliInstallResult) {
         let alert = NSAlert()
         alert.messageText = result.title
@@ -2541,17 +2512,37 @@ final class MenuBarModel {
     }
 
     func installRelayCli() -> RelayCliInstallResult {
-        let command = runBundledRelay(arguments: ["install-cli"])
+        let preflight = relayCliInstallStatus()
 
-        guard command.status == 0 else {
+        if preflight.status == "current" {
             return RelayCliInstallResult(
-                succeeded: false,
-                title: "Could not install relay CLI",
-                detail: command.stderr.isEmpty ? command.stdout : command.stderr
+                succeeded: true,
+                title: "relay CLI is already installed",
+                detail: "Installed at \(preflight.targetPath)."
             )
         }
 
-        let status = parseRelayCliInstallStatus(command.stdout)
+        if preflight.status == "source-missing" || preflight.status == "foreign" {
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: preflight.message
+            )
+        }
+
+        let command = runBundledRelay(arguments: ["install-cli"])
+
+        if command.status != 0 {
+            let privileged = installRelayCliWithAdministratorPrivileges(sourcePath: preflight.sourcePath, targetPath: preflight.targetPath)
+
+            if !privileged.succeeded {
+                return privileged
+            }
+        }
+
+        let status = command.status == 0
+            ? parseRelayCliInstallStatus(command.stdout)
+            : relayCliInstallStatus()
 
         guard status.status == "current" else {
             return RelayCliInstallResult(
@@ -2569,6 +2560,54 @@ final class MenuBarModel {
             succeeded: true,
             title: "relay CLI installed",
             detail: "Installed \(status.targetPath).\(pathNote)"
+        )
+    }
+
+    private func installRelayCliWithAdministratorPrivileges(sourcePath: String?, targetPath: String) -> RelayCliInstallResult {
+        guard let sourcePath else {
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: "The bundled app-contents CLI could not be found. Rebuild or reinstall the app."
+            )
+        }
+
+        let script = """
+        on run argv
+          set src to item 1 of argv
+          set dst to item 2 of argv
+          set dirCommand to "/usr/bin/dirname " & quoted form of dst
+          set dstDir to do shell script dirCommand
+          set installCommand to "/bin/mkdir -p " & quoted form of dstDir & " && if [ -L " & quoted form of dst & " ]; then echo 'Refusing to overwrite symlink: " & quoted form of dst & "' >&2; exit 73; fi && /bin/cp -f " & quoted form of src & " " & quoted form of dst & " && /bin/chmod 755 " & quoted form of dst
+          do shell script installCommand with administrator privileges
+        end run
+        """
+
+        let command = runAppleScript(script: script, arguments: [sourcePath, targetPath])
+
+        guard command.status == 0 else {
+            let detail = command.stderr.isEmpty ? command.stdout : command.stderr
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: detail.isEmpty ? "The administrator install was cancelled or failed." : detail
+            )
+        }
+
+        let status = relayCliInstallStatus()
+
+        guard status.status == "current" else {
+            return RelayCliInstallResult(
+                succeeded: false,
+                title: "Could not install relay CLI",
+                detail: status.message
+            )
+        }
+
+        return RelayCliInstallResult(
+            succeeded: true,
+            title: "relay CLI installed",
+            detail: "Installed \(status.targetPath)."
         )
     }
 
@@ -2602,6 +2641,30 @@ final class MenuBarModel {
 
         process.executableURL = relayURL
         process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return RelayCliCommandResult(status: 1, stdout: "", stderr: error.localizedDescription)
+        }
+
+        return RelayCliCommandResult(
+            status: Int(process.terminationStatus),
+            stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+            stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        )
+    }
+
+    private func runAppleScript(script: String, arguments: [String]) -> RelayCliCommandResult {
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script, "--"] + arguments
         process.standardOutput = stdout
         process.standardError = stderr
 

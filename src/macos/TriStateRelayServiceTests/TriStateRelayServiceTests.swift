@@ -18,6 +18,25 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("Click the button, then press a valid key combination."))
     }
 
+    func testAppDoesNotPromptForCliInstallOnLaunch() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertFalse(source.contains("promptForRelayCliInstallIfNeeded"))
+        XCTAssertFalse(source.contains("Install the relay CLI?"))
+        XCTAssertFalse(source.contains("relayCliInstallPromptSuppressed"))
+    }
+
+    func testPrivilegedCliInstallUsesQuotedAppleScriptArguments() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("installRelayCliWithAdministratorPrivileges(sourcePath: preflight.sourcePath, targetPath: preflight.targetPath)"))
+        XCTAssertTrue(source.contains("process.executableURL = URL(fileURLWithPath: \"/usr/bin/osascript\")"))
+        XCTAssertTrue(source.contains("process.arguments = [\"-e\", script, \"--\"] + arguments"))
+        XCTAssertTrue(source.contains("quoted form of src"))
+        XCTAssertTrue(source.contains("quoted form of dst"))
+        XCTAssertTrue(source.contains("with administrator privileges"))
+    }
+
     func testSettingsWindowSupportsKeyboardNavigationAndDismissal() throws {
         let source = try triStateRelayServiceSource()
 
