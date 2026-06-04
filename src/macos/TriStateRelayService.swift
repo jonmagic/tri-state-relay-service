@@ -850,6 +850,7 @@ final class ShortcutRecorderButton: NSButton {
     }
     var onShortcut: ((ShortcutValidationResult) -> Void)?
     private var isRecording = false
+    private var keyMonitor: Any?
 
     init() {
         super.init(frame: .zero)
@@ -872,6 +873,7 @@ final class ShortcutRecorderButton: NSButton {
         isRecording = true
         title = "Press shortcut…"
         window?.makeFirstResponder(self)
+        installKeyMonitor()
     }
 
     override func keyDown(with event: NSEvent) {
@@ -880,16 +882,50 @@ final class ShortcutRecorderButton: NSButton {
             return
         }
 
-        isRecording = false
-        onShortcut?(KeyboardShortcut.recording(keyCode: UInt32(event.keyCode), modifierFlags: event.modifierFlags))
+        record(event)
     }
 
     override func resignFirstResponder() -> Bool {
         if isRecording {
-            isRecording = false
-            title = shortcut.displayName
+            stopRecording(resetTitle: true)
         }
         return super.resignFirstResponder()
+    }
+
+    deinit {
+        removeKeyMonitor()
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.isRecording else {
+                return event
+            }
+            self.record(event)
+            return nil
+        }
+    }
+
+    private func record(_ event: NSEvent) {
+        let result = KeyboardShortcut.recording(keyCode: UInt32(event.keyCode), modifierFlags: event.modifierFlags)
+        stopRecording(resetTitle: false)
+        onShortcut?(result)
+    }
+
+    private func stopRecording(resetTitle: Bool) {
+        isRecording = false
+        removeKeyMonitor()
+        if resetTitle {
+            title = shortcut.displayName
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
     }
 }
 
@@ -915,24 +951,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
-    private let shortcutRecorderButton = ShortcutRecorderButton()
-    private let shortcutStatusView = NSTextField(labelWithString: "")
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
-    private let cliSectionButton = NSButton(title: "CLI", target: nil, action: nil)
+    private let cliSectionButton = NSButton(title: "Setup", target: nil, action: nil)
     private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
-    private let shortcutSectionButton = NSButton(title: "Shortcut", target: nil, action: nil)
     private let secondarySectionButton = NSButton(title: settingsSecondarySectionTitle, target: nil, action: nil)
     private let cliSectionRow = SidebarRowView()
     private let voiceSectionRow = SidebarRowView()
-    private let shortcutSectionRow = SidebarRowView()
     private let secondarySectionRow = SidebarRowView()
     private let cliIconView = NSImageView(image: sidebarIcon(systemName: "terminal"))
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
-    private let shortcutIconView = NSImageView(image: sidebarIcon(systemName: "keyboard"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
     private let voiceOptions = availableSpeechVoiceOptions()
 
@@ -948,13 +979,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.state = .active
         configureSidebarRow(cliSectionRow, button: cliSectionButton, iconView: cliIconView, selected: true)
         configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: false)
-        configureSidebarRow(shortcutSectionRow, button: shortcutSectionButton, iconView: shortcutIconView, selected: false)
         configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
         settingsTabView.translatesAutoresizingMaskIntoConstraints = false
         settingsTabView.tabViewType = .noTabsNoBorder
-        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "CLI"))
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Setup"))
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Voice"))
-        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Shortcut"))
 #if APP_STORE
         settingsTabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
 #else
@@ -965,7 +994,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         content.addSubview(sidebar)
         sidebar.addSubview(cliSectionRow)
         sidebar.addSubview(voiceSectionRow)
-        sidebar.addSubview(shortcutSectionRow)
         sidebar.addSubview(secondarySectionRow)
         content.addSubview(settingsTabView)
 
@@ -984,27 +1012,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         configureSetupIntroView()
         configureCliStatusView()
-        settingsTabView.tabViewItem(at: 0).label = "CLI"
+        settingsTabView.tabViewItem(at: 0).label = "Setup"
         settingsTabView.tabViewItem(at: 0).view = cliTabView()
         settingsTabView.tabViewItem(at: 1).label = "Voice"
         settingsTabView.tabViewItem(at: 1).view = voiceTabView()
-        settingsTabView.tabViewItem(at: 2).label = "Shortcut"
-        settingsTabView.tabViewItem(at: 2).view = shortcutTabView()
         cliSectionButton.target = self
         cliSectionButton.action = #selector(selectCliSection)
         voiceSectionButton.target = self
         voiceSectionButton.action = #selector(selectVoiceSection)
-        shortcutSectionButton.target = self
-        shortcutSectionButton.action = #selector(selectShortcutSection)
         secondarySectionButton.target = self
         secondarySectionButton.action = #selector(selectSecondarySection)
         voicePopUpButton.target = self
         voicePopUpButton.action = #selector(selectVoice(_:))
         voicePreviewButton.target = self
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
-        shortcutRecorderButton.onShortcut = { [weak self] result in
-            self?.recordShortcut(result)
-        }
         setupShortcutRecorderButton.onShortcut = { [weak self] result in
             self?.recordShortcut(result)
         }
@@ -1025,13 +1046,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
             voiceSectionRow.topAnchor.constraint(equalTo: cliSectionRow.bottomAnchor, constant: 6),
             voiceSectionRow.heightAnchor.constraint(equalTo: cliSectionRow.heightAnchor),
-            shortcutSectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
-            shortcutSectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
-            shortcutSectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
-            shortcutSectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
             secondarySectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
-            secondarySectionRow.topAnchor.constraint(equalTo: shortcutSectionRow.bottomAnchor, constant: 6),
+            secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
             settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
@@ -1065,14 +1082,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         updateSidebarSelection(selectedIndex: 1)
     }
 
-    @objc private func selectShortcutSection() {
+    @objc private func selectSecondarySection() {
         settingsTabView.selectTabViewItem(at: 2)
         updateSidebarSelection(selectedIndex: 2)
-    }
-
-    @objc private func selectSecondarySection() {
-        settingsTabView.selectTabViewItem(at: 3)
-        updateSidebarSelection(selectedIndex: 3)
     }
 
     @objc private func selectVoice(_ sender: Any?) {
@@ -1230,54 +1242,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
 
-    private func shortcutTabView() -> NSView {
-        let title = NSTextField(labelWithString: "Command Palette Shortcut")
-        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
-
-        let subtitle = NSTextField(labelWithString: "Record the global shortcut that opens the command palette with Play Next selected. Right click still opens an empty palette.")
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.lineBreakMode = .byWordWrapping
-        subtitle.maximumNumberOfLines = 0
-
-        let shortcutLabel = NSTextField(labelWithString: "Keyboard shortcut")
-        shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-
-        shortcutStatusView.textColor = .secondaryLabelColor
-        shortcutStatusView.font = NSFont.systemFont(ofSize: 12)
-        shortcutStatusView.lineBreakMode = .byWordWrapping
-        shortcutStatusView.maximumNumberOfLines = 0
-
-        let note = NSTextField(labelWithString: "Click Record Shortcut, then press a key combination. Include Command with at least one modifier. Control + Option + Command + V is reserved and will be rejected.")
-        note.textColor = .secondaryLabelColor
-        note.font = NSFont.systemFont(ofSize: 12)
-        note.lineBreakMode = .byWordWrapping
-        note.maximumNumberOfLines = 0
-
-        let stack = NSStackView(views: [title, subtitle, shortcutLabel, shortcutRecorderButton, shortcutStatusView, note])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        shortcutRecorderButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
-        subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-        ])
-        return container
-    }
-
     private func cliTabView() -> NSView {
-        let title = NSTextField(labelWithString: "Install relay CLI")
+        let title = NSTextField(labelWithString: "Setup")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Install `relay` into an accessible command path so agents can enqueue updates from any project. The installer updates TSRS-owned copies but refuses to overwrite a different binary.")
+        let subtitle = NSTextField(labelWithString: "Install `relay` where agents can find it and record the command-palette shortcut before normal use.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 0
@@ -1296,7 +1265,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let shortcutLabel = NSTextField(labelWithString: "Command palette shortcut")
         shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
-        let shortcutNote = NSTextField(labelWithString: "Record this up front so the keyboard-first palette is ready before normal use.")
+        let shortcutNote = NSTextField(labelWithString: "Click the shortcut button, then press a valid combination. Control + Option + Command + V is reserved and will be rejected.")
         shortcutNote.textColor = .secondaryLabelColor
         shortcutNote.font = NSFont.systemFont(ofSize: 12)
         shortcutNote.lineBreakMode = .byWordWrapping
@@ -1375,11 +1344,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
         currentShortcut = selectedShortcut
-        shortcutRecorderButton.shortcut = selectedShortcut
         setupShortcutRecorderButton.shortcut = selectedShortcut
-        shortcutStatusView.stringValue = "Current shortcut: \(selectedShortcut.displayName)"
         setupShortcutStatusView.stringValue = "Current shortcut: \(selectedShortcut.displayName)"
-        shortcutStatusView.textColor = .secondaryLabelColor
         setupShortcutStatusView.textColor = .secondaryLabelColor
     }
 
@@ -1387,22 +1353,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         switch result {
         case .valid(let shortcut):
             currentShortcut = shortcut
-            shortcutRecorderButton.shortcut = shortcut
             setupShortcutRecorderButton.shortcut = shortcut
-            shortcutStatusView.stringValue = "Saved shortcut: \(shortcut.displayName)"
             setupShortcutStatusView.stringValue = "Saved shortcut: \(shortcut.displayName)"
-            shortcutStatusView.textColor = .secondaryLabelColor
             setupShortcutStatusView.textColor = .secondaryLabelColor
             model.saveCommandPaletteShortcut(shortcut)
             model.completeFirstStartSetup()
             updateSetupIntroVisibility()
             onSave()
         case .invalid(let message):
-            shortcutRecorderButton.shortcut = currentShortcut
             setupShortcutRecorderButton.shortcut = currentShortcut
-            shortcutStatusView.stringValue = message
             setupShortcutStatusView.stringValue = message
-            shortcutStatusView.textColor = .systemRed
             setupShortcutStatusView.textColor = .systemRed
         }
     }
@@ -1435,19 +1395,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func updateSidebarSelection(selectedIndex: Int) {
         let cliSelected = selectedIndex == 0
         let voiceSelected = selectedIndex == 1
-        let shortcutSelected = selectedIndex == 2
-        let secondarySelected = selectedIndex == 3
+        let secondarySelected = selectedIndex == 2
         configureSidebarButton(cliSectionButton, selected: cliSelected)
         configureSidebarButton(voiceSectionButton, selected: voiceSelected)
-        configureSidebarButton(shortcutSectionButton, selected: shortcutSelected)
         configureSidebarButton(secondarySectionButton, selected: secondarySelected)
         cliIconView.contentTintColor = cliSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         voiceIconView.contentTintColor = voiceSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
-        shortcutIconView.contentTintColor = shortcutSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         secondaryIconView.contentTintColor = secondarySelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         cliSectionRow.selected = cliSelected
         voiceSectionRow.selected = voiceSelected
-        shortcutSectionRow.selected = shortcutSelected
         secondarySectionRow.selected = secondarySelected
     }
 }

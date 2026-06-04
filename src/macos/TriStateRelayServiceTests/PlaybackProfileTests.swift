@@ -34,7 +34,7 @@ final class PlaybackProfileTests: XCTestCase {
             return XCTFail("selectVoice action is missing")
         }
         let remainder = source[selectVoiceRange.lowerBound...]
-        guard let endRange = remainder.range(of: "    @objc private func selectShortcut") else {
+        guard let endRange = remainder.range(of: "    @objc private func installRelayCliFromSetup") else {
             return XCTFail("selectVoice action boundary is missing")
         }
         let selectVoiceBody = remainder[..<endRange.lowerBound]

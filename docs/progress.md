@@ -95,7 +95,7 @@ Then-recommended next slice: add direct-download signing/notarization packaging,
 Command palette update:
 
 1. The Raycast-style command palette is the keyboard-first relay action surface.
-2. The configurable Settings > Shortcut choice opens the palette with `play next` selected; the default is Control-Option-Command-Space.
+2. The configurable Setup panel shortcut choice opens the palette with `play next` selected; the default is Control-Option-Command-Space.
 3. Right click opens the palette with an empty query; there is no second global shortcut for the empty-query palette, and Control-Option-Command-V remains unregistered.
 4. Left click on the menu bar icon continues to play the next message.
 5. `docs/command-palette.md` records the current interaction contract, action
@@ -161,9 +161,9 @@ First-start setup update:
 
 CLI install panel update:
 
-1. Settings now opens with the CLI panel first, so first-start setup shows the
+1. Settings now opens with the Setup panel first, so first-start setup shows the
    install action before shortcut and voice choices.
-2. The CLI panel recommends installing to `~/.local/bin/relay`, explains that
+2. The Setup panel recommends installing to `~/.local/bin/relay`, explains that
    agents need an accessible command path, and preserves safe overwrite behavior
    by relying on the existing TSRS-owned install checks.
 3. Settings includes a copy button for the full bundled app-contents `relay`

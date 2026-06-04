@@ -8,14 +8,14 @@ or manage those relays when you are ready.
 
 1. Build or install the direct-download macOS app.
 2. Launch Tri-State Relay Service from the app bundle.
-3. On first launch, Settings opens automatically on the CLI panel.
+3. On first launch, Settings opens automatically on the Setup panel.
 4. Install the bundled `relay` CLI up front, then choose a command-palette
    shortcut and voice.
 
 The recommended CLI install path is `~/.local/bin/relay` because agents can use
 it from any project once `~/.local/bin` is on `PATH`. TSRS updates TSRS-owned
 copies at that path but refuses to overwrite a different binary. If you prefer
-not to install it, use the Settings > CLI copy button to copy the full bundled
+not to install it, use the Setup panel copy button to copy the full bundled
 app-contents CLI path and put that full path in your agent instructions.
 
 ## First setup
@@ -84,8 +84,8 @@ Left click the menu bar icon for the fastest Play Next path. Right click opens
 the command palette with an empty search. The configurable keyboard shortcut
 opens the command palette with Play Next selected, so pressing Return immediately
 plays the next eligible relay. The default shortcut is `Control` + `Option` +
-`Command` + `Space`; change it in Settings > Shortcut by clicking Record
-Shortcut and pressing a valid combination. TSRS rejects invalid or reserved
+`Command` + `Space`; change it in the Setup panel by clicking the shortcut
+button and pressing a valid combination. TSRS rejects invalid or reserved
 combinations, including `Control` + `Option` + `Command` + `V`, instead of
 silently falling back.
 
@@ -154,6 +154,12 @@ reset:
 
 ```sh
 relay first-start dev-reset-database --confirm
+```
+
+If `relay` is not installed on `PATH`, use the bundled CLI from the rebuilt app:
+
+```sh
+"dist/macos/Tri-State Relay Service.app/Contents/MacOS/relay" first-start dev-reset-database --confirm
 ```
 
 This removes the configured app database and its SQLite sidecar files

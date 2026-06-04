@@ -94,7 +94,7 @@ message bodies in palette results by default.
 1. Commands are modeled in Swift and rendered by the command palette.
 2. The native AppKit palette supports search, selection, Return, Escape, and
    line-scoped command groups.
-3. The Settings > Shortcut recorder opens the palette with `play next` selected;
+3. The Setup panel shortcut recorder opens the palette with `play next` selected;
    the default is Control-Option-Command-Space.
 4. Right click opens the palette with an empty query.
 5. Left click remains Play Next.
