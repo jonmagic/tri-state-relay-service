@@ -17,7 +17,10 @@ scripts/swift-cli-parity.sh
 scripts/restart-macos-app.sh
 ```
 
-The direct bundle must contain `Contents/MacOS/relay` and must not contain `relay-processor`.
+The direct bundle must contain `Contents/MacOS/relay`, must not contain
+`relay-processor`, and defaults to arm64 for both the app executable and bundled
+CLI. Use `TSRS_MACOS_ARCHS="arm64 x86_64"` only when deliberately validating a
+future universal distribution path.
 
 ## Covered CLI surface
 

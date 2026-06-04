@@ -2,9 +2,24 @@
 set -euo pipefail
 
 profile="${1:-direct}"
+macos_archs="${TSRS_MACOS_ARCHS:-}"
 
 if [[ "$profile" != "direct" && "$profile" != "app-store" ]]; then
   echo "unknown macOS build profile: $profile" >&2
+  exit 1
+fi
+
+if [[ -z "$macos_archs" ]]; then
+  if [[ "$profile" == "direct" ]]; then
+    macos_archs="arm64"
+  else
+    macos_archs="$(uname -m)"
+  fi
+fi
+
+if [[ "$macos_archs" != "arm64" && "$macos_archs" != "x86_64" && "$macos_archs" != "arm64 x86_64" && "$macos_archs" != "x86_64 arm64" ]]; then
+  echo "unsupported TSRS_MACOS_ARCHS: $macos_archs" >&2
+  echo "supported values: arm64, x86_64, 'arm64 x86_64'" >&2
   exit 1
 fi
 
@@ -67,6 +82,22 @@ assert_relay_processor_not_bundled() {
   fi
 }
 
+normalize_archs() {
+  printf "%s\n" $1 | sort | xargs
+}
+
+verify_archs() {
+  local binary="$1"
+  local expected="$2"
+  local actual
+  actual="$(lipo -archs "$binary")"
+
+  if [[ "$(normalize_archs "$actual")" != "$(normalize_archs "$expected")" ]]; then
+    echo "unexpected architectures for $binary: $actual; expected: $expected" >&2
+    exit 1
+  fi
+}
+
 verify_bundle() {
   local app_path="$1"
   local info_plist="$app_path/Contents/Info.plist"
@@ -99,6 +130,8 @@ verify_bundle() {
   fi
 
   assert_relay_processor_not_bundled "$app_path"
+  verify_archs "$app_path/Contents/MacOS/$executable" "$macos_archs"
+  verify_archs "$app_path/Contents/MacOS/relay" "$macos_archs"
 
   local ui_element
   ui_element="$(plist_value "$info_plist" LSUIElement)"
@@ -116,6 +149,8 @@ xcodebuild_args=(
   -scheme "$scheme"
   -configuration Release
   -derivedDataPath "$derived_data"
+  "ARCHS=$macos_archs"
+  ONLY_ACTIVE_ARCH=NO
   CODE_SIGNING_ALLOWED=NO
 )
 
@@ -129,6 +164,8 @@ xcodebuild \
   -target relay-native \
   -configuration Release \
   "SYMROOT=$PWD/$relay_build_root" \
+  "ARCHS=$macos_archs" \
+  ONLY_ACTIVE_ARCH=NO \
   CODE_SIGNING_ALLOWED=NO
 
 cp -R "$built_app" "$dist_root"

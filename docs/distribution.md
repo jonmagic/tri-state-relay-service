@@ -53,6 +53,19 @@ hardened runtime, signs the app, submits a temporary zip to Apple notarization,
 staples the ticket to the `.app`, validates the stapled app, and only then
 writes `dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`.
 
+Direct-download builds are arm64-only by default to keep app and release size
+small. The build wrapper verifies that both the app executable and bundled
+`relay` helper match the requested architecture. If a future distribution need
+requires a universal build, opt in deliberately:
+
+```sh
+TSRS_MACOS_ARCHS="arm64 x86_64" scripts/build-macos.sh direct
+TSRS_MACOS_ARCHS="arm64 x86_64" TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
+```
+
+Universal releases are labeled `macos-universal`; the default direct-download
+release remains `macos-arm64`.
+
 ## Payment model
 
 When Pro licensing is needed, prefer a direct-download license-key flow:

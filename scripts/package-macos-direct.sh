@@ -9,8 +9,19 @@ info_plist="$app_path/Contents/Info.plist"
 releases_dir="dist/releases"
 submission_zip="$releases_dir/notary-submission.zip"
 version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" src/macos/Info.plist)"
-arch="$(uname -m)"
-release_zip="$releases_dir/Tri-State Relay Service-$version-macos-$arch.zip"
+build_archs="${TSRS_MACOS_ARCHS:-arm64}"
+if [[ "$build_archs" != "arm64" && "$build_archs" != "x86_64" && "$build_archs" != "arm64 x86_64" && "$build_archs" != "x86_64 arm64" ]]; then
+  echo "unsupported TSRS_MACOS_ARCHS: $build_archs" >&2
+  echo "supported values: arm64, x86_64, 'arm64 x86_64'" >&2
+  exit 1
+fi
+
+if [[ "$build_archs" == "arm64 x86_64" || "$build_archs" == "x86_64 arm64" ]]; then
+  release_arch="universal"
+else
+  release_arch="$build_archs"
+fi
+release_zip="$releases_dir/Tri-State Relay Service-$version-macos-$release_arch.zip"
 notary_profile="${TSRS_NOTARYTOOL_PROFILE:-}"
 
 ensure_developer_id() {

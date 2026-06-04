@@ -128,3 +128,12 @@ Docs audit update:
    active product goal.
 4. Current next slice: split the native app into smaller Swift files while
    preserving app-owned playback and command-palette behavior.
+
+Direct-build architecture update:
+
+1. `scripts/build-macos.sh direct` now defaults to arm64 and verifies the built
+   app executable plus bundled `relay` helper architectures.
+2. Universal direct-download builds remain available only through the deliberate
+   `TSRS_MACOS_ARCHS="arm64 x86_64"` override.
+3. `scripts/package-macos-direct.sh` inherits the same architecture selection and
+   labels default direct releases as `macos-arm64`.

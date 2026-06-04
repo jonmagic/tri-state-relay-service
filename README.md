@@ -52,6 +52,10 @@ scripts/restart-macos-app.sh
 
 The macOS app is built through `src/macos/TriStateRelayService.xcodeproj`; the build wrapper bundles the Swift `relay` CLI for agent integrations and rejects any app bundle that contains `relay-processor`.
 
+Direct-download builds are arm64-only by default. If a future distribution need
+requires a universal app, opt in explicitly with
+`TSRS_MACOS_ARCHS="arm64 x86_64" scripts/build-macos.sh direct`.
+
 The primary distribution direction is a signed and notarized direct-download Mac app with a standard bundled or installable `relay` CLI. The Mac App Store is no longer an active product goal; developer customization is favored instead, including settings such as which agent summarizes many queued messages. Future Pro licensing should use a direct-download license-key flow rather than StoreKit. See `docs/distribution.md`.
 
 The legacy App Store-safe profile remains only as a hardening reference. Do not optimize new product work for App Store constraints when that conflicts with direct-download customization. Signing/notarization should copy and sign the bundled `relay` helper before sealing the app bundle.
