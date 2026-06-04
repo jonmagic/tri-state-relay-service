@@ -1,20 +1,22 @@
-# App Store-safe profile
+# Legacy App Store-safe profile
 
-TSRS is now aiming first at signed direct-download distribution with a standard
+TSRS has given up on App Store builds as an active product goal in favor of
+signed direct-download distribution, developer customization, and a standard
 CLI. See `docs/distribution.md` for the primary distribution direction.
 
-The App Store-safe profile remains as a hardening and safety profile, not the
-main release target. It helps keep native app behavior honest by removing
-review-risky command execution from the app surface.
+The App Store-safe profile remains as a legacy hardening reference only. It can
+help explain safer boundaries, but new product work should not optimize for App
+Store constraints when that conflicts with direct-download customization such as
+choosing the agent used to summarize many messages.
 
-TSRS currently has two distribution profiles:
+TSRS currently still has two distribution profile code paths:
 
 1. `direct`: direct-download, power-user, CLI-first behavior.
 2. `app-store`: review-palatable behavior that avoids arbitrary command execution from the app surface.
 
-The App Store-safe profile is not a Mac App Store release checklist. It is a
-code and packaging seam that keeps review-risky behavior out of the app build
-while the direct profile remains the product and dogfooding path.
+The App Store-safe profile is not a Mac App Store release checklist and is not a
+required product gate. It is a code and packaging seam kept for reference while
+the direct profile remains the product and dogfooding path.
 
 ## Current profile contract
 
@@ -41,7 +43,7 @@ The direct profile keeps:
 For signed direct-download distribution, CLI-based agent enqueueing is a normal
 product capability.
 
-For App Store-safe profile builds, CLI-based terminal enqueueing remains
+For legacy App Store-safe profile builds, CLI-based terminal enqueueing remains
 disabled. When `TSRS_DISTRIBUTION_PROFILE=app-store`, terminal
 `relay --line ... --message ...` enqueueing is rejected. The App Store-safe app
 can still use native Swift SQLite access to claim and update relays during local
@@ -62,9 +64,10 @@ sandboxing:
 3. App-owned constrained local IPC endpoint for enqueue-only relays.
 4. Direct profile remains the CLI integration path, while App Store profile is a constrained local/free introduction.
 
-The current bias is signed direct download with standard CLI integration. Do
-not add IPC, App Groups, launch agents, or sandbox entitlements without a
-separate architecture decision and human checkpoint.
+The current direction is signed direct download with standard CLI integration
+and developer customization. Do not add IPC, App Groups, launch agents, or
+sandbox entitlements without a separate architecture decision and human
+checkpoint.
 
 ## Review note
 

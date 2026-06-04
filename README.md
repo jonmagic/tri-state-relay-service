@@ -79,22 +79,16 @@ The macOS app is built through
 and bundles the Perry-built `relay` CLI for agent integrations.
 
 The primary distribution direction is a signed and notarized direct-download
-Mac app with a standard bundled or installable `relay` CLI. Future Pro
-licensing should use a direct-download license-key flow rather than StoreKit
-unless the Mac App Store becomes a primary target again. See
-`docs/distribution.md`.
+Mac app with a standard bundled or installable `relay` CLI. The Mac App Store
+is no longer an active product goal; developer customization is favored instead,
+including settings such as which agent summarizes many queued messages. Future
+Pro licensing should use a direct-download license-key flow rather than
+StoreKit. See `docs/distribution.md`.
 
-Build the App Store-safe profile:
-
-```sh
-npm run build:macos:app-store
-open "dist/macos-app-store/Tri-State Relay Service.app"
-```
-
-The App Store-safe profile passes the `APP_STORE` Swift compilation condition
-through xcodebuild. The direct profile is the primary dogfooding and
-distribution path. Signing/notarization should copy and sign the bundled
-`relay` helper before sealing the app bundle.
+The legacy App Store-safe profile remains only as a hardening reference. Do not
+optimize new product work for App Store constraints when that conflicts with
+direct-download customization. Signing/notarization should copy and sign the
+bundled `relay` helper before sealing the app bundle.
 
 Create a signed and notarized direct-download zip:
 
@@ -113,13 +107,12 @@ click opens line controls; left click selects the next queued line for playback.
 When unmuted, the app keeps playing incoming relays on the active line. Other
 lines stay quiet and can be pulled from their line submenu.
 
-Both macOS profiles are packaged from the CLI-only native build and do not
-bundle or launch the legacy processor. The App Store-safe profile keeps terminal
-enqueueing disabled and hides external inactive-line combiner command templates.
-Playback is claimed and spoken by the app. Direct builds currently launch
-`/usr/bin/say` from Swift so configured Siri/say voices keep working, while the
-App Store-safe profile uses AVFoundation and does not launch external speech
-commands.
+The direct macOS app is packaged from the CLI-only native build and does not
+bundle or launch the legacy processor. Playback is claimed and spoken by the
+app. Direct builds currently launch `/usr/bin/say` from Swift so configured
+Siri/say voices keep working. The legacy App Store-safe profile uses
+AVFoundation and avoids external speech commands, but it is not the active
+product path.
 
 The direct app can install or update the bundled `relay` CLI from the menu. On
 first launch, it prompts when the CLI is missing or stale, copies the bundled
@@ -133,13 +126,12 @@ is active, TSRS leaves relays queued and retries later instead of speaking over
 the user. This is a best-effort CoreAudio device-state check; TSRS does not
 record or inspect microphone audio.
 
-The profile also exposes a capability seam through `relay settings`. The
-App Store-safe profile reports native speech, line-scoped source actions, no
-terminal enqueueing, disabled external command templates, and a one-line
-free-tier limit. The direct profile reports the power-user command-template,
-terminal enqueue, and line-scoped source action capabilities. No purchase flow
-or StoreKit behavior is implemented yet. `relay status` also reports the active
-profile and capabilities for automation and diagnostics.
+The profile also exposes a capability seam through `relay settings`. The direct
+profile reports the power-user command-template, terminal enqueue, and
+line-scoped source action capabilities. Future customization should fit this
+direct-download model, including configurable agents for summarizing many
+messages. No purchase flow is implemented yet. `relay status` also reports the
+active profile and capabilities for automation and diagnostics.
 
 Normal CLI usage remains the queue and automation interface for agents, while
 the menu bar app owns interactive queue controls and speech state through native

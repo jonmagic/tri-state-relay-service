@@ -1,12 +1,13 @@
 # Distribution direction
 
 TSRS is moving toward a signed direct-download Mac app with a standard local
-CLI. The Mac App Store is no longer the primary release path.
+CLI and developer customization. The Mac App Store is no longer an active
+product goal.
 
 This keeps the product aligned with its core value: local developer tooling
-that agents can integrate with through a normal command-line interface. It
-also leaves room for Pro features that would be awkward or impossible in a
-sandboxed App Store build.
+that agents can integrate with through a normal command-line interface. It also
+leaves room for customization that would be awkward or impossible in a sandboxed
+App Store build, such as choosing which agent summarizes many queued messages.
 
 ## Preferred release model
 
@@ -15,7 +16,8 @@ sandboxed App Store build.
 3. Keep the relay queue local-first.
 4. Use native macOS APIs wherever practical.
 5. Move app behavior toward Xcode/Swift over time instead of relying on Perry-built helpers long term.
-6. Add Pro licensing outside the App Store when needed.
+6. Add developer customization, including configurable summarization agents.
+7. Add Pro licensing outside the App Store when needed.
 
 `relay` is the CLI name.
 
@@ -64,7 +66,7 @@ Good provider options:
 1. Paddle or Lemon Squeezy if merchant-of-record, tax/VAT handling, receipts, and license-key infrastructure matter more than maximum control.
 2. Stripe Checkout if maximum control matters more than operational simplicity.
 
-Do not add StoreKit unless the App Store becomes a primary target again.
+Do not add StoreKit unless the App Store direction is explicitly reopened.
 
 ## Native app direction
 
@@ -87,16 +89,16 @@ viewing relay text, searching prior relays, dismissing or acknowledging items,
 and acting on a selected line. This would be a better home for richer relay
 text and history than the compact menu bar menu.
 
-## Relationship to App Store-safe profile
+## Relationship to legacy App Store-safe profile
 
-The `app-store` profile remains useful as a safety harness and review-risk
-reduction exercise, but it is not the main release target. Keep the profile
-when it helps enforce good boundaries:
+The `app-store` profile remains useful only as a legacy safety harness and
+review-risk reference. It is not an active product gate. Keep profile-specific
+hardening notes when they help explain good boundaries:
 
 1. No arbitrary command execution from the app surface.
 2. AVFoundation app-owned playback with no external speech commands.
 3. Native line-scoped source actions.
 4. Clear capability reporting.
 
-Do not let App Store constraints block direct-download Pro features that fit
-the product and are safe for local developer tooling.
+Do not let App Store constraints block direct-download customization or Pro
+features that fit the product and are safe for local developer tooling.

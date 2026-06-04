@@ -66,16 +66,18 @@ Agent miss captured:
 
 1. A prior agent stopped mid-slice without validation or completion.
 2. The missing primitive was profile-specific exit criteria in repository guidance.
-3. `AGENTS.md` now requires direct and App Store-safe profile builds plus bundle inspection for profile changes.
+3. `AGENTS.md` now requires direct-profile builds plus bundle inspection for app-visible direct changes; App Store-safe checks are legacy hardening references unless the App Store direction is explicitly reopened.
 
-Recommended next slice: decide the App Store-safe enqueue/storage architecture before sandboxing or StoreKit work.
+Recommended next slice: prioritize direct-download customization, including configurable agents for summarizing many messages; treat App Store-safe enqueue/storage work as deferred unless the App Store direction is explicitly reopened.
 
 Distribution direction update:
 
 1. The primary path is now a signed and notarized direct-download Mac app with a standard local `relay` CLI.
-2. Future Pro features should use an external license-key flow, likely Paddle, Lemon Squeezy, or Stripe, rather than StoreKit unless the App Store becomes a primary target again.
-3. App Store-safe profile work remains useful as native/safety hardening, but it should not block direct-download Pro features.
-4. The app should still move toward Swift/Xcode and native macOS APIs wherever practical, reducing dependence on Perry-built app helper behavior over time.
+2. App Store builds are no longer an active product goal; developer customization wins when it conflicts with App Store constraints.
+3. Future Pro features should use an external license-key flow, likely Paddle, Lemon Squeezy, or Stripe, rather than StoreKit unless the App Store direction is explicitly reopened.
+4. Direct-download customization should include configurable agents for summarizing many messages.
+5. App Store-safe profile work remains useful only as legacy safety hardening, and it should not block direct-download customization or Pro features.
+6. The app should still move toward Swift/Xcode and native macOS APIs wherever practical, reducing dependence on Perry-built app helper behavior over time.
 
 Recommended next slice: direct-download signing/notarization packaging or Swift/Xcode project migration.
 

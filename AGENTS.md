@@ -39,10 +39,11 @@ explicitly say they remain uncommitted for review.
 Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`. In the direct profile, the Swift app may launch `/usr/bin/say` itself to preserve Siri/say voice behavior. In the App Store-safe profile, playback uses AVFoundation and must not launch external speech commands.
 
 The primary distribution direction is signed direct download with a standard
-local `relay` CLI and future license-key Pro unlocks. The App Store-safe
-profile is a hardening profile, not the default release target. Prefer moving
-normal app behavior toward Swift/Xcode and native macOS APIs while keeping the
-CLI as the agent integration surface.
+local `relay` CLI, developer customization, and future license-key Pro unlocks.
+App Store builds are no longer an active product goal. Keep App Store-safe notes
+as legacy hardening references only, and do not let App Store constraints block
+direct-download customization such as choosing the agent used to summarize many
+messages.
 
 Start with these message states:
 
@@ -120,8 +121,8 @@ Use this order unless there is a strong reason to change it:
 15. Terminal-specific focus adapters where reliable.
 16. Signed direct-download packaging: signing, notarization, and standard CLI installation.
 17. Swift/Xcode migration for app-owned queue, settings, source actions, and playback behavior.
-18. App Store-safe profile hardening: AVFoundation speech, no external command templates, and bundle inspection.
-19. Remove app dependence on `relay-processor`; playback is app-owned in both profiles, with direct-profile `/usr/bin/say` preserved until an explicit product decision replaces the Siri voice path.
+18. Direct-download customization: configurable summarization agents, app-owned speech, and safe local automation.
+19. Remove app dependence on `relay-processor`; playback is app-owned, with direct-profile `/usr/bin/say` preserved until an explicit product decision replaces the Siri voice path.
 
 ## Task exit criteria
 
@@ -130,8 +131,8 @@ Every implementation task should end with:
 - The closest available validation passing.
 - Behavior verified automatically or manually.
 - Documentation updated when commands, state, persistence, or agent workflow changes.
-- For App Store/direct profile changes, both `npm run build:macos:direct` and `npm run build:macos:app-store` should pass and their bundles should be inspected. Neither macOS app profile should bundle `relay-processor`.
-- Distribution and licensing changes must preserve `docs/distribution.md`, and App Store-safe profile changes must preserve `docs/app-store-profile.md`.
+- For app-visible direct-profile changes, `npm run build:macos:direct` should pass and the bundle should be inspected. The app must not bundle `relay-processor`.
+- Distribution, licensing, and customization changes must preserve `docs/distribution.md`. Treat `docs/app-store-profile.md` as legacy hardening reference unless the App Store direction is explicitly reopened.
 - Commit-ready summary with changed files and remaining risks.
 
 ## Self-improvement loop
