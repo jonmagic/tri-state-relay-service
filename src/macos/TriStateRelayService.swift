@@ -23,6 +23,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var playCurrentLineHotKey: EventHotKeyRef?
     private var openMenuHotKey: EventHotKeyRef?
     private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
+        self?.model.refresh()
         self?.refreshStatusItem()
     }
     private lazy var commandPaletteCommandsProvider: () -> [CommandPaletteCommand] = { [weak self] in
@@ -2472,7 +2473,7 @@ final class NativeRelayStore {
 
     private func withDatabase<T>(_ read: (OpaquePointer) -> T?) -> T? {
         var database: OpaquePointer?
-        let path = databasePath()
+        let path = relayCliDatabasePath()
         createDatabaseDirectory(path)
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
 
@@ -2505,7 +2506,7 @@ final class NativeRelayStore {
 
     private func withWriteDatabase<T>(_ mutation: (OpaquePointer) -> T?) -> T? {
         var database: OpaquePointer?
-        let path = databasePath()
+        let path = relayCliDatabasePath()
         createDatabaseDirectory(path)
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
 
@@ -3026,16 +3027,6 @@ final class NativeRelayStore {
     }
 }
 
-private func databasePath() -> String {
-    let environment = ProcessInfo.processInfo.environment
-
-    if let path = environment["TSRS_DB_PATH"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return path
-    }
-
-    let home = environment["HOME"] ?? NSHomeDirectory()
-    return "\(home)/Library/Application Support/Tri-State Relay Service/relay.db"
-}
 
 private func createDatabaseDirectory(_ path: String) {
     let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
@@ -3059,35 +3050,9 @@ private func playbackMode(_ value: String?) -> String {
     value == "ready" ? "ready" : "focus"
 }
 
-private func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {
-    guard sqlite3_column_type(statement, index) != SQLITE_NULL, let text = sqlite3_column_text(statement, index) else {
-        return nil
-    }
 
-    return String(cString: text)
-}
 
-private func commandIsEnabled(_ template: String) -> Bool {
-    let commandText = template
-        .split(whereSeparator: \.isNewline)
-        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        .joined(separator: " ")
 
-    return !commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-}
-
-private func resetBlankCommand(_ value: String, fallback: String) -> String {
-    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : value
-}
-
-private func sqliteError(_ database: OpaquePointer) -> String {
-    guard let message = sqlite3_errmsg(database) else {
-        return "unknown SQLite error"
-    }
-
-    return String(cString: message)
-}
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -3095,22 +3060,3 @@ private func appStoreUnavailableCommand(_ feature: String) -> String {
     "# External \(feature) command execution is unavailable in the App Store-safe profile."
 }
 
-private let defaultInactiveLineCombinerCommand = """
-# Inactive line combiner command.
-# Leave this commented to use latest-only inactive-line behavior.
-# The command must print a JSON object: {"action":"replace|promote|drop","type":"update|blocked|complete","priority":"low|normal|high","message":"short relay"}
-# Placeholders are inserted as single argv values, not shell-expanded.
-#
-# llm CLI: https://github.com/simonw/llm
-# llm prompt <input> --system <system> --no-stream --no-log
-#
-# apfel CLI: https://github.com/Arthur-Ficial/apfel
-# apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>
-"""
-
-private let defaultSpeechCommand = """
-# Speech command.
-# /usr/bin/say ships with macOS, so no extra install is required.
-# Placeholders are inserted as single argv values, not shell-expanded.
-/usr/bin/say <message>
-"""
