@@ -104,7 +104,8 @@ the next agent sees the current state instead of stale guidance:
 4. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
 5. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
 6. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
-7. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
+7. Make direct-download builds arm64-only by default to reduce binary and release size. Preserve a deliberate path for universal builds only if a future distribution need appears.
+8. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
 
 ## Task exit criteria
 
