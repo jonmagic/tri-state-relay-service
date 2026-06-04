@@ -67,8 +67,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]"))
         XCTAssertTrue(source.contains("window.titleVisibility = .hidden"))
         XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
-        XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 48)"))
-        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 48)"))
+        XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 40)"))
+        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32)"))
     }
 
     func testStatusMenuOrderKeepsCoreActionsSimple() throws {
