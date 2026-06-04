@@ -10,8 +10,9 @@ Probe environment:
 - Version: `relay 0.1.0`
 - Database isolation: `TSRS_DB_PATH` pointed at throwaway repository-local
   SQLite files for each probe.
-- Profile isolation: direct profile by default; App Store behavior probed with
-  `TSRS_DISTRIBUTION_PROFILE=app-store`.
+- Profile isolation: direct profile by default. App Store behavior was probed
+  with `TSRS_DISTRIBUTION_PROFILE=app-store` as legacy/profile-reference only;
+  it is no longer an active product target for this migration.
 - App helper authorization: `TSRS_PROCESSOR_AUTH=app-owned-processor`.
 
 ## Global behavior
@@ -182,21 +183,29 @@ prefix. Non-update relay types include a type prefix, for example
 7. `app-mark-heard` and `app-mark-failed` can update any id regardless of
    current status; the oracle does not restrict transitions to `speaking` only.
 
-## Direct versus App Store considerations
+## Direct-download priority and legacy profile reference
 
-1. Terminal enqueue is direct-only in product intent and current CLI logic.
-   The compiled oracle's App Store failure is silent with exit `0`; this should
-   become an explicit migration decision rather than an accidental Swift bug.
-2. App Store profile masks external combiner and speech command templates in
+1. The active product direction is direct-download developer customization. CLI
+   parity work should prioritize the direct profile, local agent integration,
+   and customizable settings such as which agent or command summarizes many
+   inactive-line messages.
+2. App Store behavior in this inventory is legacy/profile-reference, not a
+   future product target. Preserve it only when doing so is cheap and helps keep
+   boundaries understandable; do not let it block direct-download CLI or
+   customization behavior.
+3. Terminal enqueue is direct-only in product intent and current CLI logic. The
+   compiled oracle's App Store failure is silent with exit `0`; capture that
+   only as legacy profile behavior, not as a desired future UX.
+4. App Store profile masks external combiner and speech command templates in
    `settings`, `status`, `combiner`, and `state`, and ignores attempts to set
-   those commands.
-3. `cli-status` and `install-cli` are not currently profile-gated. The migration
-   brief calls out that App Store CLI bundling/install behavior needs a separate
-   decision.
-4. App helper commands are authorization-gated by `TSRS_PROCESSOR_AUTH`, but the
+   those commands. Direct-download migration should instead preserve and improve
+   configurable summarizer/combiner settings.
+5. `cli-status` and `install-cli` are not currently profile-gated. Treat them as
+   direct-download CLI distribution behavior.
+6. App helper commands are authorization-gated by `TSRS_PROCESSOR_AUTH`, but the
    app now uses native Swift SQLite for playback. Keep the commands for parity
    until a product decision removes them.
-5. App-owned playback is profile-specific. The direct profile currently uses
+7. App-owned playback is profile-specific. The direct profile currently uses
    Swift-owned `Process(/usr/bin/say)` for Siri/say voice support; the App
    Store-safe profile uses `AVSpeechSynthesizer`. Direct app-owned `say`
    playback is not a parity regression by itself. The forbidden regressions are
@@ -212,8 +221,9 @@ prefix. Non-update relay types include a type prefix, for example
    dynamic ids and counts.
 3. Compare SQLite state after each command sequence, including settings and relay
    statuses.
-4. Include direct and App Store profile runs for enqueue, settings, combiner,
-   status, app helper commands, and CLI install commands.
+4. Prioritize direct profile runs for enqueue, settings, combiner, status, app
+   helper commands, and CLI install commands. Keep App Store profile runs as
+   legacy boundary/reference coverage, not as a gating future product target.
 5. Include the compiled binary's current silent-success failure behavior as a
    documented oracle fixture, then make a conscious cutover decision about
    whether Swift should preserve or improve it.
