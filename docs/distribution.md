@@ -26,8 +26,11 @@ App Store build, such as choosing which agent summarizes many queued messages.
 Create a notarized zip for sharing:
 
 ```sh
-TSRS_NOTARYTOOL_PROFILE=tsrs npm run package:macos:direct
+TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
 ```
+
+`npm run package:macos:direct` remains as a compatibility wrapper while the
+project finishes replacing Node-based build entrypoints.
 
 Prerequisites:
 

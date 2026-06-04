@@ -108,3 +108,13 @@ Command palette direction:
 
 Recommended next slice: extract a command model from existing menu actions, then
 build the first native command palette window.
+
+Node build replacement update:
+
+1. Direct and legacy App Store-safe macOS app packaging now have shell
+   entrypoints at `scripts/build-macos.sh` and `scripts/package-macos-direct.sh`.
+2. The npm macOS build and package scripts are compatibility wrappers around
+   those shell entrypoints instead of invoking Node build scripts.
+3. The shell direct build still compiles the Perry `relay` helper, preserves app
+   icon generation, runs Xcode, bundles only `relay`, and rejects any bundled
+   `relay-processor`.

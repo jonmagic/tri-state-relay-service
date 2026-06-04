@@ -42,19 +42,20 @@ are:
    `npm run package:macos:direct`, `npm run restart:macos`, and
    `npm run eval:inactive-line`.
 7. Perry remains in the active direct-build path because
-   `scripts/build-macos.mjs` runs `npm run build:native:cli` before Xcode and
-   then bundles `dist/native/relay`. `package:macos:direct` signs and
-   smoke-tests that bundled helper before signing and notarizing the app.
+   `scripts/build-macos.sh` compiles `src/cli.ts` before Xcode and then bundles
+   `dist/native/relay`. `scripts/package-macos-direct.sh` signs and smoke-tests
+   that bundled helper before signing and notarizing the app.
 8. The tracked TypeScript test suite is the broadest regression harness for the
    CLI, storage, command-template parsing, direct-vs-legacy capabilities,
    processor compatibility, bundle validation, and app shell seams. Swift XCTest
    coverage exists for message validation, playback profile behavior, and the
    native relay store, but not yet for the full CLI oracle in this inventory.
-9. `scripts/*.mjs` still provide release/build/eval automation. Even after the
-   CLI moves to Swift, replacing `package.json` also requires either SwiftPM,
-   Xcode schemes, Makefile-style wrappers, or another non-Node automation path
-   for build, restart, notarization packaging, bundle inspection, and inactive
-   line evaluation.
+9. Shell scripts now own macOS app build and direct-download packaging, while
+   `scripts/*.mjs` still provide restart, eval, and test-only bundle validation
+   automation. Even after the CLI moves to Swift, replacing `package.json` also
+   requires either SwiftPM, Xcode schemes, Makefile-style wrappers, or another
+   non-Node automation path for restart, bundle inspection tests, inactive-line
+   evaluation, and remaining validation wrappers.
 10. `dist/src/**/*.js` and `dist/tests/**/*.js` are ignored TypeScript build
     outputs, not source of truth. They can be removed locally, but `npm run
     build` will recreate them until the TypeScript build and validation path is
@@ -75,7 +76,7 @@ Safe deletion order:
 3. Port CLI install/update safety from `src/core/cli-install.ts` so the app no
    longer shells out to the bundled Node/Perry helper for `cli-status` or
    `install-cli`.
-4. Move release wrappers off npm/Perry: Xcode or SwiftPM builds the app and CLI,
+4. Move release wrappers off Perry: Xcode or SwiftPM builds the app and CLI,
    packaging signs and smoke-tests the Swift `relay`, and bundle validation still
    proves `relay-processor` is absent.
 5. Migrate or retire TypeScript tests by replacing their coverage with XCTest or
@@ -94,8 +95,8 @@ Safe deletion order:
 
 The concrete next engineering slice is therefore: create the Swift CLI target
 and a direct-profile parity test harness for this command matrix, then change
-`scripts/build-macos.mjs` or its replacement to bundle the Swift-built `relay`
-instead of `dist/native/relay`.
+`scripts/build-macos.sh` to bundle the Swift-built `relay` instead of
+`dist/native/relay`.
 
 Probe environment:
 
