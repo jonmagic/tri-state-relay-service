@@ -26,7 +26,15 @@ App Store build, such as choosing which agent summarizes many queued messages.
 Create a notarized zip for sharing:
 
 ```sh
-TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
+scripts/release-macos.sh
+```
+
+The release script uses the `tsrs` notarytool profile by default, then builds,
+signs, notarizes, staples, validates, and writes the uploadable zip. Override the
+profile only when needed:
+
+```sh
+TSRS_NOTARYTOOL_PROFILE=other-profile scripts/release-macos.sh
 ```
 
 The repository uses shell/Xcode entrypoints directly; package wrappers are no longer part of the release path.
@@ -60,7 +68,7 @@ requires a universal build, opt in deliberately:
 
 ```sh
 TSRS_MACOS_ARCHS="arm64 x86_64" scripts/build-macos.sh direct
-TSRS_MACOS_ARCHS="arm64 x86_64" TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
+TSRS_MACOS_ARCHS="arm64 x86_64" scripts/release-macos.sh
 ```
 
 Universal releases are labeled `macos-universal`; the default direct-download

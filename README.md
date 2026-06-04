@@ -63,10 +63,10 @@ The legacy App Store-safe profile remains only as a hardening reference. Do not 
 Create a signed and notarized direct-download zip:
 
 ```sh
-TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
+scripts/release-macos.sh
 ```
 
-The packaging script requires a `Developer ID Application` certificate. Set `TSRS_CODESIGN_IDENTITY` if more than one is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
+The release script uses the `tsrs` notarytool profile by default and requires a `Developer ID Application` certificate. Set `TSRS_CODESIGN_IDENTITY` if more than one is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
 
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue controls, speech claims, and playback in Swift. The app reads and mutates the local SQLite queue directly without scraping or exposing message text. Right click opens line controls; left click selects the next queued line for playback. When unmuted, the app keeps playing incoming relays on the active line. Other lines stay quiet and can be pulled from their line submenu.
 
