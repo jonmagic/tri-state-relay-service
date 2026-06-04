@@ -1529,8 +1529,9 @@ struct CommandPaletteCommand {
 final class CommandPaletteWindowController: NSWindowController, NSTextFieldDelegate {
     private static let panelWidth: CGFloat = 560
     private static let outerPadding: CGFloat = 12
-    private static let searchHeight: CGFloat = 44
-    private static let searchToDividerSpacing: CGFloat = 8
+    private static let contentInset: CGFloat = 24
+    private static let searchHeight: CGFloat = 34
+    private static let searchToDividerSpacing: CGFloat = 2
     private static let dividerToResultsSpacing: CGFloat = 8
     private static let rowHeight: CGFloat = 40
     private static let rowSpacing: CGFloat = 4
@@ -1632,8 +1633,8 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         NSLayoutConstraint.activate([
             searchField.topAnchor.constraint(equalTo: content.topAnchor, constant: Self.outerPadding),
-            searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
-            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
+            searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.contentInset),
+            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.contentInset),
             searchField.heightAnchor.constraint(equalToConstant: Self.searchHeight),
             headerDivider.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Self.searchToDividerSpacing),
             headerDivider.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -1859,9 +1860,9 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         NSLayoutConstraint.activate([
             row.heightAnchor.constraint(equalToConstant: Self.rowHeight),
-            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.outerPadding * 2)),
-            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -14),
+            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.contentInset * 2)),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -10),
             stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         ])
 
