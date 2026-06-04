@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { assertRelayProcessorNotBundled } from './macos-bundle-validation.mjs'
 
 const appName = 'Tri-State Relay Service.app'
 const appPath = join('dist/macos', appName)
@@ -95,6 +96,8 @@ function assertBuiltBundle() {
       throw new Error(`expected build output is missing: ${path}`)
     }
   }
+
+  assertRelayProcessorNotBundled(appPath)
 }
 
 function assertVersionMatches() {

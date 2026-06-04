@@ -2,6 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { assertRelayProcessorNotBundled } from './macos-bundle-validation.mjs'
 
 const profile = process.argv[2] ?? 'direct'
 
@@ -82,9 +83,7 @@ function verifyBundle(appPath) {
     throw new Error(`${appIconName} missing from bundle resources`)
   }
 
-  if (existsSync(join(appPath, 'Contents/MacOS/relay-processor'))) {
-    throw new Error('relay-processor must not be bundled in the macOS app')
-  }
+  assertRelayProcessorNotBundled(appPath)
 
   if (!['1', 'true'].includes(plistValue(infoPlist, 'LSUIElement'))) {
     throw new Error('LSUIElement was not preserved')
