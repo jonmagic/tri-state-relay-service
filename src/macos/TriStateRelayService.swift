@@ -1244,10 +1244,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: label)
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Optional command used to combine inactive-line updates. Leave commented for latest-only behavior.")
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.lineBreakMode = .byWordWrapping
-        subtitle.maximumNumberOfLines = 0
+        let combinerLabel = NSTextField(labelWithString: "Inactive-line combiner command")
+        combinerLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let combinerNote = NSTextField(labelWithString: "Optional command used to combine inactive-line updates. Leave commented for latest-only behavior.")
+        combinerNote.textColor = .secondaryLabelColor
+        combinerNote.font = NSFont.systemFont(ofSize: 12)
+        combinerNote.lineBreakMode = .byWordWrapping
+        combinerNote.maximumNumberOfLines = 0
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -1256,11 +1260,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.borderType = .bezelBorder
         scrollView.documentView = textView
 
-        let stack = NSStackView(views: [title, subtitle, scrollView])
+        let stack = NSStackView(views: [title, combinerLabel, combinerNote, scrollView])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setCustomSpacing(18, after: title)
+        stack.setCustomSpacing(9, after: combinerNote)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
         container.addSubview(stack)
@@ -1270,7 +1276,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            combinerNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
             scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
         ])
@@ -1327,19 +1333,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         openAtLoginCheckbox.target = self
         openAtLoginCheckbox.action = #selector(toggleOpenAtLogin(_:))
 
-        let cliSection = NSStackView(views: [cliLabel, buttonRow, cliStatusView])
+        let cliSection = NSStackView(views: [cliLabel, cliStatusView, buttonRow])
         cliSection.orientation = .vertical
         cliSection.alignment = .leading
         cliSection.spacing = 7
         cliSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let shortcutSection = NSStackView(views: [shortcutLabel, setupShortcutRecorderButton, shortcutNote, setupShortcutStatusView])
+        let shortcutSection = NSStackView(views: [shortcutLabel, shortcutNote, setupShortcutRecorderButton, setupShortcutStatusView])
         shortcutSection.orientation = .vertical
         shortcutSection.alignment = .leading
         shortcutSection.spacing = 7
         shortcutSection.translatesAutoresizingMaskIntoConstraints = false
 
-        let openAtLoginSection = NSStackView(views: [openAtLoginLabel, openAtLoginCheckbox, openAtLoginStatusView])
+        let openAtLoginSection = NSStackView(views: [openAtLoginLabel, openAtLoginStatusView, openAtLoginCheckbox])
         openAtLoginSection.orientation = .vertical
         openAtLoginSection.alignment = .leading
         openAtLoginSection.spacing = 7
@@ -1357,9 +1363,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         openAtLoginStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        cliSection.setCustomSpacing(9, after: cliLabel)
-        shortcutSection.setCustomSpacing(9, after: shortcutLabel)
-        openAtLoginSection.setCustomSpacing(9, after: openAtLoginLabel)
+        cliSection.setCustomSpacing(9, after: cliStatusView)
+        shortcutSection.setCustomSpacing(9, after: shortcutNote)
+        openAtLoginSection.setCustomSpacing(9, after: openAtLoginStatusView)
         stack.setCustomSpacing(18, after: subtitle)
         stack.setCustomSpacing(18, after: cliSection)
         stack.setCustomSpacing(18, after: shortcutSection)
@@ -1394,20 +1400,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample.")
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.lineBreakMode = .byWordWrapping
-        subtitle.maximumNumberOfLines = 0
-
         let voiceLabel = NSTextField(labelWithString: "Speech voice")
         voiceLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let voiceNote = NSTextField(labelWithString: "Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample.")
+        voiceNote.textColor = .secondaryLabelColor
+        voiceNote.font = NSFont.systemFont(ofSize: 12)
+        voiceNote.lineBreakMode = .byWordWrapping
+        voiceNote.maximumNumberOfLines = 0
 
         let voiceRow = NSStackView(views: [voicePopUpButton, voicePreviewButton])
         voiceRow.orientation = .horizontal
         voiceRow.alignment = .centerY
         voiceRow.spacing = 8
 
-        let stack = NSStackView(views: [title, subtitle, voiceLabel, voiceRow])
+        let stack = NSStackView(views: [title, voiceLabel, voiceNote, voiceRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1415,7 +1422,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         voicePopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
         voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
-        subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        voiceNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        stack.setCustomSpacing(18, after: title)
+        stack.setCustomSpacing(9, after: voiceNote)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
         container.addSubview(stack)

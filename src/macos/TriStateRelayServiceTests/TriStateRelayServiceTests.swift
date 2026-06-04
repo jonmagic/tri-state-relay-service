@@ -69,6 +69,13 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertFalse(source.contains("Natural installed voices are listed first when available."))
     }
 
+    func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("NSStackView(views: [title, voiceLabel, voiceNote, voiceRow])"))
+        XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
+    }
+
     func testCommandPaletteSupportsAndShowsQuitShortcut() throws {
         let source = try triStateRelayServiceSource()
 
