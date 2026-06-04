@@ -206,6 +206,8 @@ Commands:
                        Get or set inactive-line combiner command.
   settings [--combiner-command <command>] [--speech-command <command>]
                        Print settings JSON.
+  first-start [status|reset|complete]
+                       Inspect or change only first-start setup completion.
   app-claim-next [--line <line>]
                        Claim the next eligible relay for app-owned playback.
   app-mark-heard --id <id>
@@ -319,6 +321,8 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
         return runCombinerCommand(Array(arguments.dropFirst()))
     case "settings":
         return runSettingsCommand(Array(arguments.dropFirst()))
+    case "first-start":
+        return runFirstStartCommand(Array(arguments.dropFirst()))
     case "app-claim-next":
         return runAppClaimNextCommand(Array(arguments.dropFirst()))
     case "app-mark-heard":
@@ -506,6 +510,29 @@ private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
             return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
         } catch {
             return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
+    let action = arguments.first ?? "status"
+
+    guard arguments.count <= 1 else {
+        return RelayCliResult(stdout: "", stderr: "first-start accepts at most one action", exitCode: 1)
+    }
+
+    return withRelayCliStore { store in
+        switch action {
+        case "status":
+            return RelayCliResult(stdout: try store.firstStartSetupComplete() ? "complete" : "needs-setup", stderr: "", exitCode: 0)
+        case "reset":
+            try store.setFirstStartSetupComplete(false)
+            return RelayCliResult(stdout: "first-start setup reset to needs-setup", stderr: "", exitCode: 0)
+        case "complete":
+            try store.setFirstStartSetupComplete(true)
+            return RelayCliResult(stdout: "first-start setup marked complete", stderr: "", exitCode: 0)
+        default:
+            return RelayCliResult(stdout: "", stderr: "first-start action must be status, reset, or complete", exitCode: 1)
+        }
     }
 }
 
@@ -854,6 +881,14 @@ private final class RelayCliStore {
         try setSetting(key: "speech_command", value: resetBlankCommand(command, fallback: defaultSpeechCommand))
     }
 
+    func firstStartSetupComplete() throws -> Bool {
+        try rawSettings()["first_start_setup_complete"] == "true"
+    }
+
+    func setFirstStartSetupComplete(_ complete: Bool) throws {
+        try setSetting(key: "first_start_setup_complete", value: String(complete))
+    }
+
     func clear() throws -> Int {
         try changes("""
             DELETE FROM relays
@@ -1150,6 +1185,7 @@ private final class RelayCliStore {
         try setSettingIfMissing(key: "inactive_line_combiner", value: "none")
         try setSettingIfMissing(key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         try setSettingIfMissing(key: "speech_command", value: defaultSpeechCommand)
+        try setSettingIfMissing(key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue())
     }
 
     private func rawSettings() throws -> [String: String] {
@@ -1160,6 +1196,34 @@ private final class RelayCliStore {
             }
         }
         return settings
+    }
+
+    private func defaultFirstStartSetupCompleteValue() throws -> String {
+        try hasExistingSetupSignal() ? "true" : "false"
+    }
+
+    private func hasExistingSetupSignal() throws -> Bool {
+        let settings = try rawSettings()
+        let setupKeys = [
+            "active_line",
+            "command_palette_shortcut",
+            "speech_voice_identifier",
+            "last_spoken_line",
+        ]
+
+        if setupKeys.contains(where: { settings[$0] != nil }) {
+            return true
+        }
+
+        return try relayCount() > 0
+    }
+
+    private func relayCount() throws -> Int {
+        var count = 0
+        try query("SELECT COUNT(*) FROM relays") { statement in
+            count = Int(sqlite3_column_int(statement, 0))
+        }
+        return count
     }
 
     private func countsByStatus() throws -> [String: Int] {

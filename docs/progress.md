@@ -150,3 +150,7 @@ First-start setup update:
    table under `first_start_setup_complete`; no schema migration was added.
 4. XCTest coverage verifies fresh defaults, completion persistence, and
    non-retrigger behavior for existing installs.
+5. `relay first-start status|reset|complete` gives development a focused way to
+   verify first-start behavior without deleting the database or wiping relays.
+6. Shortcut setup still uses preset choices; press-a-combo capture is a required
+   follow-up for the configurable shortcut milestone.

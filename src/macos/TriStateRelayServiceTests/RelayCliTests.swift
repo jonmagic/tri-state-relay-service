@@ -149,6 +149,30 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(reread["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
     }
 
+    func testFirstStartCommandResetsOnlySetupCompletion() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        _ = runRelayCli(["--line", "Brain", "--message", "preserve me"])
+        _ = runRelayCli(["first-start", "complete"])
+        XCTAssertEqual(runRelayCli(["first-start"]).stdout, "complete")
+
+        let reset = runRelayCli(["first-start", "reset"])
+        XCTAssertEqual(reset.stdout, "first-start setup reset to needs-setup")
+        XCTAssertEqual(reset.exitCode, 0)
+        XCTAssertEqual(runRelayCli(["first-start", "status"]).stdout, "needs-setup")
+        XCTAssertTrue(runRelayCli(["list"]).stdout.contains("Brain: preserve me"))
+
+        XCTAssertEqual(runRelayCli(["first-start", "complete"]).stdout, "first-start setup marked complete")
+        XCTAssertEqual(runRelayCli(["first-start", "status"]).stdout, "complete")
+    }
+
+    func testFreshDatabaseFirstStartDefaultsToNeedsSetup() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        XCTAssertEqual(runRelayCli(["first-start", "status"]).stdout, "needs-setup")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=none, inactive-line-combiner=none")
+    }
+
     func testInactiveLineEnqueueKeepsLatestOnly() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 

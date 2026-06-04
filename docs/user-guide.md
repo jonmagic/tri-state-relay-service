@@ -104,3 +104,36 @@ The queue is stored locally at:
 ```text
 ~/Library/Application Support/Tri-State Relay Service/relay.db
 ```
+
+### Development first-start verification
+
+Existing local installs may not show first setup because they already have
+configuration. To safely re-test first-start behavior without wiping relays,
+reset only the setup-completion key:
+
+```sh
+relay first-start reset
+```
+
+Then restart the app with `scripts/restart-macos-app.sh`; Settings should open
+again. Restore the normal configured state with:
+
+```sh
+relay first-start complete
+```
+
+If you are testing before that CLI command is installed, run the equivalent
+SQLite update against the local queue database:
+
+```sh
+sqlite3 "$HOME/Library/Application Support/Tri-State Relay Service/relay.db" \
+  "INSERT INTO settings (key, value) VALUES ('first_start_setup_complete', 'false')
+   ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
+```
+
+This targeted reset does not clear queued or delivered relays. Avoid deleting
+`relay.db` unless you explicitly want to wipe all local queue data.
+
+Current shortcut setup uses the available shortcut choices in Settings. The next
+shortcut milestone must support recording a custom key combination rather than
+only choosing from presets.
