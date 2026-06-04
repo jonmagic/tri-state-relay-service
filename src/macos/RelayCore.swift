@@ -208,6 +208,9 @@ Commands:
                        Print settings JSON.
   first-start [status|reset|complete]
                        Inspect or change only first-start setup completion.
+  first-start dev-reset-database --confirm
+                       Development-only: delete relay.db, relay.db-wal, and
+                       relay.db-shm, then recreate a fresh first-start DB.
   app-claim-next [--line <line>]
                        Claim the next eligible relay for app-owned playback.
   app-mark-heard --id <id>
@@ -516,8 +519,25 @@ private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
 private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
     let action = arguments.first ?? "status"
 
+    if action == "dev-reset-database" {
+        guard arguments == ["dev-reset-database", "--confirm"] else {
+            return RelayCliResult(stdout: "", stderr: "dev-reset-database requires --confirm and clears all local relay data", exitCode: 1)
+        }
+
+        do {
+            try resetRelayDatabaseForFirstStartDevelopment()
+            return withRelayCliStore { store in
+                RelayCliResult(stdout: try store.firstStartSetupComplete() ? "fresh database recreated, first-start complete" : "fresh database recreated, first-start needs-setup", stderr: "", exitCode: 0)
+            }
+        } catch let error as RelayCliStoreError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+    }
+
     guard arguments.count <= 1 else {
-        return RelayCliResult(stdout: "", stderr: "first-start accepts at most one action", exitCode: 1)
+        return RelayCliResult(stdout: "", stderr: "first-start accepts one action, except dev-reset-database --confirm", exitCode: 1)
     }
 
     return withRelayCliStore { store in
@@ -532,6 +552,21 @@ private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
             return RelayCliResult(stdout: "first-start setup marked complete", stderr: "", exitCode: 0)
         default:
             return RelayCliResult(stdout: "", stderr: "first-start action must be status, reset, or complete", exitCode: 1)
+        }
+    }
+}
+
+private func resetRelayDatabaseForFirstStartDevelopment() throws {
+    let databasePath = relayCliDatabasePath()
+    let manager = FileManager.default
+
+    for path in [databasePath, "\(databasePath)-wal", "\(databasePath)-shm"] {
+        if manager.fileExists(atPath: path) {
+            do {
+                try manager.removeItem(atPath: path)
+            } catch {
+                throw RelayCliStoreError(message: "could not remove \(path): \(error.localizedDescription)")
+            }
         }
     }
 }

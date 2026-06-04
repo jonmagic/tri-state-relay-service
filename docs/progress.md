@@ -152,5 +152,9 @@ First-start setup update:
    non-retrigger behavior for existing installs.
 5. `relay first-start status|reset|complete` gives development a focused way to
    verify first-start behavior without deleting the database or wiping relays.
-6. Shortcut setup still uses preset choices; press-a-combo capture is a required
+6. `relay first-start dev-reset-database --confirm` gives development an
+   explicit destructive reset that removes the app database and SQLite sidecars,
+   then recreates a fresh needs-setup database. Normal app launch never invokes
+   this path.
+7. Shortcut setup still uses preset choices; press-a-combo capture is a required
    follow-up for the configurable shortcut milestone.

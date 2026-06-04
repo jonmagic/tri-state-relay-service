@@ -114,7 +114,9 @@ stores completion in the SQLite settings table, keeps Focus mode quiet, and
 reuses Settings to guide CLI installation, shortcut selection, and voice
 selection without a separate wizard. Development verification can use
 `relay first-start reset` to retest first-start visibility without wiping queue
-data.
+data, or `relay first-start dev-reset-database --confirm` for an explicit
+destructive fresh database reset. Normal app launch paths must never wipe user
+queue data.
 
 ## Task exit criteria
 

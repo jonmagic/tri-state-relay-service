@@ -108,8 +108,10 @@ The queue is stored locally at:
 ### Development first-start verification
 
 Existing local installs may not show first setup because they already have
-configuration. To safely re-test first-start behavior without wiping relays,
-reset only the setup-completion key:
+configuration.
+
+To re-test the first-start prompt without wiping relays, reset only the
+setup-completion key:
 
 ```sh
 relay first-start reset
@@ -133,6 +135,20 @@ sqlite3 "$HOME/Library/Application Support/Tri-State Relay Service/relay.db" \
 
 This targeted reset does not clear queued or delivered relays. Avoid deleting
 `relay.db` unless you explicitly want to wipe all local queue data.
+
+For a true fresh first-start run, use the explicit development-only destructive
+reset:
+
+```sh
+relay first-start dev-reset-database --confirm
+```
+
+This removes the configured app database and its SQLite sidecar files
+(`relay.db`, `relay.db-wal`, and `relay.db-shm`), which clears queued,
+delivered, handled, skipped, expired, and failed relays plus local settings such
+as active line, voice, shortcut, and setup completion. The command then
+recreates an empty database that defaults to first-start needs-setup. It is not
+called by normal app launch paths.
 
 Current shortcut setup uses the available shortcut choices in Settings. The next
 shortcut milestone must support recording a custom key combination rather than

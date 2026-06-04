@@ -173,6 +173,25 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=none, inactive-line-combiner=none")
     }
 
+    func testFirstStartDevResetDatabaseRequiresConfirmationAndClearsData() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        _ = runRelayCli(["--line", "Brain", "--message", "delete me"])
+        _ = runRelayCli(["first-start", "complete"])
+        XCTAssertTrue(runRelayCli(["list"]).stdout.contains("Brain: delete me"))
+
+        let unconfirmed = runRelayCli(["first-start", "dev-reset-database"])
+        XCTAssertEqual(unconfirmed.exitCode, 1)
+        XCTAssertTrue(unconfirmed.stderr.contains("requires --confirm"))
+        XCTAssertTrue(runRelayCli(["list"]).stdout.contains("Brain: delete me"))
+
+        let reset = runRelayCli(["first-start", "dev-reset-database", "--confirm"])
+        XCTAssertEqual(reset.stdout, "fresh database recreated, first-start needs-setup")
+        XCTAssertEqual(reset.exitCode, 0)
+        XCTAssertEqual(runRelayCli(["list"]).stdout, "mode=focus muted=false")
+        XCTAssertEqual(runRelayCli(["first-start", "status"]).stdout, "needs-setup")
+    }
+
     func testInactiveLineEnqueueKeepsLatestOnly() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
