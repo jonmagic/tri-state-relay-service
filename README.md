@@ -123,16 +123,16 @@ The first accepted relay becomes the active line when no active line is set. The
 
 Line-scoped source actions use the selected line's latest source context, not the newest source from another line. See `docs/command-palette.md`.
 
-The command-palette shortcut should be user-configurable. Until that settings
-flow lands, the built-in shortcut is `Control` + `Option` + `Command` + `Space`,
-which opens the command palette with `play next` preselected.
+The command-palette shortcut is configurable in Settings. The default is
+`Control` + `Option` + `Command` + `Space`, which opens the command palette with
+`play next` preselected. `Control` + `Option` + `Command` + `V` is not registered
+as a global palette shortcut.
 
 For the user-facing walkthrough, see `docs/user-guide.md`.
 
 ## Next slices
 
-1. Make the remaining command-palette shortcut configurable.
-2. Add a first-run settings experience that guides CLI installation, shortcut configuration, and voice selection.
+1. Add a first-run settings experience that guides CLI installation, shortcut configuration, and voice selection.
 3. Make direct-download builds arm64-only by default to reduce binary and release size.
 4. Keep trimming internal-only documentation from the user-facing path while preserving useful implementation notes.
 

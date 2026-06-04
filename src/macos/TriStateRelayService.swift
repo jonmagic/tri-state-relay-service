@@ -20,7 +20,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var playbackRefreshTimer: Timer?
     private var settingsWindowController: SettingsWindowController?
     private var commandPaletteWindowController: CommandPaletteWindowController?
-    private var playCurrentLineHotKey: EventHotKeyRef?
+    private var commandPaletteHotKey: EventHotKeyRef?
+    private var commandPaletteHotKeyEventHandler: EventHandlerRef?
     private lazy var nativePlayback = NativeSpeechPlayback(model: model) { [weak self] in
         self?.model.refresh()
         self?.refreshStatusItem()
@@ -227,6 +228,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(model: model) { [weak self] in
                 self?.refreshStatusItem()
+                self?.registerGlobalHotKeys()
             }
         }
 
@@ -602,8 +604,10 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func registerGlobalHotKeys() {
+        unregisterGlobalHotKeys()
         let eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+        var eventHandler = EventHandlerRef?.none
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(
                 event,
@@ -629,10 +633,16 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             }
 
             return noErr
-        }, 1, [eventSpec], nil, nil)
+        }, 1, [eventSpec], nil, &eventHandler)
+        if handlerStatus != noErr {
+            NSLog("TSRS failed to install global hotkey handler: \(handlerStatus)")
+            return
+        }
+        commandPaletteHotKeyEventHandler = eventHandler
 
-        let modifiers = UInt32(cmdKey | optionKey | controlKey)
-        playCurrentLineHotKey = registerHotKey(keyCode: UInt32(kVK_Space), modifiers: modifiers, id: 1, label: "Control-Option-Command-Space")
+        let shortcut = model.loadSettings().commandPaletteShortcut
+        let registration = GlobalHotKeyRegistrationPlan.commandPalette(shortcut: shortcut)
+        commandPaletteHotKey = registerHotKey(keyCode: registration.keyCode, modifiers: registration.modifiers, id: registration.id, label: registration.label)
     }
 
     private func registerHotKey(keyCode: UInt32, modifiers: UInt32, id: UInt32, label: String) -> EventHotKeyRef? {
@@ -654,8 +664,14 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func unregisterGlobalHotKeys() {
-        if let playCurrentLineHotKey {
-            UnregisterEventHotKey(playCurrentLineHotKey)
+        if let commandPaletteHotKey {
+            UnregisterEventHotKey(commandPaletteHotKey)
+            self.commandPaletteHotKey = nil
+        }
+
+        if let commandPaletteHotKeyEventHandler {
+            RemoveEventHandler(commandPaletteHotKeyEventHandler)
+            self.commandPaletteHotKeyEventHandler = nil
         }
     }
 
@@ -666,19 +682,71 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 }
 
+
+struct KeyboardShortcut: Equatable {
+    let identifier: String
+    let displayName: String
+    let keyCode: UInt32
+    let modifiers: UInt32
+
+    static let defaultCommandPalette = KeyboardShortcut(
+        identifier: "control-option-command-space",
+        displayName: "Control + Option + Command + Space",
+        keyCode: UInt32(kVK_Space),
+        modifiers: UInt32(cmdKey | optionKey | controlKey)
+    )
+
+    static let availableCommandPaletteShortcuts = [
+        defaultCommandPalette,
+        KeyboardShortcut(identifier: "control-option-command-p", displayName: "Control + Option + Command + P", keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(cmdKey | optionKey | controlKey)),
+        KeyboardShortcut(identifier: "control-option-command-k", displayName: "Control + Option + Command + K", keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey | controlKey)),
+    ]
+
+    init(identifier: String?, fallback: KeyboardShortcut = .defaultCommandPalette) {
+        guard let identifier, let shortcut = Self.availableCommandPaletteShortcuts.first(where: { $0.identifier == identifier }) else {
+            self = fallback
+            return
+        }
+
+        self = shortcut
+    }
+
+    private init(identifier: String, displayName: String, keyCode: UInt32, modifiers: UInt32) {
+        self.identifier = identifier
+        self.displayName = displayName
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+}
+
+struct GlobalHotKeyRegistrationPlan: Equatable {
+    let id: UInt32
+    let keyCode: UInt32
+    let modifiers: UInt32
+    let label: String
+
+    static func commandPalette(shortcut: KeyboardShortcut) -> GlobalHotKeyRegistrationPlan {
+        GlobalHotKeyRegistrationPlan(id: 1, keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, label: shortcut.displayName)
+    }
+}
+
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: MenuBarModel
     private let onSave: () -> Void
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
+    private let shortcutPopUpButton = NSPopUpButton()
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
     private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
+    private let shortcutSectionButton = NSButton(title: "Shortcut", target: nil, action: nil)
     private let secondarySectionButton = NSButton(title: settingsSecondarySectionTitle, target: nil, action: nil)
     private let voiceSectionRow = SidebarRowView()
+    private let shortcutSectionRow = SidebarRowView()
     private let secondarySectionRow = SidebarRowView()
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
+    private let shortcutIconView = NSImageView(image: sidebarIcon(systemName: "keyboard"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
     private let voiceOptions = availableSpeechVoiceOptions()
 
@@ -692,10 +760,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.blendingMode = .withinWindow
         sidebar.state = .active
         configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: true)
+        configureSidebarRow(shortcutSectionRow, button: shortcutSectionButton, iconView: shortcutIconView, selected: false)
         configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
         settingsTabView.translatesAutoresizingMaskIntoConstraints = false
         settingsTabView.tabViewType = .noTabsNoBorder
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Voice"))
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Shortcut"))
 #if APP_STORE
         settingsTabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
 #else
@@ -705,6 +775,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 360))
         content.addSubview(sidebar)
         sidebar.addSubview(voiceSectionRow)
+        sidebar.addSubview(shortcutSectionRow)
         sidebar.addSubview(secondarySectionRow)
         content.addSubview(settingsTabView)
 
@@ -723,14 +794,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         settingsTabView.tabViewItem(at: 0).label = "Voice"
         settingsTabView.tabViewItem(at: 0).view = voiceTabView()
+        settingsTabView.tabViewItem(at: 1).label = "Shortcut"
+        settingsTabView.tabViewItem(at: 1).view = shortcutTabView()
         voiceSectionButton.target = self
         voiceSectionButton.action = #selector(selectVoiceSection)
+        shortcutSectionButton.target = self
+        shortcutSectionButton.action = #selector(selectShortcutSection)
         secondarySectionButton.target = self
         secondarySectionButton.action = #selector(selectSecondarySection)
         voicePopUpButton.target = self
         voicePopUpButton.action = #selector(selectVoice(_:))
         voicePreviewButton.target = self
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
+        shortcutPopUpButton.target = self
+        shortcutPopUpButton.action = #selector(selectShortcut(_:))
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -740,9 +817,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
             voiceSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 28),
             voiceSectionRow.heightAnchor.constraint(equalToConstant: 38),
+            shortcutSectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
+            shortcutSectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
+            shortcutSectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
+            shortcutSectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
             secondarySectionRow.leadingAnchor.constraint(equalTo: voiceSectionRow.leadingAnchor),
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
-            secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
+            secondarySectionRow.topAnchor.constraint(equalTo: shortcutSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
             settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
@@ -768,18 +849,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func selectVoiceSection() {
         settingsTabView.selectTabViewItem(at: 0)
-        updateSidebarSelection(voiceSelected: true)
+        updateSidebarSelection(selectedIndex: 0)
+    }
+
+    @objc private func selectShortcutSection() {
+        settingsTabView.selectTabViewItem(at: 1)
+        updateSidebarSelection(selectedIndex: 1)
     }
 
     @objc private func selectSecondarySection() {
-        settingsTabView.selectTabViewItem(at: 1)
-        updateSidebarSelection(voiceSelected: false)
+        settingsTabView.selectTabViewItem(at: 2)
+        updateSidebarSelection(selectedIndex: 2)
     }
 
     @objc private func selectVoice(_ sender: Any?) {
         model.saveVoiceSetting(voiceIdentifier: selectedVoiceIdentifier())
         onSave()
         previewSelectedVoice(sender)
+    }
+
+    @objc private func selectShortcut(_ sender: Any?) {
+        model.saveCommandPaletteShortcut(selectedShortcut())
+        onSave()
     }
 
     @objc private func previewSelectedVoice(_ sender: Any?) {
@@ -799,13 +890,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
+        reloadShortcutMenu(selectedShortcut: settings.commandPaletteShortcut)
     }
 
     private func saveCombinerIfNeeded() {
 #if !APP_STORE
         model.saveSettings(
             inactiveLineCombinerCommand: combinerTextView.string,
-            voiceIdentifier: selectedVoiceIdentifier()
+            voiceIdentifier: selectedVoiceIdentifier(),
+            commandPaletteShortcut: selectedShortcut()
         )
         onSave()
 #endif
@@ -878,6 +971,44 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
 
+    private func shortcutTabView() -> NSView {
+        let title = NSTextField(labelWithString: "Command Palette Shortcut")
+        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+
+        let subtitle = NSTextField(labelWithString: "Choose the global shortcut that opens the command palette with Play Next selected. Right click still opens an empty palette.")
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byWordWrapping
+        subtitle.maximumNumberOfLines = 0
+
+        let shortcutLabel = NSTextField(labelWithString: "Keyboard shortcut")
+        shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let note = NSTextField(labelWithString: "The default is Control + Option + Command + Space. Control + Option + Command + V is intentionally unavailable.")
+        note.textColor = .secondaryLabelColor
+        note.font = NSFont.systemFont(ofSize: 12)
+        note.lineBreakMode = .byWordWrapping
+        note.maximumNumberOfLines = 0
+
+        let stack = NSStackView(views: [title, subtitle, shortcutLabel, shortcutPopUpButton, note])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        shortcutPopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+        return container
+    }
+
     private func voiceTabView() -> NSView {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
@@ -924,6 +1055,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return container
     }
 
+    private func reloadShortcutMenu(selectedShortcut: KeyboardShortcut) {
+        shortcutPopUpButton.removeAllItems()
+
+        for shortcut in KeyboardShortcut.availableCommandPaletteShortcuts {
+            shortcutPopUpButton.addItem(withTitle: shortcut.displayName)
+            shortcutPopUpButton.lastItem?.representedObject = shortcut.identifier
+        }
+
+        if let item = shortcutPopUpButton.itemArray.first(where: { $0.representedObject as? String == selectedShortcut.identifier }) {
+            shortcutPopUpButton.select(item)
+        } else {
+            shortcutPopUpButton.selectItem(at: 0)
+        }
+    }
+
+    private func selectedShortcut() -> KeyboardShortcut {
+        KeyboardShortcut(identifier: shortcutPopUpButton.selectedItem?.representedObject as? String)
+    }
+
     private func reloadVoiceMenu(selectedIdentifier: String?) {
         voicePopUpButton.removeAllItems()
 
@@ -949,13 +1099,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceOptions.first { $0.identifier == selectedVoiceIdentifier() } ?? defaultSpeechVoiceOption
     }
 
-    private func updateSidebarSelection(voiceSelected: Bool) {
+    private func updateSidebarSelection(selectedIndex: Int) {
+        let voiceSelected = selectedIndex == 0
+        let shortcutSelected = selectedIndex == 1
+        let secondarySelected = selectedIndex == 2
         configureSidebarButton(voiceSectionButton, selected: voiceSelected)
-        configureSidebarButton(secondarySectionButton, selected: !voiceSelected)
+        configureSidebarButton(shortcutSectionButton, selected: shortcutSelected)
+        configureSidebarButton(secondarySectionButton, selected: secondarySelected)
         voiceIconView.contentTintColor = voiceSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
-        secondaryIconView.contentTintColor = voiceSelected ? .secondaryLabelColor : .selectedMenuItemTextColor
+        shortcutIconView.contentTintColor = shortcutSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        secondaryIconView.contentTintColor = secondarySelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         voiceSectionRow.selected = voiceSelected
-        secondarySectionRow.selected = !voiceSelected
+        shortcutSectionRow.selected = shortcutSelected
+        secondarySectionRow.selected = secondarySelected
     }
 }
 
@@ -1869,16 +2025,22 @@ final class MenuBarModel {
         store.loadSettings()
     }
 
-    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String) {
+    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String, commandPaletteShortcut: KeyboardShortcut) {
         store.saveSettings(
             inactiveLineCombinerCommand: inactiveLineCombinerCommand,
-            voiceIdentifier: voiceIdentifier
+            voiceIdentifier: voiceIdentifier,
+            commandPaletteShortcut: commandPaletteShortcut
         )
         refresh()
     }
 
     func saveVoiceSetting(voiceIdentifier: String) {
         store.saveVoiceIdentifier(voiceIdentifier)
+        refresh()
+    }
+
+    func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
+        store.saveCommandPaletteShortcut(shortcut)
         refresh()
     }
 
@@ -2171,6 +2333,7 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let speechVoiceIdentifier: String?
+    let commandPaletteShortcut: KeyboardShortcut
 }
 
 #if !APP_STORE
@@ -2255,7 +2418,8 @@ final class NativeRelayStore {
             let settings = loadRawSettings(database)
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
-                speechVoiceIdentifier: speechVoiceIdentifier(settings)
+                speechVoiceIdentifier: speechVoiceIdentifier(settings),
+                commandPaletteShortcut: commandPaletteShortcut(settings)
             )
         } ?? defaultSettings()
     }
@@ -2309,15 +2473,23 @@ final class NativeRelayStore {
         }
     }
 
-    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String) {
+    func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String, commandPaletteShortcut: KeyboardShortcut) {
         guard profile != "app-store" else {
             saveVoiceIdentifier(voiceIdentifier)
+            saveCommandPaletteShortcut(commandPaletteShortcut)
             return
         }
 
         write { database in
             setSetting(database, key: "inactive_line_combiner_command", value: resetBlankCommand(inactiveLineCombinerCommand, fallback: defaultInactiveLineCombinerCommand))
             setSetting(database, key: "speech_voice_identifier", value: voiceIdentifier)
+            setSetting(database, key: "command_palette_shortcut", value: commandPaletteShortcut.identifier)
+        }
+    }
+
+    func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
+        write { database in
+            setSetting(database, key: "command_palette_shortcut", value: shortcut.identifier)
         }
     }
 
@@ -2549,6 +2721,7 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "inactive_line_combiner", value: "none")
         setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
+        setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
     }
 
@@ -3004,6 +3177,10 @@ final class NativeRelayStore {
         return settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
     }
 
+    private func commandPaletteShortcut(_ settings: [String: String]) -> KeyboardShortcut {
+        KeyboardShortcut(identifier: settings["command_palette_shortcut"])
+    }
+
     private func speechVoiceIdentifier(_ settings: [String: String]) -> String? {
         let identifier = settings["speech_voice_identifier"] ?? defaultSpeechVoiceIdentifier
 
@@ -3031,7 +3208,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette)
 }
 
 private func playbackMode(_ value: String?) -> String {

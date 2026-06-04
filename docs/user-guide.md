@@ -78,9 +78,10 @@ stay queued until you switch lines or explicitly pull a relay from that line.
 ## Menu bar controls
 
 Left click the menu bar icon for the fastest Play Next path. Right click opens
-the command palette with an empty search. The keyboard shortcut opens the command
-palette with Play Next selected, so pressing Return immediately plays the next
-eligible relay.
+the command palette with an empty search. The configurable keyboard shortcut
+opens the command palette with Play Next selected, so pressing Return immediately
+plays the next eligible relay. The default shortcut is `Control` + `Option` +
+`Command` + `Space`; change it in Settings > Shortcut.
 
 The command palette shows safe action context such as line names and counts. It
 should not show relay message bodies by default.

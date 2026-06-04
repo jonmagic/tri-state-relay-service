@@ -16,6 +16,7 @@ final class NativeRelayStoreTests: XCTestCase {
         
         let settings = store.loadSettings()
         XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
+        XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
         
         let status = store.loadStatus()
         XCTAssertEqual(status.mode, "focus")
@@ -26,8 +27,23 @@ final class NativeRelayStoreTests: XCTestCase {
         let database = try DatabaseSnapshot(path: databasePath)
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'mode'"), "focus")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'muted'"), "false")
+        XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'command_palette_shortcut'"), "control-option-command-space")
         XCTAssertEqual(database.scalar("SELECT version FROM schema_migrations WHERE version = 1"), "1")
         XCTAssertEqual(database.scalar("PRAGMA journal_mode"), "wal")
+    }
+
+    func testCommandPaletteShortcutPersists() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer { unsetenv("TSRS_DB_PATH") }
+
+        let store = NativeRelayStore(profile: "direct")
+        store.saveCommandPaletteShortcut(KeyboardShortcut(identifier: "control-option-command-p"))
+
+        XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().commandPaletteShortcut.identifier, "control-option-command-p")
     }
 
     func testLegacyCombinerSettingMigratesOnFreshOpen() throws {

@@ -30,7 +30,7 @@ Current state:
 22. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 23. Left-click playback makes the line it pulls from active before speaking.
 24. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.
-25. The menu bar app currently registers one global hotkey: Control-Option-Command-Space opens the command palette with Play Next selected. Right click opens the palette with an empty query.
+25. The menu bar app registers one configurable global command-palette hotkey. The default is Control-Option-Command-Space, which opens the palette with Play Next selected. Right click opens the palette with an empty query.
 26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
@@ -95,8 +95,8 @@ Then-recommended next slice: add direct-download signing/notarization packaging,
 Command palette update:
 
 1. The Raycast-style command palette is the keyboard-first relay action surface.
-2. Control-Option-Command-Space opens the palette with `play next` selected.
-3. Right click opens the palette with an empty query; there is no second global shortcut for the empty-query palette.
+2. The configurable Settings > Shortcut choice opens the palette with `play next` selected; the default is Control-Option-Command-Space.
+3. Right click opens the palette with an empty query; there is no second global shortcut for the empty-query palette, and Control-Option-Command-V remains unregistered.
 4. Left click on the menu bar icon continues to play the next message.
 5. `docs/command-palette.md` records the current interaction contract, action
    set, search behavior, UI shape, and guardrails.

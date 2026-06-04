@@ -18,8 +18,8 @@ The palette is the primary interactive UI for relay actions:
 
 This replaced the old "hotkey immediately plays next" behavior and the nested
 right-click menu. Right click opens the command palette with an empty query;
-Control-Option-Command-Space opens it with `play next` selected until the
-configurable shortcut settings flow replaces the hard-coded shortcut.
+the configured keyboard shortcut opens it with `play next` selected. The default
+shortcut is Control-Option-Command-Space.
 
 Left click on the menu bar icon should remain the fastest pointer path for Play
 Next. The command palette changes the keyboard-first path, not the left-click
@@ -94,13 +94,15 @@ message bodies in palette results by default.
 1. Commands are modeled in Swift and rendered by the command palette.
 2. The native AppKit palette supports search, selection, Return, Escape, and
    line-scoped command groups.
-3. Control-Option-Command-Space opens the palette with `play next` selected.
+3. The Settings > Shortcut choice opens the palette with `play next` selected;
+   the default is Control-Option-Command-Space.
 4. Right click opens the palette with an empty query.
 5. Left click remains Play Next.
-6. The compact menu remains focused on essential status/settings actions.
+6. Control-Option-Command-V is intentionally not registered as a global palette shortcut.
+7. The compact menu remains focused on essential status/settings actions.
 
-Next hardening should make the remaining shortcut configurable in Settings and
-keep command availability testable without AppKit UI.
+Shortcut registration is modeled separately from AppKit so tests can verify the
+default and persisted shortcut without registering a real global hotkey.
 
 ## Guardrails
 
