@@ -47,7 +47,7 @@ messages.
 Start with these message states:
 
 1. `queued`: accepted and waiting.
-2. `speaking`: claimed by the processor.
+2. `speaking`: claimed by the app-owned playback path.
 3. `heard`: playback completed.
 4. `handled`: the user acted on it.
 5. `skipped`: intentionally bypassed.
@@ -88,7 +88,7 @@ Grow toward these boundaries only as features need them:
 - `docs/`: decisions, progress, and agent misses.
 - `src/macos/TriStateRelayServiceTests/`: XCTest coverage for queue behavior, CLI behavior, storage, and app playback policy.
 
-Keep queue, policy, and validation logic in Swift types that can be tested without launching the app UI or audio path. UI and platform adapters consume queue APIs and the locked processor path rather than owning queue rules.
+Keep queue, policy, and validation logic in Swift types that can be tested without launching the app UI or audio path. UI and platform adapters consume queue APIs and the app-owned claim/playback path rather than owning queue rules.
 
 ## Milestone spine
 
@@ -103,7 +103,7 @@ Use this order unless there is a strong reason to change it:
 7. Native Swift CLI builds and storage runtime compatibility.
 8. Source-context metadata: session, app, cwd, and URL.
 9. Safe aggregate queue views by producer, line, priority, age, and status without exposing message text.
-10. App-owned processor loop.
+10. App-owned playback loop.
 11. Interactable AppKit menu bar host around the Swift CLI and app-owned playback path.
 12. Replay last, skip current, mark handled, and clear heard.
 13. Line-scoped menu actions and active-line switching from playback.

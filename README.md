@@ -136,9 +136,9 @@ Global hotkeys:
 
 ## Next slices
 
-1. Build the Raycast-style command palette in `docs/command-palette.md`.
-2. Add signing and notarization packaging for the direct-download app.
-3. Split the native app into smaller Swift files under the Xcode project.
+1. Split the native app into smaller Swift files under the Xcode project.
+2. Keep direct-download signing and notarization packaging validated as release behavior changes.
+3. Continue hardening the command palette and line-scoped actions without exposing relay message bodies by default.
 
 ## App Review note draft
 

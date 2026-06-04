@@ -8,7 +8,7 @@ Current state:
 
 1. Agent-first line guide and local skills are in place.
 2. The initial relay line skeleton has been replaced by the Swift implementation.
-3. SQLite-backed queue core uses `better-sqlite3` and supports enqueue, list, clear, focus, ready, mute, unmute, and claim-next-for-speech.
+3. Swift SQLite-backed queue core supports enqueue, list, clear, focus, ready, mute, unmute, and app-owned speech claiming.
 4. Ready mode claims exactly one queued relay and returns to focus.
 5. The CLI accepts the v0 `relay --line ... --message ...` contract.
 6. The original generated-helper path has been retired in favor of Swift/Xcode builds.
@@ -31,7 +31,7 @@ Current state:
 23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 24. Left-click playback makes the line it pulls from active before speaking.
 25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and speech command templates.
-26. The menu bar app registers global hotkeys: Control-Option-Command-Space plays the current line, and Control-Option-Command-V opens the menu.
+26. The menu bar app registers global hotkeys: Control-Option-Command-Space opens the command palette with Play Next selected, and Control-Option-Command-V opens the palette with an empty query.
 27. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
@@ -39,7 +39,7 @@ Roadmap gaps from the latest feature review:
 1. The roadmap should include safe aggregate queue views for producer/line/priority/staleness patterns without exposing message text.
 2. Shell-out app actions should eventually move behind a native library boundary or direct Swift boundary.
 
-Recommended next slice: safe aggregate queue views.
+Then-recommended next slice: safe aggregate queue views.
 
 ## 2026-06-01
 
@@ -68,7 +68,7 @@ Agent miss captured:
 2. The missing primitive was profile-specific exit criteria in repository guidance.
 3. `AGENTS.md` now requires direct-profile builds plus bundle inspection for app-visible direct changes; App Store-safe checks are legacy hardening references unless the App Store direction is explicitly reopened.
 
-Recommended next slice: prioritize direct-download customization, including configurable agents for summarizing many messages; treat App Store-safe enqueue/storage work as deferred unless the App Store direction is explicitly reopened.
+Then-recommended next slice: prioritize direct-download customization, including configurable agents for summarizing many messages; treat App Store-safe enqueue/storage work as deferred unless the App Store direction is explicitly reopened.
 
 Distribution direction update:
 
@@ -79,7 +79,7 @@ Distribution direction update:
 5. App Store-safe profile work remains useful only as legacy safety hardening, and it should not block direct-download customization or Pro features.
 6. The app should still move toward Swift/Xcode and native macOS APIs wherever practical, keeping generated helper behavior out of the app path.
 
-Recommended next slice: direct-download signing/notarization packaging or Swift/Xcode project migration.
+Then-recommended next slice: direct-download signing/notarization packaging or Swift/Xcode project migration.
 
 Swift migration update:
 
@@ -91,29 +91,22 @@ Swift migration update:
 6. The macOS app now mutates queue state and claims/marks speech relays directly through Swift SQLite instead of shelling out to app-only helper commands.
 7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj` and bundle the Swift-built `relay` CLI; the Swift CLI is now the active implementation and validation target.
 
-Recommended next slice: add direct-download signing/notarization packaging, then split the native app into smaller Swift files under the Xcode project.
+Then-recommended next slice: add direct-download signing/notarization packaging, then split the native app into smaller Swift files under the Xcode project.
 
-Command palette direction:
+Command palette update:
 
-1. The next major product direction is a Raycast-style command palette for
-   keyboard-first relay actions.
-2. Control-Option-Command-Space should open the palette instead of immediately
-   playing the next message.
-3. The palette should open with `play next` prefilled and selected, so Return
-   keeps the fast Play Next path while typing replaces the query and filters to
-   other actions.
-4. Left click on the menu bar icon should continue to play the next message.
-5. `docs/command-palette.md` records the interaction contract, initial action
-   set, search behavior, UI shape, and implementation slices.
-
-Recommended next slice: extract a command model from existing menu actions, then
-build the first native command palette window.
+1. The Raycast-style command palette is the keyboard-first relay action surface.
+2. Control-Option-Command-Space opens the palette with `play next` selected.
+3. Control-Option-Command-V and right click open the palette with an empty query.
+4. Left click on the menu bar icon continues to play the next message.
+5. `docs/command-palette.md` records the current interaction contract, action
+   set, search behavior, UI shape, and guardrails.
 
 Swift-only build update:
 
 1. Direct macOS app packaging uses shell/Xcode entrypoints at
    `scripts/build-macos.sh` and `scripts/package-macos-direct.sh`.
-2. The package-wrapper entrypoints have been removed; use the shell/Xcode entrypoints directly.
+2. The old package wrapper entrypoints have been removed; use the shell/Xcode entrypoints directly.
 3. The shell direct build now compiles the Swift `relay` helper, preserves app
    icon generation, runs Xcode, bundles only `relay`, and rejects any bundled
    `relay-processor`.
@@ -125,3 +118,14 @@ Generated-helper removal update:
 2. Swift/Xcode is the active app and CLI implementation path.
 3. Direct app bundles the Swift `relay` helper and continues to reject any bundled `relay-processor`.
 4. Validation now centers on `xcodebuild test`, `scripts/build-macos.sh direct`, `scripts/swift-cli-parity.sh`, and `scripts/restart-macos-app.sh`.
+
+Docs audit update:
+
+1. README, AGENTS, and docs now describe Swift/Xcode and shell-script entrypoints
+   as the active workflow.
+2. Legacy implementation-path references are kept only where they explain retired
+   surfaces.
+3. App Store-safe language is kept only as a legacy hardening reference, not an
+   active product goal.
+4. Current next slice: split the native app into smaller Swift files while
+   preserving app-owned playback and command-palette behavior.

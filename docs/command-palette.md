@@ -1,11 +1,10 @@
-# Command palette direction
+# Command palette
 
-TSRS should move from a nested right-click menu toward a Raycast-style command
-palette for fast keyboard-first relay actions.
+TSRS uses a Raycast-style command palette for fast keyboard-first relay actions.
 
 ## Product intent
 
-The palette becomes the primary interactive UI for relay actions:
+The palette is the primary interactive UI for relay actions:
 
 1. A single global hotkey opens the palette.
 2. The palette opens with `play next` prefilled.
@@ -17,9 +16,9 @@ The palette becomes the primary interactive UI for relay actions:
 7. Arrow keys move selection.
 8. Opening the palette never claims or speaks a relay by itself.
 
-This replaces the current "hotkey immediately plays next" behavior and the old
-nested right-click menu. Right click opens the command palette with an empty
-query; Control-Option-Command-Space opens it with `play next` selected.
+This replaced the old "hotkey immediately plays next" behavior and the nested
+right-click menu. Right click opens the command palette with an empty query;
+Control-Option-Command-Space opens it with `play next` selected.
 
 Left click on the menu bar icon should remain the fastest pointer path for Play
 Next. The command palette changes the keyboard-first path, not the left-click
@@ -89,20 +88,19 @@ Result subtitles should only include safe context such as line name, queued
 count, delivered count, failed count, or active-line state. Do not show relay
 message bodies in palette results by default.
 
-## Implementation slices
+## Current implementation
 
-1. Extract a command model from the existing menu actions so commands can be
-   rendered by both the menu and palette. This should be a behavior-preserving
-   refactor of the existing right-click menu before any palette UI ships.
-2. Build a small command palette window with search, selection, Return, and
-   Escape.
-3. Change Control-Option-Command-Space to open the palette with `play next`
-   selected.
-4. Change Control-Option-Command-V and right click to open the palette with an
-   empty query.
-5. Preserve left click as Play Next.
-6. Once the palette is reliable, consider replacing the right-click menu or
-   reducing it to essential status/settings actions.
+1. Commands are modeled in Swift and rendered by the command palette.
+2. The native AppKit palette supports search, selection, Return, Escape, and
+   line-scoped command groups.
+3. Control-Option-Command-Space opens the palette with `play next` selected.
+4. Control-Option-Command-V and right click open the palette with an empty query.
+5. Left click remains Play Next.
+6. The compact menu remains focused on essential status/settings actions.
+
+Future hardening should keep command availability testable without AppKit UI and
+continue improving search quality without showing relay message bodies by
+default.
 
 ## Guardrails
 

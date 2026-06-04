@@ -23,7 +23,7 @@ the direct profile remains the product and dogfooding path.
 The App Store-safe profile:
 
 1. Uses app-owned AVFoundation speech for relay playback.
-2. Uses the same CLI-only native app packaging as the direct build and does not build, bundle, or launch `relay-processor`.
+2. Uses the same Swift/Xcode app packaging as the direct build and does not build, bundle, or launch `relay-processor`.
 3. Uses native Swift SQLite access for app-owned queue controls and speech state.
 4. Masks external inactive-line combiner command templates.
 5. Has no CLI source command surface.
