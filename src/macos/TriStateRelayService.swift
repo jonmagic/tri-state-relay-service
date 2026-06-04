@@ -961,6 +961,12 @@ final class SettingsWindow: NSWindow {
     }
 }
 
+final class SettingsKeyboardFocusView: NSView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+}
+
 struct GlobalHotKeyRegistrationPlan: Equatable {
     let id: UInt32
     let keyCode: UInt32
@@ -998,6 +1004,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
     private let voiceOptions = availableSpeechVoiceOptions()
+    private let keyboardNavigationFocusView = SettingsKeyboardFocusView(frame: .zero)
 
     init(model: MenuBarModel, onInstallRelayCli: @escaping () -> Void, onSave: @escaping () -> Void) {
         self.model = model
@@ -1023,11 +1030,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #endif
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 430))
+        keyboardNavigationFocusView.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(sidebar)
         sidebar.addSubview(cliSectionRow)
         sidebar.addSubview(voiceSectionRow)
         sidebar.addSubview(secondarySectionRow)
         content.addSubview(settingsTabView)
+        content.addSubview(keyboardNavigationFocusView)
 
         let window = SettingsWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
@@ -1095,6 +1104,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
             settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
             settingsTabView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),
+            keyboardNavigationFocusView.widthAnchor.constraint(equalToConstant: 0),
+            keyboardNavigationFocusView.heightAnchor.constraint(equalToConstant: 0),
+            keyboardNavigationFocusView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            keyboardNavigationFocusView.topAnchor.constraint(equalTo: content.topAnchor),
         ])
         reload()
     }
@@ -1134,6 +1147,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let nextIndex = min(max(currentIndex + offset, 0), maxIndex)
         settingsTabView.selectTabViewItem(at: nextIndex)
         updateSidebarSelection(selectedIndex: nextIndex)
+        window?.makeFirstResponder(keyboardNavigationFocusView)
     }
 
     @objc private func selectVoice(_ sender: Any?) {

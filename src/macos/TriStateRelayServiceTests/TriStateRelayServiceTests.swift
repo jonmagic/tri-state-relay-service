@@ -28,6 +28,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("override func cancelOperation(_ sender: Any?)"))
         XCTAssertTrue(source.contains("event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == \"q\""))
         XCTAssertTrue(source.contains("NSApplication.shared.terminate(nil)"))
+        XCTAssertTrue(source.contains("final class SettingsKeyboardFocusView: NSView"))
+        XCTAssertTrue(source.contains("window?.makeFirstResponder(keyboardNavigationFocusView)"))
     }
 }
 
