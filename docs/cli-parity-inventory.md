@@ -16,31 +16,33 @@ are:
    Service.app/Contents/MacOS/relay`, the direct app shells out to that helper
    for `cli-status` and `install-cli`, and dogfooding instructions use it to
    enqueue relays. Deleting it first would remove the agent integration surface.
-2. There is no standalone Swift CLI target or Swift command dispatcher yet.
-   `src/macos/TriStateRelayService.swift` owns app playback, native SQLite menu
-   state, and some shared validation/storage logic, but it does not currently
-   parse `CommandLine.arguments` into the full `relay` command surface.
+2. A standalone Swift `relay-native` CLI target now exists with a shared
+   `RelayCore.swift` dispatcher. It currently supports `--version`, help, and a
+   validation-only `normalize` command, but it does not yet implement the full
+   queue-writing `relay` command surface.
 3. The current CLI behavior still lives in `src/cli.ts`, including enqueue,
    list, status, state, ready/focus/mute/unmute, line, combiner, settings,
    replay/skip/acknowledge/clear, app helper commands, `cli-status`,
    `install-cli`, `--version`, direct-vs-legacy-profile capability reporting,
    and external inactive-line combiner execution.
 4. The current persistent queue contract still has TypeScript as its most
-   complete implementation in `src/storage/store.ts`. Swift has native app
-   storage coverage, but the cutover still needs explicit parity for CLI
-   enqueue policy, inactive-line latest-only/custom combination behavior,
-   aggregate status JSON, install status JSON, stale expiry, and all command
-   mutations.
+   complete implementation in `src/storage/store.ts`. Swift now owns fresh
+   database creation, WAL/default settings, legacy combiner migration, message
+   validation, and native enqueue primitives, but the cutover still needs
+   explicit parity for CLI inactive-line latest-only/custom combination
+   behavior, aggregate status JSON, install status JSON, stale expiry, and all
+   command mutations.
 5. `src/core/cli-install.ts` owns the install/update safety rules for copying
    `relay` to `~/.local/bin/relay`: source and target signatures, stale/current
    detection, foreign-binary refusal, executable mode preservation, version
    output, and PATH diagnostics. The Swift app currently delegates those checks
    to the bundled CLI.
-6. `package.json` is still the single entry point for validation and release
-   wrappers: `npm test`, `npm run typecheck`, `npm run build`,
+6. `package.json` is still the single entry point for validation and several
+   release/developer wrappers: `npm test`, `npm run typecheck`, `npm run build`,
    `npm run build:native:cli`, `npm run build:macos:direct`,
    `npm run package:macos:direct`, `npm run restart:macos`, and
-   `npm run eval:inactive-line`.
+   `npm run eval:inactive-line`. The macOS build/package wrappers now delegate
+   to shell scripts, but npm remains the top-level command runner.
 7. Perry remains in the active direct-build path because
    `scripts/build-macos.sh` compiles `src/cli.ts` before Xcode and then bundles
    `dist/native/relay`. `scripts/package-macos-direct.sh` signs and smoke-tests
@@ -48,8 +50,9 @@ are:
 8. The tracked TypeScript test suite is the broadest regression harness for the
    CLI, storage, command-template parsing, direct-vs-legacy capabilities,
    processor compatibility, bundle validation, and app shell seams. Swift XCTest
-   coverage exists for message validation, playback profile behavior, and the
-   native relay store, but not yet for the full CLI oracle in this inventory.
+   coverage exists for message validation, playback profile behavior, native
+   relay store creation/migration, and the initial `relay-native` dispatcher,
+   but not yet for the full CLI oracle in this inventory.
 9. Shell scripts now own macOS app build and direct-download packaging, while
    `scripts/*.mjs` still provide restart, eval, and test-only bundle validation
    automation. Even after the CLI moves to Swift, replacing `package.json` also
@@ -68,8 +71,8 @@ are:
 
 Safe deletion order:
 
-1. Add a native Swift `relay` CLI target or executable mode that can run outside
-   the app bundle and write to the same SQLite store.
+1. Expand the native Swift `relay-native` CLI target until it can write to the
+   same SQLite store and cover the full direct-download command surface.
 2. Build a Swift parity harness from this inventory against the current
    `dist/native/relay` oracle, prioritizing direct-download behavior and keeping
    legacy App Store-profile behavior as reference only.
@@ -93,8 +96,9 @@ Safe deletion order:
    documented build, validation, packaging, dogfooding, or app install path uses
    npm, TypeScript, Perry, or generated JavaScript.
 
-The concrete next engineering slice is therefore: create the Swift CLI target
-and a direct-profile parity test harness for this command matrix, then change
+The concrete next engineering slice is therefore: expand the Swift CLI target
+from validation-only commands to queue-writing direct-profile commands, add a
+direct-profile parity harness for this command matrix, then change
 `scripts/build-macos.sh` to bundle the Swift-built `relay` instead of
 `dist/native/relay`.
 
