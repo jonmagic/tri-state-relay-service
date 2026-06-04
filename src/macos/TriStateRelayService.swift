@@ -282,6 +282,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private func showMenu() {
         let menu = NSMenu()
 
+        menu.addItem(menuItem("Play Next", action: #selector(linePlayNext), enabled: model.status.queued > 0))
+        menu.addItem(.separator())
         for item in lineMenuItems() {
             menu.addItem(item)
         }
@@ -291,9 +293,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(menuItem("Mute", action: #selector(mute), enabled: true))
         }
-#if !APP_STORE
-        menu.addItem(menuItem(model.relayCliMenuTitle(), action: #selector(installRelayCli), enabled: true))
-#endif
         menu.addItem(menuItem("Settings...", action: #selector(showSettingsWindow), enabled: true))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", action: #selector(quit), enabled: true))
@@ -350,25 +349,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             },
         ]
 
-        let queuedLines = model.status.menuLines.filter { $0.queued > 0 }
-
-        if queuedLines.count > 1 {
-            commands.append(contentsOf: queuedLines.map { line in
-                CommandPaletteCommand(title: "Play Next: \(line.line)", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
-                    self?.model.setActiveLine(line.line)
-                    self?.model.playActiveLine()
-                    self?.nativePlayback.playNext(line: line.line)
-                    self?.refreshStatusItem()
-                    self?.schedulePlaybackRefresh()
-                }
-            })
-        }
-
         commands.append(contentsOf: model.status.menuLines.compactMap { line in
-            guard line.queued > 0 else {
-                return nil
-            }
-
             let children = commandPaletteCommands(for: line)
 
             guard !children.isEmpty else {
@@ -377,21 +358,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
             return CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued, \(line.heard) delivered", aliases: ["line", line.line], children: children)
         })
-
-        commands.append(contentsOf: [
-            CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS", restoresPreviousFocus: false) { [weak self] in
-                self?.showSettingsWindow()
-            },
-            CommandPaletteCommand(title: "Quit", subtitle: "Command-Q", aliases: ["exit"], restoresPreviousFocus: false) {
-                NSApplication.shared.terminate(nil)
-            },
-        ])
-
-#if !APP_STORE
-        commands.append(CommandPaletteCommand(title: model.relayCliMenuTitle(), subtitle: "Install or update the relay command line tool", aliases: ["install", "cli", "relay"], restoresPreviousFocus: false) { [weak self] in
-            self?.installRelayCli()
-        })
-#endif
 
         if model.status.muted {
             commands.append(CommandPaletteCommand(title: "Unmute", subtitle: "Allow relays to speak") { [weak self] in
@@ -405,15 +371,20 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             })
         }
 
+        commands.append(contentsOf: [
+            CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS", restoresPreviousFocus: false) { [weak self] in
+                self?.showSettingsWindow()
+            },
+            CommandPaletteCommand(title: "Quit", subtitle: "Command-Q", aliases: ["exit"], restoresPreviousFocus: false) {
+                NSApplication.shared.terminate(nil)
+            },
+        ])
+
         if model.status.mode != "focus" {
             commands.append(CommandPaletteCommand(title: "Focus", subtitle: "Return to quiet focus mode") { [weak self] in
                 self?.model.focus()
                 self?.refreshStatusItem()
             })
-        }
-
-        if model.status.queued == 0 {
-            commands.append(CommandPaletteCommand(title: "No Queued Messages", subtitle: "TSRS is caught up", aliases: ["empty", "none", "messages"]))
         }
 
         return commands
@@ -1555,8 +1526,17 @@ struct CommandPaletteCommand {
     }
 }
 
-final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDelegate {
+final class CommandPaletteWindowController: NSWindowController, NSTextFieldDelegate {
+    private static let panelWidth: CGFloat = 560
+    private static let outerPadding: CGFloat = 12
+    private static let searchHeight: CGFloat = 44
+    private static let searchToDividerSpacing: CGFloat = 8
+    private static let dividerToResultsSpacing: CGFloat = 8
+    private static let rowHeight: CGFloat = 40
+    private static let rowSpacing: CGFloat = 4
+    private static let maxVisibleRows = 5
     private let searchField = CommandPaletteSearchField()
+    private let headerDivider = NSBox()
     private let resultsStack = NSStackView()
     private let commandsProvider: () -> [CommandPaletteCommand]
     private var allCommands: [CommandPaletteCommand] = []
@@ -1570,7 +1550,7 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
     init(commandsProvider: @escaping () -> [CommandPaletteCommand]) {
         self.commandsProvider = commandsProvider
         let panel = CommandPalettePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 120),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -1624,34 +1604,43 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         }
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.font = NSFont.systemFont(ofSize: 18, weight: .regular)
+        searchField.font = NSFont.systemFont(ofSize: 22, weight: .regular)
         searchField.placeholderString = "Search TSRS actions..."
         searchField.delegate = self
 
+        headerDivider.translatesAutoresizingMaskIntoConstraints = false
+        headerDivider.boxType = .separator
+
         resultsStack.orientation = .vertical
-        resultsStack.alignment = .leading
-        resultsStack.spacing = 6
+        resultsStack.alignment = .centerX
+        resultsStack.spacing = Self.rowSpacing
         resultsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let content = NSView(frame: window.contentView?.bounds ?? .zero)
+        let content = NSVisualEffectView(frame: window.contentView?.bounds ?? .zero)
         content.autoresizingMask = [.width, .height]
+        content.material = .popover
+        content.blendingMode = .behindWindow
+        content.state = .active
         content.wantsLayer = true
         content.layer?.cornerRadius = 18
         content.layer?.cornerCurve = .continuous
         content.layer?.masksToBounds = true
-        content.layer?.backgroundColor = resolvedColor(.windowBackgroundColor).cgColor
         content.addSubview(searchField)
+        content.addSubview(headerDivider)
         content.addSubview(resultsStack)
         window.contentView = content
 
         NSLayoutConstraint.activate([
-            searchField.topAnchor.constraint(equalTo: content.topAnchor, constant: 18),
-            searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
-            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
-            searchField.heightAnchor.constraint(equalToConstant: 34),
-            resultsStack.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 14),
-            resultsStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
-            resultsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+            searchField.topAnchor.constraint(equalTo: content.topAnchor, constant: Self.outerPadding),
+            searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
+            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
+            searchField.heightAnchor.constraint(equalToConstant: Self.searchHeight),
+            headerDivider.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Self.searchToDividerSpacing),
+            headerDivider.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            headerDivider.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            resultsStack.topAnchor.constraint(equalTo: headerDivider.bottomAnchor, constant: Self.dividerToResultsSpacing),
+            resultsStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.outerPadding),
+            resultsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.outerPadding),
         ])
     }
 
@@ -1799,15 +1788,18 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
 
         if filteredCommands.isEmpty {
             resultsStack.addArrangedSubview(resultRow(title: "No actions found", subtitle: "Try another query", selected: false))
+            resizeWindow(rowCount: 1)
             return
         }
 
-        for item in visibleCommands() {
+        let visibleItems = visibleCommands()
+        for item in visibleItems {
             resultsStack.addArrangedSubview(resultRow(title: item.command.title, subtitle: item.command.subtitle, selected: item.index == selectedIndex) { [weak self] in
                 self?.selectedIndex = item.index
                 self?.executeSelected()
             })
         }
+        resizeWindow(rowCount: visibleItems.count)
     }
 
     private func visibleCommands(limit: Int = 5) -> [(index: Int, command: CommandPaletteCommand)] {
@@ -1823,6 +1815,28 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         }
     }
 
+    private func resizeWindow(rowCount: Int) {
+        guard let window else {
+            return
+        }
+
+        let rowsHeight = CGFloat(rowCount) * Self.rowHeight
+        let rowGapsHeight = CGFloat(max(0, rowCount - 1)) * Self.rowSpacing
+        let height = Self.outerPadding
+            + Self.searchHeight
+            + Self.searchToDividerSpacing
+            + 1
+            + Self.dividerToResultsSpacing
+            + rowsHeight
+            + rowGapsHeight
+            + Self.outerPadding
+        var frame = window.frame
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        frame.size = NSSize(width: Self.panelWidth, height: height)
+        frame.origin = NSPoint(x: center.x - frame.width / 2, y: center.y - frame.height / 2)
+        window.setFrame(frame, display: true)
+    }
+
     private func resultRow(title: String, subtitle: String, selected: Bool, action: (() -> Void)? = nil) -> NSView {
         let row = PaletteResultRowView()
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -1831,23 +1845,23 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
 
         let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
         let titleField = NSTextField(labelWithString: displayTitle)
-        titleField.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        titleField.textColor = selected ? resolvedColor(.selectedMenuItemTextColor) : resolvedColor(.labelColor)
+        titleField.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        titleField.textColor = .labelColor
         let subtitleField = NSTextField(labelWithString: subtitle)
         subtitleField.font = NSFont.systemFont(ofSize: 11)
-        subtitleField.textColor = selected ? resolvedColor(.selectedMenuItemTextColor) : resolvedColor(.secondaryLabelColor)
+        subtitleField.textColor = .secondaryLabelColor
         let stack = NSStackView(views: [titleField, subtitleField])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        stack.spacing = 1
         stack.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: 44),
-            row.widthAnchor.constraint(equalToConstant: 524),
-            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -12),
+            row.heightAnchor.constraint(equalToConstant: Self.rowHeight),
+            row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.outerPadding * 2)),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -14),
             stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         ])
 
@@ -1855,7 +1869,28 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
     }
 }
 
-final class CommandPaletteSearchField: NSSearchField {}
+final class CommandPaletteSearchField: NSTextField {
+    init() {
+        super.init(frame: .zero)
+        isEditable = true
+        isSelectable = true
+        isBordered = false
+        drawsBackground = false
+        focusRingType = .none
+        textColor = .labelColor
+        placeholderAttributedString = NSAttributedString(
+            string: "Search TSRS actions...",
+            attributes: [
+                .foregroundColor: NSColor.placeholderTextColor,
+                .font: NSFont.systemFont(ofSize: 22, weight: .regular),
+            ]
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
 
 final class CommandPalettePanel: NSPanel {
     var onQuit: (() -> Void)?
@@ -1876,6 +1911,7 @@ final class CommandPalettePanel: NSPanel {
 
         return super.performKeyEquivalent(with: event)
     }
+
 }
 
 final class PaletteResultRowView: NSView {
@@ -1897,8 +1933,8 @@ final class PaletteResultRowView: NSView {
             return
         }
 
-        resolvedColor(.controlAccentColor).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 3), xRadius: 8, yRadius: 8).fill()
+        resolvedColor(.controlAccentColor).withAlphaComponent(0.16).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 3, dy: 2), xRadius: 8, yRadius: 8).fill()
     }
 }
 

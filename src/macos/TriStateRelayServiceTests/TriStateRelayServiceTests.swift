@@ -61,6 +61,44 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("window?.makeFirstResponder(keyboardNavigationFocusView)"))
     }
 
+    func testStatusMenuOrderKeepsCoreActionsSimple() throws {
+        let source = try triStateRelayServiceSource()
+        guard
+            let showMenuRange = source.range(of: "    private func showMenu()"),
+            let endRange = source[showMenuRange.lowerBound...].range(of: "    private func playCurrentLineFromHotKey()")
+        else {
+            return XCTFail("showMenu boundaries are missing")
+        }
+        let showMenuSource = source[showMenuRange.lowerBound..<endRange.lowerBound]
+
+        let playNextOffset = showMenuSource.distance(from: showMenuSource.startIndex, to: showMenuSource.range(of: "menu.addItem(menuItem(\"Play Next\"")!.lowerBound)
+        let linesOffset = showMenuSource.distance(from: showMenuSource.startIndex, to: showMenuSource.range(of: "for item in lineMenuItems()")!.lowerBound)
+        let muteOffset = showMenuSource.distance(from: showMenuSource.startIndex, to: showMenuSource.range(of: "menu.addItem(menuItem(\"Mute\"")!.lowerBound)
+        let settingsOffset = showMenuSource.distance(from: showMenuSource.startIndex, to: showMenuSource.range(of: "menu.addItem(menuItem(\"Settings...\"")!.lowerBound)
+        let quitOffset = showMenuSource.distance(from: showMenuSource.startIndex, to: showMenuSource.range(of: "menu.addItem(menuItem(\"Quit\"")!.lowerBound)
+
+        XCTAssertLessThan(playNextOffset, linesOffset)
+        XCTAssertLessThan(linesOffset, muteOffset)
+        XCTAssertLessThan(muteOffset, settingsOffset)
+        XCTAssertLessThan(settingsOffset, quitOffset)
+        XCTAssertFalse(showMenuSource.contains("relayCliMenuTitle"))
+    }
+
+    func testCommandPaletteOmitsCliInstallAndNoQueuedMessagesActions() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertFalse(source.contains("CommandPaletteCommand(title: model.relayCliMenuTitle()"))
+        XCTAssertFalse(source.contains("CommandPaletteCommand(title: \"No Queued Messages\""))
+    }
+
+    func testCommandPaletteListsActiveLinesAfterPlayNext() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("commands.append(contentsOf: model.status.menuLines.compactMap { line in"))
+        XCTAssertFalse(source.contains("CommandPaletteCommand(title: \"Play Next: \\(line.line)\""))
+        XCTAssertFalse(source.contains("guard line.queued > 0 else"))
+    }
+
     func testVoicePanelUsesConciseUserFacingHelperText() throws {
         let source = try triStateRelayServiceSource()
 
@@ -79,9 +117,33 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("for item in visibleCommands()"))
+        XCTAssertTrue(source.contains("let visibleItems = visibleCommands()"))
         XCTAssertTrue(source.contains("let startIndex = min(max(selectedIndex - limit + 1, 0), maxStartIndex)"))
         XCTAssertFalse(source.contains("filteredCommands.prefix(5)"))
+    }
+
+    func testCommandPaletteUsesRaycastStyleDynamicAppearance() throws {
+        let source = try triStateRelayServiceSource()
+        guard
+            let paletteRange = source.range(of: "final class CommandPaletteWindowController"),
+            let endRange = source[paletteRange.lowerBound...].range(of: "private func configureSidebarButton")
+        else {
+            return XCTFail("command palette boundaries are missing")
+        }
+        let paletteSource = source[paletteRange.lowerBound..<endRange.lowerBound]
+
+        XCTAssertTrue(paletteSource.contains("let content = NSVisualEffectView"))
+        XCTAssertTrue(paletteSource.contains("content.material = .popover"))
+        XCTAssertTrue(paletteSource.contains("private let headerDivider = NSBox()"))
+        XCTAssertTrue(paletteSource.contains("final class CommandPaletteSearchField: NSTextField"))
+        XCTAssertTrue(paletteSource.contains("placeholderAttributedString = NSAttributedString"))
+        XCTAssertTrue(paletteSource.contains("textColor = .labelColor"))
+        XCTAssertTrue(paletteSource.contains("titleField.textColor = .labelColor"))
+        XCTAssertTrue(paletteSource.contains("subtitleField.textColor = .secondaryLabelColor"))
+        XCTAssertTrue(paletteSource.contains("withAlphaComponent(0.16)"))
+        XCTAssertFalse(paletteSource.contains("CommandPaletteSearchField: NSSearchField"))
+        XCTAssertFalse(paletteSource.contains("content.layer?.backgroundColor = resolvedColor(.windowBackgroundColor).cgColor"))
+        XCTAssertFalse(paletteSource.contains("selectedMenuItemTextColor"))
     }
 
     func testCommandPaletteSupportsAndShowsQuitShortcut() throws {
@@ -93,13 +155,6 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == \"q\""))
     }
 
-    func testCommandPaletteOnlyShowsLinePlayNextWhenMultipleLinesAreQueued() throws {
-        let source = try triStateRelayServiceSource()
-
-        XCTAssertTrue(source.contains("let queuedLines = model.status.menuLines.filter { $0.queued > 0 }"))
-        XCTAssertTrue(source.contains("if queuedLines.count > 1"))
-        XCTAssertTrue(source.contains("CommandPaletteCommand(title: \"Play Next: \\(line.line)\""))
-    }
 }
 
 func triStateRelayServiceSource() throws -> String {
