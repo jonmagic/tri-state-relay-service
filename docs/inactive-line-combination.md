@@ -45,27 +45,7 @@ apfel --system <system> --max-tokens 160 --temperature 0 --output plain <input>
 llm prompt <input> --system <system> --no-stream --no-log
 ```
 
-Run the manual eval suite to compare both tools:
-
-```sh
-scripts/eval-inactive-line.py
-```
-
-Current baseline: `llm` passes the included fixtures more reliably than
-`apfel`. Keep both in the eval suite because local Apple Intelligence may
-improve, but prefer `llm` for inactive-line combination until `apfel` passes
-the blocker, completion, and duplicate-update fixtures. Use `none` when no
-CLI LLM tool is configured or desired.
-
-## Eval artifacts
-
-The combiner prompt lives in `docs/prompts/combine-inactive-line.md`, the judge
-prompt lives in `docs/prompts/evaluate-inactive-line.md`, fixtures live in
-`evals/inactive-line-fixtures.json`, and the latest retained baseline output
-lives in `evals/results/inactive-line-results.json`. The results file is
-checked in intentionally so prompt and model changes can be reviewed against a
-known baseline; regenerate it with `scripts/eval-inactive-line.py` when the
-fixtures or prompts change.
+Use `none` when no CLI LLM tool is configured or desired.
 
 ## Input shape
 

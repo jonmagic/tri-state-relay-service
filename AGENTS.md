@@ -94,27 +94,17 @@ Keep queue, policy, and validation logic in Swift types that can be tested witho
 
 ## Milestone spine
 
-Use this order unless there is a strong reason to change it:
+Use this order unless there is a strong reason to change it. After each item is
+completed and committed, update this section and any directly related docs so
+the next agent sees the current state instead of stale guidance:
 
-1. Line skeleton, commands, and documentation.
-2. SQLite schema and CLI enqueue/list/mute/unmute/clear/ready.
-3. Message validation, max length, type and priority defaults, and token-looking input rejection.
-4. Queue ordering, duplicate collapse, max depth, and per-line rate limits.
-5. Processor claim-next-and-speak flow.
-6. Persistent focus/ready/mute state.
-7. Native Swift CLI builds and storage runtime compatibility.
-8. Source-context metadata: session, app, cwd, and URL.
-9. Safe aggregate queue views by producer, line, priority, age, and status without exposing message text.
-10. App-owned playback loop.
-11. Interactable AppKit menu bar host around the Swift CLI and app-owned playback path.
-12. Replay last, skip current, mark handled, and clear heard.
-13. Line-scoped menu actions and active-line switching from playback.
-14. Relay terminology aliases for acknowledge and clear-delivered.
-15. Terminal-specific focus adapters where reliable.
-16. Signed direct-download packaging: signing, notarization, and standard CLI installation.
-17. Swift/Xcode migration for app-owned queue, settings, source actions, and playback behavior.
-18. Direct-download customization: configurable summarization agents, app-owned speech, and safe local automation.
-19. Remove app dependence on `relay-processor`; playback is app-owned, with direct-profile `/usr/bin/say` preserved until an explicit product decision replaces the Siri voice path.
+1. Remove `Control` + `Option` + `Command` + `V` as a global command-palette shortcut. Keep right click for an empty-query palette and preserve `Control` + `Option` + `Command` + `Space` as the current default for Play Next.
+2. Make the command-palette shortcut configurable in Settings. Default to the current Play Next shortcut, but persist the user's choice and keep shortcut registration testable without AppKit UI.
+3. Require first-start configuration before normal app use. Open Settings on first launch and guide the user through CLI installation, shortcut selection, and voice selection without using a heavy "wizard" pattern.
+4. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
+5. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
+6. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
+7. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
 
 ## Task exit criteria
 

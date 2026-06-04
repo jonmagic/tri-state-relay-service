@@ -18,7 +18,8 @@ The palette is the primary interactive UI for relay actions:
 
 This replaced the old "hotkey immediately plays next" behavior and the nested
 right-click menu. Right click opens the command palette with an empty query;
-Control-Option-Command-Space opens it with `play next` selected.
+Control-Option-Command-Space opens it with `play next` selected until the
+configurable shortcut settings flow replaces the hard-coded shortcut.
 
 Left click on the menu bar icon should remain the fastest pointer path for Play
 Next. The command palette changes the keyboard-first path, not the left-click
@@ -94,13 +95,13 @@ message bodies in palette results by default.
 2. The native AppKit palette supports search, selection, Return, Escape, and
    line-scoped command groups.
 3. Control-Option-Command-Space opens the palette with `play next` selected.
-4. Control-Option-Command-V and right click open the palette with an empty query.
+4. Right click opens the palette with an empty query.
 5. Left click remains Play Next.
 6. The compact menu remains focused on essential status/settings actions.
 
-Future hardening should keep command availability testable without AppKit UI and
-continue improving search quality without showing relay message bodies by
-default.
+Next hardening should remove the second global shortcut, make the remaining
+shortcut configurable in Settings, and keep command availability testable without
+AppKit UI.
 
 ## Guardrails
 

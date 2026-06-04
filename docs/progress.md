@@ -24,14 +24,14 @@ Current state:
 16. The menu bar app supports line-scoped source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 17. The menu bar app periodically refreshes queue state and processes one queued relay when ready and unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
-19. `scripts/eval-inactive-line.py` compares `apfel` and `llm` against relay-composition fixtures with contract checks and an LLM judge.
+19. Historical inactive-line eval artifacts exist but should not be part of the user-facing path.
 20. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
 21. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
 22. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
 23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 24. Left-click playback makes the line it pulls from active before speaking.
 25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.
-26. The menu bar app registers global hotkeys: Control-Option-Command-Space opens the command palette with Play Next selected, and Control-Option-Command-V opens the palette with an empty query.
+26. The menu bar app currently registers global hotkeys: Control-Option-Command-Space opens the command palette with Play Next selected, and the second empty-query shortcut is targeted for removal.
 27. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
@@ -97,7 +97,7 @@ Command palette update:
 
 1. The Raycast-style command palette is the keyboard-first relay action surface.
 2. Control-Option-Command-Space opens the palette with `play next` selected.
-3. Control-Option-Command-V and right click open the palette with an empty query.
+3. Right click opens the palette with an empty query; the second global shortcut is targeted for removal.
 4. Left click on the menu bar icon continues to play the next message.
 5. `docs/command-palette.md` records the current interaction contract, action
    set, search behavior, UI shape, and guardrails.
