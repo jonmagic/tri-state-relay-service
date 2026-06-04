@@ -27,6 +27,8 @@ built_app="$derived_data/Build/Products/Release/$app_name"
 output_app="$dist_root/$app_name"
 output_macos="$output_app/Contents/MacOS"
 output_resources="$output_app/Contents/Resources"
+relay_build_root="$derived_data/relay-native"
+relay_native="$relay_build_root/Release/relay-native"
 
 install_app_icon() {
   if [[ ! -f "$source_app_icon" ]]; then
@@ -106,14 +108,6 @@ verify_bundle() {
   fi
 }
 
-perry_bin="perry"
-if [[ -x "node_modules/.bin/perry" ]]; then
-  perry_bin="node_modules/.bin/perry"
-fi
-
-mkdir -p "dist/native"
-"$perry_bin" compile "src/cli.ts" -o "dist/native/relay"
-
 rm -rf "$derived_data" "$output_app"
 mkdir -p "$dist_root"
 
@@ -130,7 +124,14 @@ if [[ "$profile" == "app-store" ]]; then
 fi
 
 xcodebuild "${xcodebuild_args[@]}"
+xcodebuild \
+  -project "$project" \
+  -target relay-native \
+  -configuration Release \
+  "SYMROOT=$PWD/$relay_build_root" \
+  CODE_SIGNING_ALLOWED=NO
+
 cp -R "$built_app" "$dist_root"
-cp "dist/native/relay" "$output_macos/relay"
+cp "$relay_native" "$output_macos/relay"
 install_app_icon
 verify_bundle "$output_app"

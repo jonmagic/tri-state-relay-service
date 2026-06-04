@@ -104,6 +104,42 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["clear"]).stdout, "cleared 1 relays")
         XCTAssertEqual(runRelayCli(["list"]).stdout, "mode=focus muted=false")
     }
+
+    func testStatusReportsJsonForQueue() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        _ = runRelayCli(["--line", "Brain", "--message", "json please"])
+
+        let result = runRelayCli(["status"])
+        XCTAssertEqual(result.stderr, "")
+        XCTAssertEqual(result.exitCode, 0)
+
+        let object = try jsonObject(result.stdout)
+        XCTAssertEqual(object["profile"] as? String, "direct")
+        XCTAssertEqual(object["mode"] as? String, "focus")
+        XCTAssertEqual(object["queueCount"] as? Int, 1)
+
+        let counts = try XCTUnwrap(object["counts"] as? [String: Int])
+        XCTAssertEqual(counts["queued"], 1)
+    }
+
+    func testCliStatusAndInstallCliUseSourceAndTargetFlags() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("relay-source").path
+        let target = directory.appendingPathComponent("bin/relay").path
+        try "#!/usr/bin/env sh\necho relay 0.1.0\n".write(toFile: source, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source)
+
+        let missing = runRelayCli(["cli-status", "--source", source, "--target", target])
+        XCTAssertEqual(try jsonObject(missing.stdout)["status"] as? String, "missing")
+
+        let installed = runRelayCli(["install-cli", "--source", source, "--target", target])
+        XCTAssertEqual(try jsonObject(installed.stdout)["status"] as? String, "current")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target))
+
+        let current = runRelayCli(["cli-status", "--source", source, "--target", target])
+        XCTAssertEqual(try jsonObject(current.stdout)["status"] as? String, "current")
+    }
 }
 
 private func isolatedDatabasePath() -> String {
@@ -111,4 +147,9 @@ private func isolatedDatabasePath() -> String {
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
         .appendingPathComponent("relay.db")
         .path
+}
+
+private func jsonObject(_ text: String) throws -> [String: Any] {
+    let data = try XCTUnwrap(text.data(using: .utf8))
+    return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
 }

@@ -56,16 +56,15 @@ npm run build
 npm link
 ```
 
-Build native Perry binaries:
+Build legacy Perry binaries for parity/oracle work:
 
 ```sh
 npm run build:native
 ```
 
-Perry currently compiles the CLI and legacy processor entrypoints, but the
-native runtime requires Perry-compatible dependencies. The SQLite store
-uses `better-sqlite3`, which is covered by the Perry dependency check and
-native runtime smoke test.
+The direct app no longer bundles the Perry-built CLI, but Perry remains useful
+temporarily as the current CLI parity oracle while Swift command coverage catches
+up. The legacy processor entrypoint must not be bundled into the macOS app.
 
 Build and run the direct-download macOS menu bar app:
 
@@ -75,8 +74,8 @@ open "dist/macos/Tri-State Relay Service.app"
 ```
 
 The macOS app is built through
-`src/macos/TriStateRelayService.xcodeproj`; the npm build wrapper still builds
-and bundles the Perry-built `relay` CLI for agent integrations.
+`src/macos/TriStateRelayService.xcodeproj`; the build wrapper now builds and
+bundles the Swift `relay` CLI for agent integrations.
 
 The primary distribution direction is a signed and notarized direct-download
 Mac app with a standard bundled or installable `relay` CLI. The Mac App Store

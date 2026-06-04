@@ -11,11 +11,10 @@ The current repository is not ready to delete `package.json`,
 `dist` JavaScript in one safe step. The exact blockers from the current tree
 are:
 
-1. `dist/native/relay` is still the shipped CLI oracle and bundled helper. The
-   macOS build wrapper copies it into `dist/macos/Tri-State Relay
-   Service.app/Contents/MacOS/relay`, the direct app shells out to that helper
-   for `cli-status` and `install-cli`, and dogfooding instructions use it to
-   enqueue relays. Deleting it first would remove the agent integration surface.
+1. `dist/native/relay` is still the compiled CLI oracle for parity checks, but
+   the direct macOS build now bundles the Swift-built `relay-native` executable
+   as `Contents/MacOS/relay`. Deleting the oracle before the parity harness
+   passes would remove the comparison target for remaining command coverage.
 2. A standalone Swift `relay-native` CLI target now exists with a shared
    `RelayCore.swift` dispatcher. It currently supports `--version`, help, and a
    validation-only `normalize` command, but it does not yet implement the full
@@ -43,10 +42,9 @@ are:
    `npm run package:macos:direct`, `npm run restart:macos`, and
    `npm run eval:inactive-line`. The macOS build/package wrappers now delegate
    to shell scripts, but npm remains the top-level command runner.
-7. Perry remains in the active direct-build path because
-   `scripts/build-macos.sh` compiles `src/cli.ts` before Xcode and then bundles
-   `dist/native/relay`. `scripts/package-macos-direct.sh` signs and smoke-tests
-   that bundled helper before signing and notarizing the app.
+7. Perry no longer sits in the active direct app build path. It remains in the
+   repository as a parity oracle and legacy native build path until the Swift CLI
+   covers the remaining command matrix.
 8. The tracked TypeScript test suite is the broadest regression harness for the
    CLI, storage, command-template parsing, direct-vs-legacy capabilities,
    processor compatibility, bundle validation, and app shell seams. Swift XCTest
@@ -76,17 +74,16 @@ Safe deletion order:
 2. Build a Swift parity harness from this inventory against the current
    `dist/native/relay` oracle, prioritizing direct-download behavior and keeping
    legacy App Store-profile behavior as reference only.
-3. Port CLI install/update safety from `src/core/cli-install.ts` so the app no
-   longer shells out to the bundled Node/Perry helper for `cli-status` or
-   `install-cli`.
-4. Move release wrappers off Perry: Xcode or SwiftPM builds the app and CLI,
-   packaging signs and smoke-tests the Swift `relay`, and bundle validation still
+3. Finish porting CLI install/update safety from `src/core/cli-install.ts` and
+   validate the app install/update flow against the bundled Swift helper.
+4. Finish moving release wrappers off Perry: Xcode or SwiftPM builds the app and
+   CLI, packaging signs and smoke-tests the Swift `relay`, and bundle validation still
    proves `relay-processor` is absent.
 5. Migrate or retire TypeScript tests by replacing their coverage with XCTest or
    another non-Node test runner for CLI output, SQLite side effects, command
    template safety, bundle inspection, and direct-download customization.
-6. Flip docs and app packaging to the Swift `relay`; keep `dist/native/relay`
-   only as a temporary oracle until the parity harness passes.
+6. Keep `dist/native/relay` only as a temporary oracle until the parity harness
+   passes.
 7. Remove Perry scripts and dependency entries, then delete `src/cli.ts`,
    `src/storage/**`, `src/core/**`, `src/app/**`, `src/processor.ts`, and
    `tests/**/*.ts` only after their Swift replacements or retirements are
@@ -97,10 +94,8 @@ Safe deletion order:
    npm, TypeScript, Perry, or generated JavaScript.
 
 The concrete next engineering slice is therefore: expand the Swift CLI target
-from validation-only commands to queue-writing direct-profile commands, add a
-direct-profile parity harness for this command matrix, then change
-`scripts/build-macos.sh` to bundle the Swift-built `relay` instead of
-`dist/native/relay`.
+from core queue/install commands to the remaining direct-profile command matrix,
+then add a direct-profile parity harness against `dist/native/relay`.
 
 Probe environment:
 

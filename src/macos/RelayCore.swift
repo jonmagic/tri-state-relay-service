@@ -159,6 +159,7 @@ Commands:
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and enqueue a relay.
   list                 List relays.
+  status               Print queue status JSON.
   state                Print focus/ready/mute state.
   ready                Release one relay.
   focus                Keep queued relays quiet.
@@ -195,6 +196,11 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
             }
             return RelayCliResult(stdout: lines.joined(separator: "\n"), stderr: "", exitCode: 0)
         }
+    case "status":
+        return withRelayCliStore { store in
+            let status = try store.statusJSON()
+            return RelayCliResult(stdout: status, stderr: "", exitCode: 0)
+        }
     case "state":
         return withRelayCliStore { store in
             let state = try store.state()
@@ -230,6 +236,10 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
             let count = try store.clear()
             return RelayCliResult(stdout: "cleared \(count) relays", stderr: "", exitCode: 0)
         }
+    case "cli-status":
+        return runCliStatusCommand(Array(arguments.dropFirst()))
+    case "install-cli":
+        return runInstallCliCommand(Array(arguments.dropFirst()))
     case "normalize":
         return runNormalizeCommand(Array(arguments.dropFirst()))
     default:
@@ -284,6 +294,33 @@ private func runEnqueueCommand(_ arguments: [String]) -> RelayCliResult {
     }
 }
 
+private func runCliStatusCommand(_ arguments: [String]) -> RelayCliResult {
+    do {
+        let flags = try parseRelayFlags(arguments, knownFlags: relayCliInstallFlags)
+        return RelayCliResult(stdout: try cliInstallStatus(sourcePath: flags["source"], targetPath: flags["target"]).json(), stderr: "", exitCode: 0)
+    } catch let error as RelayCliFlagError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch let error as RelayCliStoreError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch {
+        return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runInstallCliCommand(_ arguments: [String]) -> RelayCliResult {
+    do {
+        let flags = try parseRelayFlags(arguments, knownFlags: relayCliInstallFlags)
+        let status = try installRelayCli(sourcePath: flags["source"], targetPath: flags["target"])
+        return RelayCliResult(stdout: try status.json(), stderr: "", exitCode: 0)
+    } catch let error as RelayCliFlagError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch let error as RelayCliStoreError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch {
+        return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
 private func runNormalizeCommand(_ arguments: [String]) -> RelayCliResult {
     let flags: [String: String]
 
@@ -324,8 +361,13 @@ private struct RelayCliFlagError: Error {
 private let relayCliKnownFlags: Set<String> = [
     "line", "message", "type", "priority", "session", "app", "cwd", "url",
 ]
+private let relayCliInstallFlags: Set<String> = ["source", "target"]
 
 private func parseRelayFlags(_ arguments: [String]) throws -> [String: String] {
+    try parseRelayFlags(arguments, knownFlags: relayCliKnownFlags)
+}
+
+private func parseRelayFlags(_ arguments: [String], knownFlags: Set<String>) throws -> [String: String] {
     var flags: [String: String] = [:]
     var index = 0
 
@@ -338,7 +380,7 @@ private func parseRelayFlags(_ arguments: [String]) throws -> [String: String] {
 
         let name = String(token.dropFirst(2))
 
-        guard relayCliKnownFlags.contains(name) else {
+        guard knownFlags.contains(name) else {
             throw RelayCliFlagError(message: "unknown flag: \(token)")
         }
 
@@ -457,6 +499,24 @@ private final class RelayCliStore {
         )
     }
 
+    func statusJSON() throws -> String {
+        let state = try state()
+        let counts = try countsByStatus()
+        let lines = try lineSummaries()
+        let object: [String: Any] = [
+            "profile": "direct",
+            "mode": state.mode,
+            "muted": state.muted,
+            "inactiveLineCombiner": state.inactiveLineCombiner,
+            "activeLine": state.activeLine as Any,
+            "counts": counts,
+            "queueCount": counts["queued"] ?? 0,
+            "attentionCount": (counts["queued"] ?? 0) + (counts["heard"] ?? 0) + (counts["failed"] ?? 0),
+            "lines": lines,
+        ]
+        return try jsonString(object)
+    }
+
     func setMode(_ mode: String) throws -> RelayCliQueueState {
         try setSetting(key: "mode", value: mode)
         return try state()
@@ -515,6 +575,54 @@ private final class RelayCliStore {
             }
         }
         return settings
+    }
+
+    private func countsByStatus() throws -> [String: Int] {
+        var counts = [
+            "queued": 0,
+            "speaking": 0,
+            "heard": 0,
+            "handled": 0,
+            "skipped": 0,
+            "expired": 0,
+            "failed": 0,
+        ]
+        try query("""
+            SELECT status, COUNT(*) AS count
+            FROM relays
+            GROUP BY status
+        """) { statement in
+            if let status = columnString(statement, 0) {
+                counts[status] = Int(sqlite3_column_int(statement, 1))
+            }
+        }
+        return counts
+    }
+
+    private func lineSummaries() throws -> [[String: Any]] {
+        var lines: [[String: Any]] = []
+        try query("""
+            SELECT
+              line,
+              SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+              SUM(CASE WHEN status = 'heard' THEN 1 ELSE 0 END) AS heard,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM relays
+            WHERE status IN ('queued', 'heard', 'failed')
+            GROUP BY line
+            HAVING queued > 0 OR heard > 0 OR failed > 0
+            ORDER BY queued DESC, heard DESC, failed DESC, line ASC
+        """) { statement in
+            if let line = columnString(statement, 0) {
+                lines.append([
+                    "line": line,
+                    "queued": Int(sqlite3_column_int(statement, 1)),
+                    "heard": Int(sqlite3_column_int(statement, 2)),
+                    "failed": Int(sqlite3_column_int(statement, 3)),
+                ])
+            }
+        }
+        return lines
     }
 
     private func setSetting(key: String, value: String) throws {
@@ -605,6 +713,142 @@ private func relayCliDatabasePath() -> String {
     return "\(home)/Library/Application Support/Tri-State Relay Service/relay.db"
 }
 
+private struct NativeRelayCliInstallStatus {
+    let status: String
+    let sourcePath: String
+    let targetPath: String
+    let sourceSignature: String?
+    let targetSignature: String?
+    let targetDirectoryOnPath: Bool
+    let version: String
+    let message: String
+
+    func json() throws -> String {
+        var object: [String: Any] = [
+            "status": status,
+            "sourcePath": sourcePath,
+            "targetPath": targetPath,
+            "targetDirectoryOnPath": targetDirectoryOnPath,
+            "version": version,
+            "message": message,
+        ]
+        if let sourceSignature {
+            object["sourceSignature"] = sourceSignature
+        }
+        if let targetSignature {
+            object["targetSignature"] = targetSignature
+        }
+        return try jsonString(object)
+    }
+}
+
+private func cliInstallStatus(sourcePath: String?, targetPath: String?) throws -> NativeRelayCliInstallStatus {
+    let sourcePath = sourcePath ?? currentRelayExecutable()
+    let targetPath = targetPath ?? ProcessInfo.processInfo.environment["TSRS_RELAY_INSTALL_TARGET"] ?? defaultCliInstallTarget()
+    let targetDirectoryOnPath = pathContainsDirectory(URL(fileURLWithPath: targetPath).deletingLastPathComponent().path)
+
+    guard FileManager.default.fileExists(atPath: sourcePath) else {
+        return NativeRelayCliInstallStatus(status: "source-missing", sourcePath: sourcePath, targetPath: targetPath, sourceSignature: nil, targetSignature: nil, targetDirectoryOnPath: targetDirectoryOnPath, version: relayCliVersion, message: "relay source is missing: \(sourcePath)")
+    }
+
+    let sourceSignature = try fileSignature(sourcePath)
+
+    guard FileManager.default.fileExists(atPath: targetPath) else {
+        return NativeRelayCliInstallStatus(status: "missing", sourcePath: sourcePath, targetPath: targetPath, sourceSignature: sourceSignature, targetSignature: nil, targetDirectoryOnPath: targetDirectoryOnPath, version: relayCliVersion, message: "relay CLI is not installed at \(targetPath)")
+    }
+
+    let targetSignature = try fileSignature(targetPath)
+
+    if filesAreEqual(sourcePath, targetPath) {
+        return NativeRelayCliInstallStatus(status: "current", sourcePath: sourcePath, targetPath: targetPath, sourceSignature: sourceSignature, targetSignature: targetSignature, targetDirectoryOnPath: targetDirectoryOnPath, version: relayCliVersion, message: "relay CLI is current at \(targetPath)")
+    }
+
+    if !targetLooksLikeRelay(targetPath) {
+        return NativeRelayCliInstallStatus(status: "foreign", sourcePath: sourcePath, targetPath: targetPath, sourceSignature: sourceSignature, targetSignature: targetSignature, targetDirectoryOnPath: targetDirectoryOnPath, version: relayCliVersion, message: "\(targetPath) exists but does not look like a TSRS relay CLI")
+    }
+
+    return NativeRelayCliInstallStatus(status: "stale", sourcePath: sourcePath, targetPath: targetPath, sourceSignature: sourceSignature, targetSignature: targetSignature, targetDirectoryOnPath: targetDirectoryOnPath, version: relayCliVersion, message: "relay CLI at \(targetPath) differs from bundled version \(relayCliVersion)")
+}
+
+private func installRelayCli(sourcePath: String?, targetPath: String?) throws -> NativeRelayCliInstallStatus {
+    let status = try cliInstallStatus(sourcePath: sourcePath, targetPath: targetPath)
+
+    if status.status == "current" {
+        return status
+    }
+
+    if status.status == "source-missing" || status.status == "foreign" {
+        throw RelayCliStoreError(message: status.message)
+    }
+
+    let targetDirectory = URL(fileURLWithPath: status.targetPath).deletingLastPathComponent().path
+    try FileManager.default.createDirectory(atPath: targetDirectory, withIntermediateDirectories: true)
+    if FileManager.default.fileExists(atPath: status.targetPath) {
+        try FileManager.default.removeItem(atPath: status.targetPath)
+    }
+    try FileManager.default.copyItem(atPath: status.sourcePath, toPath: status.targetPath)
+    let permissions = (try FileManager.default.attributesOfItem(atPath: status.sourcePath)[.posixPermissions] as? NSNumber)?.intValue ?? 0o755
+    try FileManager.default.setAttributes([.posixPermissions: permissions | 0o755], ofItemAtPath: status.targetPath)
+    return try cliInstallStatus(sourcePath: sourcePath, targetPath: targetPath)
+}
+
+private func defaultCliInstallTarget() -> String {
+    let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+    return "\(home)/.local/bin/relay"
+}
+
+private func currentRelayExecutable() -> String {
+    if let source = ProcessInfo.processInfo.environment["TSRS_RELAY_SOURCE"] {
+        return source
+    }
+
+    return CommandLine.arguments.first ?? ProcessInfo.processInfo.arguments.first ?? ""
+}
+
+private func fileSignature(_ path: String) throws -> String {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+    let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+    return "\(size):\(modified * 1000)"
+}
+
+private func filesAreEqual(_ left: String, _ right: String) -> Bool {
+    guard
+        let leftData = FileManager.default.contents(atPath: left),
+        let rightData = FileManager.default.contents(atPath: right)
+    else {
+        return false
+    }
+
+    return leftData == rightData
+}
+
+private func targetLooksLikeRelay(_ path: String) -> Bool {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: path)
+    process.arguments = ["--version"]
+    process.standardOutput = output
+    process.standardError = Pipe()
+
+    do {
+        try process.run()
+        process.waitUntilExit()
+    } catch {
+        return false
+    }
+
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    let text = String(data: data, encoding: .utf8) ?? ""
+    return process.terminationStatus == 0 && text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("relay ")
+}
+
+private func pathContainsDirectory(_ directory: String) -> Bool {
+    (ProcessInfo.processInfo.environment["PATH"] ?? "")
+        .split(separator: ":")
+        .contains { String($0) == directory }
+}
+
 private func mapRelay(_ statement: OpaquePointer) -> RelayCliStoredRelay {
     RelayCliStoredRelay(
         id: Int(sqlite3_column_int(statement, 0)),
@@ -648,6 +892,11 @@ private func nowString() -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: Date())
+}
+
+private func jsonString(_ object: Any) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8) ?? "{}"
 }
 
 private func commandIsEnabled(_ command: String?) -> Bool {

@@ -89,7 +89,7 @@ Swift migration update:
 4. `relay-processor` remains as legacy processor coverage, but it is no longer an app-bundled playback dependency.
 5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to `relay status` or `relay settings`.
 6. The macOS app now mutates queue state and claims/marks speech relays directly through Swift SQLite instead of shelling out to app-only helper commands.
-7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj`, with npm scripts still bundling the Perry-built `relay` CLI.
+7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj` and bundle the Swift-built `relay` CLI; Perry remains only as a temporary parity oracle.
 
 Recommended next slice: add direct-download signing/notarization packaging, then split the native app into smaller Swift files under the Xcode project.
 
@@ -115,6 +115,6 @@ Node build replacement update:
    entrypoints at `scripts/build-macos.sh` and `scripts/package-macos-direct.sh`.
 2. The npm macOS build and package scripts are compatibility wrappers around
    those shell entrypoints instead of invoking Node build scripts.
-3. The shell direct build still compiles the Perry `relay` helper, preserves app
+3. The shell direct build now compiles the Swift `relay` helper, preserves app
    icon generation, runs Xcode, bundles only `relay`, and rejects any bundled
    `relay-processor`.
