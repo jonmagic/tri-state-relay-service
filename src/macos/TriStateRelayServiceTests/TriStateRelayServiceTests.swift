@@ -76,6 +76,14 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
     }
 
+    func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("for item in visibleCommands()"))
+        XCTAssertTrue(source.contains("let startIndex = min(max(selectedIndex - limit + 1, 0), maxStartIndex)"))
+        XCTAssertFalse(source.contains("filteredCommands.prefix(5)"))
+    }
+
     func testCommandPaletteSupportsAndShowsQuitShortcut() throws {
         let source = try triStateRelayServiceSource()
 

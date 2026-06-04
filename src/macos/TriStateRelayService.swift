@@ -1802,11 +1802,24 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
             return
         }
 
-        for (index, command) in filteredCommands.prefix(5).enumerated() {
-            resultsStack.addArrangedSubview(resultRow(title: command.title, subtitle: command.subtitle, selected: index == selectedIndex) { [weak self] in
-                self?.selectedIndex = index
+        for item in visibleCommands() {
+            resultsStack.addArrangedSubview(resultRow(title: item.command.title, subtitle: item.command.subtitle, selected: item.index == selectedIndex) { [weak self] in
+                self?.selectedIndex = item.index
                 self?.executeSelected()
             })
+        }
+    }
+
+    private func visibleCommands(limit: Int = 5) -> [(index: Int, command: CommandPaletteCommand)] {
+        guard !filteredCommands.isEmpty else {
+            return []
+        }
+
+        let maxStartIndex = max(0, filteredCommands.count - limit)
+        let startIndex = min(max(selectedIndex - limit + 1, 0), maxStartIndex)
+        let endIndex = min(startIndex + limit, filteredCommands.count)
+        return (startIndex..<endIndex).map { index in
+            (index: index, command: filteredCommands[index])
         }
     }
 
