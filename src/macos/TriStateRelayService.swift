@@ -1041,7 +1041,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             sidebar.widthAnchor.constraint(equalToConstant: 160),
             cliSectionRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
             cliSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
-            cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 58),
+            cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 48),
             cliSectionRow.heightAnchor.constraint(equalToConstant: 38),
             voiceSectionRow.leadingAnchor.constraint(equalTo: cliSectionRow.leadingAnchor),
             voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
@@ -1051,7 +1051,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
-            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 68),
+            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 48),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
             settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
             settingsTabView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),
@@ -1620,15 +1620,11 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         resultsStack.spacing = Self.rowSpacing
         resultsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let content = NSVisualEffectView(frame: window.contentView?.bounds ?? .zero)
+        let content = RoundedCommandPaletteBackgroundView(frame: window.contentView?.bounds ?? .zero)
         content.autoresizingMask = [.width, .height]
         content.material = .popover
         content.blendingMode = .behindWindow
         content.state = .active
-        content.wantsLayer = true
-        content.layer?.cornerRadius = 18
-        content.layer?.cornerCurve = .continuous
-        content.layer?.masksToBounds = true
         content.addSubview(searchField)
         content.addSubview(headerDivider)
         content.addSubview(resultsStack)
@@ -1893,6 +1889,22 @@ final class CommandPaletteSearchField: NSTextField {
 
     required init?(coder: NSCoder) {
         nil
+    }
+}
+
+final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
+    override func layout() {
+        super.layout()
+        maskImage = roundedMaskImage(size: bounds.size, radius: 18)
+    }
+
+    private func roundedMaskImage(size: NSSize, radius: CGFloat) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: radius, yRadius: radius).fill()
+        image.unlockFocus()
+        return image
     }
 }
 

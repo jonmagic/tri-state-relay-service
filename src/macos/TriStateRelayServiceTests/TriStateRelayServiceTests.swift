@@ -67,8 +67,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]"))
         XCTAssertTrue(source.contains("window.titleVisibility = .hidden"))
         XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
-        XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 58)"))
-        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 68)"))
+        XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 48)"))
+        XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 48)"))
     }
 
     func testStatusMenuOrderKeepsCoreActionsSimple() throws {
@@ -142,7 +142,9 @@ final class TriStateRelayServiceTests: XCTestCase {
         }
         let paletteSource = source[paletteRange.lowerBound..<endRange.lowerBound]
 
-        XCTAssertTrue(paletteSource.contains("let content = NSVisualEffectView"))
+        XCTAssertTrue(paletteSource.contains("let content = RoundedCommandPaletteBackgroundView"))
+        XCTAssertTrue(paletteSource.contains("final class RoundedCommandPaletteBackgroundView: NSVisualEffectView"))
+        XCTAssertTrue(paletteSource.contains("maskImage = roundedMaskImage(size: bounds.size, radius: 18)"))
         XCTAssertTrue(paletteSource.contains("content.material = .popover"))
         XCTAssertTrue(paletteSource.contains("private static let contentInset: CGFloat = 18"))
         XCTAssertTrue(paletteSource.contains("private static let rowOuterPadding: CGFloat = 6"))
