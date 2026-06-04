@@ -57,6 +57,16 @@ improve, but prefer `llm` for inactive-line combination until `apfel` passes
 the blocker, completion, and duplicate-update fixtures. Use `none` when no
 CLI LLM tool is configured or desired.
 
+## Eval artifacts
+
+The combiner prompt lives in `docs/prompts/combine-inactive-line.md`, the judge
+prompt lives in `docs/prompts/evaluate-inactive-line.md`, fixtures live in
+`evals/inactive-line-fixtures.json`, and the latest retained baseline output
+lives in `evals/results/inactive-line-results.json`. The results file is
+checked in intentionally so prompt and model changes can be reviewed against a
+known baseline; regenerate it with `scripts/eval-inactive-line.py` when the
+fixtures or prompts change.
+
 ## Input shape
 
 Provide the line name, active line, existing pending digest if one exists,

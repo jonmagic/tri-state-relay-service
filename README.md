@@ -102,6 +102,11 @@ scripts/eval-inactive-line.py
 
 The suite runs `apfel` and `llm` against fixtures in `evals/inactive-line-fixtures.json`, validates the JSON contract, and uses an LLM judge prompt to score whether each candidate sounds like one useful relay instead of a log summary. Results are written to `evals/results/inactive-line-results.json`.
 
+The eval fixtures and latest checked-in result file are intentional repository
+artifacts. Keep fixture prompts in `docs/prompts/`, scenario inputs in `evals/`,
+and retained baseline output in `evals/results/` so combiner behavior can be
+reviewed across model and prompt changes.
+
 ## Inactive-line combiner setting
 
 Inactive-line rollups are configured with a command template in the direct profile. The direct Settings window has an Inactive Combiner tab with commented examples for `llm` and `apfel`, including their GitHub project URLs. Leave the template commented, or clear it and save, to use latest-only inactive-line behavior. External combiner command execution is unavailable in the legacy App Store-safe profile, which uses latest-only inactive-line behavior.
@@ -139,6 +144,15 @@ Global hotkeys:
 1. Split the native app into smaller Swift files under the Xcode project.
 2. Keep direct-download signing and notarization packaging validated as release behavior changes.
 3. Continue hardening the command palette and line-scoped actions without exposing relay message bodies by default.
+
+## Repository shape
+
+- `.github/skills/` contains local workflow skills for agents.
+- `docs/` contains product direction, architecture notes, progress, and prompt files.
+- `evals/` contains inactive-line combiner fixtures and retained baseline results.
+- `scripts/` contains shell/Xcode validation, build, restart, packaging, and eval entrypoints.
+- `src/macos/` contains the Swift/Xcode app, Swift CLI target, shared relay core, tests, assets, and project metadata.
+- `tests/` contains shell-level repository guardrail tests.
 
 ## App Review note draft
 
