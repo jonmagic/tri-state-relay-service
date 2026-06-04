@@ -406,7 +406,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             CommandPaletteCommand(title: "Open Settings", subtitle: "Configure TSRS", restoresPreviousFocus: false) { [weak self] in
                 self?.showSettingsWindow()
             },
-            CommandPaletteCommand(title: "Quit", subtitle: "Quit Tri-State Relay Service", aliases: ["exit"], restoresPreviousFocus: false) {
+            CommandPaletteCommand(title: "Quit", subtitle: "Command-Q", aliases: ["exit"], restoresPreviousFocus: false) {
                 NSApplication.shared.terminate(nil)
             },
         ])
@@ -1565,6 +1565,9 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         panel.hidesOnDeactivate = true
         panel.hasShadow = true
         panel.center()
+        panel.onQuit = {
+            NSApplication.shared.terminate(nil)
+        }
 
         super.init(window: panel)
         buildContent()
@@ -1826,12 +1829,23 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
 final class CommandPaletteSearchField: NSSearchField {}
 
 final class CommandPalettePanel: NSPanel {
+    var onQuit: (() -> Void)?
+
     override var canBecomeKey: Bool {
         true
     }
 
     override var canBecomeMain: Bool {
         true
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "q" {
+            onQuit?()
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
     }
 }
 

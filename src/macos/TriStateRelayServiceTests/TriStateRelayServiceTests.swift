@@ -31,6 +31,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("final class SettingsKeyboardFocusView: NSView"))
         XCTAssertTrue(source.contains("window?.makeFirstResponder(keyboardNavigationFocusView)"))
     }
+
+    func testCommandPaletteSupportsAndShowsQuitShortcut() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("final class CommandPalettePanel: NSPanel"))
+        XCTAssertTrue(source.contains("panel.onQuit = {"))
+        XCTAssertTrue(source.contains("CommandPaletteCommand(title: \"Quit\", subtitle: \"Command-Q\""))
+        XCTAssertTrue(source.contains("event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == \"q\""))
+    }
 }
 
 func triStateRelayServiceSource() throws -> String {
