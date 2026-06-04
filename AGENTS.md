@@ -24,6 +24,8 @@ Use these local skills when their trigger matches the work:
 When an implementation milestone is complete, validated, and not blocked, commit
 it without waiting for another prompt. Keep unrelated changes in separate
 commits, and call out any remaining uncommitted work or risks in the handoff.
+Before committing, inspect `git diff --cached --name-only` and confirm the staged
+file list matches the intended milestone.
 
 For app-visible macOS changes, run `scripts/build-macos.sh direct` and then
 `scripts/restart-macos-app.sh`. Do not use ad hoc `open` commands without first
