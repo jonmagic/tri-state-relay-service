@@ -156,8 +156,8 @@ First-start setup update:
    explicit destructive reset that removes the app database and SQLite sidecars,
    then recreates a fresh needs-setup database. Normal app launch never invokes
    this path.
-7. Shortcut setup still uses preset choices; press-a-combo capture is a required
-   follow-up for the configurable shortcut milestone.
+7. Shortcut setup now records custom key combinations in Settings instead of
+   relying on preset choices.
 
 CLI install panel update:
 
