@@ -218,8 +218,8 @@ Commands:
   --version            Print the CLI version.
   help                 Print this help.
 
-This native target is an in-progress Swift replacement for the Perry-built
-`relay` CLI. See docs/cli-parity-inventory.md for the remaining parity gaps.
+This Swift target is the active `relay` CLI implementation. See
+docs/cli-parity-inventory.md for the validation inventory.
 """
 
 // Pure argument dispatcher so behavior is testable without a process boundary.

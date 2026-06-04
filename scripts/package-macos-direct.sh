@@ -8,7 +8,7 @@ relay_executable="$app_path/Contents/MacOS/relay"
 info_plist="$app_path/Contents/Info.plist"
 releases_dir="dist/releases"
 submission_zip="$releases_dir/notary-submission.zip"
-version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1)"
+version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" src/macos/Info.plist)"
 arch="$(uname -m)"
 release_zip="$releases_dir/Tri-State Relay Service-$version-macos-$arch.zip"
 notary_profile="${TSRS_NOTARYTOOL_PROFILE:-}"
@@ -90,7 +90,7 @@ assert_version_matches() {
   bundle_version="$(plist_value CFBundleShortVersionString)"
 
   if [[ "$bundle_version" != "$version" ]]; then
-    echo "package.json version $version does not match app version $bundle_version" >&2
+    echo "release version $version does not match app version $bundle_version" >&2
     exit 1
   fi
 }
@@ -113,7 +113,7 @@ zip_app() {
 }
 
 if [[ -z "$version" ]]; then
-  echo "could not read package.json version" >&2
+  echo "could not read app version" >&2
   exit 1
 fi
 

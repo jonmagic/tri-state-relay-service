@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ORACLE="${TSRS_PARITY_ORACLE:-"$ROOT/dist/native/relay"}"
 SWIFT_RELAY="${TSRS_PARITY_SWIFT:-"$ROOT/dist/macos/Tri-State Relay Service.app/Contents/MacOS/relay"}"
+ORACLE="${TSRS_PARITY_ORACLE:-"$SWIFT_RELAY"}"
 RUN_ROOT="$ROOT/.swift-cli-parity"
 STRICT="${TSRS_PARITY_STRICT:-0}"
 

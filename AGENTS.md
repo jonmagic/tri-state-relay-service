@@ -17,7 +17,6 @@ Tri-State Relay Service is a local macOS agent relay queue. Agents are implement
 
 Use these local skills when their trigger matches the work:
 
-- `.github/skills/perry/SKILL.md` for Perry library usage, spoken update constraints, and interaction safety.
 - `.github/skills/improvement-loop/SKILL.md` when an agent makes a mistake, misses a requirement, overreaches, or after any significant task.
 
 ## Milestone commits
@@ -26,8 +25,8 @@ When an implementation milestone is complete, validated, and not blocked, commit
 it without waiting for another prompt. Keep unrelated changes in separate
 commits, and call out any remaining uncommitted work or risks in the handoff.
 
-For app-visible macOS changes, run `npm run build:macos:direct` and then
-`npm run restart:macos`. Do not use ad hoc `open` commands without first
+For app-visible macOS changes, run `scripts/build-macos.sh direct` and then
+`scripts/restart-macos-app.sh`. Do not use ad hoc `open` commands without first
 stopping the old process. The restart helper must report a running PID from the
 rebuilt `dist/macos/Tri-State Relay Service.app` bundle; say that explicitly in
 the handoff. Before any handoff or docs-only commit, check for pending app-visible
@@ -83,22 +82,13 @@ Queue changes need tests for accepted message shape and defaults, rejected unsaf
 
 Grow toward these boundaries only as features need them:
 
-- `src/core/`: message validation, policy, queue state transitions, and ordering.
-- `src/storage/`: SQLite schema, migrations, persistence, and transactions.
-- `src/cli.ts`: argument parsing and command dispatch only.
-- `src/processor.ts`: legacy claim-next-and-speak flow and `/usr/bin/say` integration kept out of the app bundle.
-- `src/app/`: app-owned processor loop, menu-bar-facing queue controller, menu bar app shell, and platform adapters.
-- Native Swift/Xcode code should replace helper shell-outs and Perry-built app
-  bridge behavior as seams become clear.
+- `src/macos/RelayCore.swift`: message validation, queue state transitions, SQLite storage, and CLI command dispatch.
+- `src/macos/RelayCli/main.swift`: CLI entrypoint only.
+- `src/macos/TriStateRelayService.swift`: app-owned playback, menu-bar UI, queue controls, and platform adapters.
 - `docs/`: decisions, progress, and agent misses.
-- `tests/`: unit and integration tests for queue behavior.
+- `src/macos/TriStateRelayServiceTests/`: XCTest coverage for queue behavior, CLI behavior, storage, and app playback policy.
 
-Keep dependencies flowing inward:
-
-- `src/core/**` must not import storage, CLI, processor, app, or macOS-specific APIs.
-- `src/storage/**` may import `src/core/**`.
-- `src/processor/**` may import storage and platform speech adapters.
-- UI and platform adapters consume queue APIs and the locked processor path rather than owning queue rules.
+Keep queue, policy, and validation logic in Swift types that can be tested without launching the app UI or audio path. UI and platform adapters consume queue APIs and the locked processor path rather than owning queue rules.
 
 ## Milestone spine
 
@@ -110,11 +100,11 @@ Use this order unless there is a strong reason to change it:
 4. Queue ordering, duplicate collapse, max depth, and per-line rate limits.
 5. Processor claim-next-and-speak flow.
 6. Persistent focus/ready/mute state.
-7. Perry-compatible native binary builds and storage runtime compatibility.
+7. Native Swift CLI builds and storage runtime compatibility.
 8. Source-context metadata: session, app, cwd, and URL.
 9. Safe aggregate queue views by producer, line, priority, age, and status without exposing message text.
 10. App-owned processor loop.
-11. Interactable AppKit menu bar host around the Perry-built CLI and processor binaries.
+11. Interactable AppKit menu bar host around the Swift CLI and app-owned playback path.
 12. Replay last, skip current, mark handled, and clear heard.
 13. Line-scoped menu actions and active-line switching from playback.
 14. Relay terminology aliases for acknowledge and clear-delivered.
@@ -131,7 +121,7 @@ Every implementation task should end with:
 - The closest available validation passing.
 - Behavior verified automatically or manually.
 - Documentation updated when commands, state, persistence, or agent workflow changes.
-- For app-visible direct-profile changes, `npm run build:macos:direct` should pass and the bundle should be inspected. The app must not bundle `relay-processor`.
+- For app-visible direct-profile changes, `scripts/build-macos.sh direct` should pass and the bundle should be inspected. The app must not bundle `relay-processor`.
 - Distribution, licensing, and customization changes must preserve `docs/distribution.md`. Treat `docs/app-store-profile.md` as legacy hardening reference unless the App Store direction is explicitly reopened.
 - Commit-ready summary with changed files and remaining risks.
 
@@ -147,8 +137,6 @@ When an agent miss happens:
 
 ## Style
 
-- TypeScript strict mode.
-- Named exports.
-- Single quotes and no semicolons unless tooling requires otherwise.
+- Swift code should keep queue state and command results explicit and testable.
 - Small functions over large managers.
-- Prefer explicit types for queue state and command results.
+- Shell scripts use long flags where practical and must not speak directly.

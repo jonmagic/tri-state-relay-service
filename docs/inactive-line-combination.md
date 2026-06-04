@@ -48,7 +48,7 @@ llm prompt <input> --system <system> --no-stream --no-log
 Run the manual eval suite to compare both tools:
 
 ```sh
-npm run eval:inactive-line
+scripts/eval-inactive-line.py
 ```
 
 Current baseline: `llm` passes the included fixtures more reliably than

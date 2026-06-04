@@ -15,7 +15,7 @@ App Store build, such as choosing which agent summarizes many queued messages.
 2. Bundle or install the `relay` CLI for agent integrations.
 3. Keep the relay queue local-first.
 4. Use native macOS APIs wherever practical.
-5. Move app behavior toward Xcode/Swift over time instead of relying on Perry-built helpers long term.
+5. Keep app behavior on the Xcode/Swift path rather than generated helper binaries.
 6. Add developer customization, including configurable summarization agents.
 7. Add Pro licensing outside the App Store when needed.
 
@@ -29,8 +29,7 @@ Create a notarized zip for sharing:
 TSRS_NOTARYTOOL_PROFILE=tsrs scripts/package-macos-direct.sh
 ```
 
-`npm run package:macos:direct` remains as a compatibility wrapper while the
-project finishes replacing Node-based build entrypoints.
+The repository uses shell/Xcode entrypoints directly; package wrappers are no longer part of the release path.
 
 Prerequisites:
 
@@ -79,11 +78,10 @@ normal app behavior into Swift/Xcode and native macOS APIs:
 1. App-owned speech. The direct profile currently uses Swift-launched `/usr/bin/say` for Siri voice fidelity; replacing it needs an explicit product decision and parity check.
 2. Native line-scoped source actions through AppKit APIs.
 3. Native settings UI.
-4. Native queue/storage access when the persistence boundary is ready.
+4. Native queue/storage access through the shared Swift relay store.
 5. A standard CLI for agent enqueueing and automation.
 
-Perry remains useful for the current CLI bridge, but the long-term app
-direction is Swift/Xcode-first.
+The app and CLI direction is Swift/Xcode-first.
 
 ## Product ideas
 

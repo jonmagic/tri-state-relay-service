@@ -109,7 +109,7 @@ message bodies in palette results by default.
 1. Preserve app-owned playback and single-writer queue state.
 2. Do not expose relay message text in palette results by default.
 3. Keep source actions line-scoped.
-4. Use `npm run build:macos:direct` and `npm run restart:macos` for every
+4. Use `scripts/build-macos.sh direct` and `scripts/restart-macos-app.sh` for every
    app-visible iteration.
 5. Keep command availability testable without AppKit UI. Prefer pure functions
    over status snapshots for command labels, aliases, enabled state, and

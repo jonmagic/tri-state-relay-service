@@ -1,9 +1,7 @@
-node_modules/
 dist/
-.perry-cache/
-**/.perry-cache/
 .DS_Store
 *.db
 *.db-shm
 *.db-wal
 tmp/
+.swift-cli-parity/
