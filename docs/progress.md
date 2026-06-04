@@ -23,16 +23,15 @@ Current state:
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
 16. The menu bar app supports line-scoped source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 17. The menu bar app periodically refreshes queue state and processes one queued relay when ready and unmuted.
-18. `docs/prompts/combine-inactive-line.md` defines the LLM prompt for collapsing inactive-line updates into one pending message.
-19. Historical inactive-line eval artifacts exist but should not be part of the user-facing path.
-20. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
-21. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
-22. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
-23. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
-24. Left-click playback makes the line it pulls from active before speaking.
-25. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.
-26. The menu bar app currently registers global hotkeys: Control-Option-Command-Space opens the command palette with Play Next selected, and the second empty-query shortcut is targeted for removal.
-27. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
+18. `docs/prompts/combine-inactive-line.md` defines the combiner prompt for collapsing inactive-line updates into one pending message.
+19. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
+20. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
+21. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
+22. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
+23. Left-click playback makes the line it pulls from active before speaking.
+24. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.
+25. The menu bar app currently registers global hotkeys: Control-Option-Command-Space opens the command palette with Play Next selected, and the second empty-query shortcut is targeted for removal.
+26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
 

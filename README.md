@@ -135,8 +135,8 @@ For the user-facing walkthrough, see `docs/user-guide.md`.
 ## Repository shape
 
 - `.github/skills/` contains local workflow skills for agents.
-- `docs/` contains product direction, architecture notes, progress, and prompt files.
-- `scripts/` contains shell/Xcode validation, build, restart, packaging, and eval entrypoints.
+- `docs/` contains product direction, architecture notes, progress, and combiner prompt files.
+- `scripts/` contains shell/Xcode validation, build, restart, packaging, and helper entrypoints.
 - `src/macos/` contains the Swift/Xcode app, Swift CLI target, shared relay core, tests, assets, and project metadata.
 - `tests/` contains shell-level repository guardrail tests.
 
