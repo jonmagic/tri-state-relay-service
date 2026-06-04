@@ -1142,7 +1142,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func configureSetupIntroView() {
-        setupIntroView.stringValue = "First setup: install the relay CLI where agents can find it, then choose a shortcut and voice. TSRS stays in Focus mode until you explicitly play a relay."
+        setupIntroView.stringValue = "Two quick choices. TSRS stays quiet in Focus mode."
         setupIntroView.textColor = .secondaryLabelColor
         setupIntroView.font = NSFont.systemFont(ofSize: 12)
         setupIntroView.lineBreakMode = .byWordWrapping
@@ -1246,12 +1246,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: "Setup")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Install `relay` where agents can find it and record the command-palette shortcut before normal use.")
+        let subtitle = NSTextField(labelWithString: "Get the local CLI and keyboard shortcut ready before agents start sending updates.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 0
 
-        let pathNote = NSTextField(labelWithString: "Recommended path: ~/.local/bin/relay. If you do not install it, copy the bundled app-contents CLI path and use that full path in agent instructions.")
+        let cliLabel = NSTextField(labelWithString: "1. Install the CLI")
+        cliLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+
+        let pathNote = NSTextField(labelWithString: "Recommended: ~/.local/bin/relay. Or copy the bundled path for agent instructions.")
         pathNote.textColor = .secondaryLabelColor
         pathNote.font = NSFont.systemFont(ofSize: 12)
         pathNote.lineBreakMode = .byWordWrapping
@@ -1262,19 +1265,31 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         buttonRow.alignment = .centerY
         buttonRow.spacing = 8
 
-        let shortcutLabel = NSTextField(labelWithString: "Command palette shortcut")
-        shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let shortcutLabel = NSTextField(labelWithString: "2. Record the shortcut")
+        shortcutLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-        let shortcutNote = NSTextField(labelWithString: "Click the shortcut button, then press a valid combination. Control + Option + Command + V is reserved and will be rejected.")
+        let shortcutNote = NSTextField(labelWithString: "Click the button, then press a valid combo. Control + Option + Command + V is reserved.")
         shortcutNote.textColor = .secondaryLabelColor
         shortcutNote.font = NSFont.systemFont(ofSize: 12)
         shortcutNote.lineBreakMode = .byWordWrapping
         shortcutNote.maximumNumberOfLines = 0
 
-        let stack = NSStackView(views: [setupIntroView, title, subtitle, cliStatusView, buttonRow, pathNote, shortcutLabel, setupShortcutRecorderButton, setupShortcutStatusView, shortcutNote])
+        let cliSection = NSStackView(views: [cliLabel, cliStatusView, buttonRow, pathNote])
+        cliSection.orientation = .vertical
+        cliSection.alignment = .leading
+        cliSection.spacing = 8
+        cliSection.translatesAutoresizingMaskIntoConstraints = false
+
+        let shortcutSection = NSStackView(views: [shortcutLabel, setupShortcutRecorderButton, setupShortcutStatusView, shortcutNote])
+        shortcutSection.orientation = .vertical
+        shortcutSection.alignment = .leading
+        shortcutSection.spacing = 8
+        shortcutSection.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [setupIntroView, title, subtitle, cliSection, shortcutSection])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         setupIntroView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
@@ -1284,6 +1299,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         setupShortcutRecorderButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
         setupShortcutStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         shortcutNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+        cliSection.setCustomSpacing(10, after: cliLabel)
+        shortcutSection.setCustomSpacing(10, after: shortcutLabel)
+        stack.setCustomSpacing(22, after: subtitle)
+        stack.setCustomSpacing(22, after: cliSection)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
         container.addSubview(stack)
@@ -1701,14 +1720,18 @@ final class CommandPaletteWindowController: NSWindowController, NSSearchFieldDel
         }
 
         for (index, command) in filteredCommands.prefix(5).enumerated() {
-            resultsStack.addArrangedSubview(resultRow(title: command.title, subtitle: command.subtitle, selected: index == selectedIndex))
+            resultsStack.addArrangedSubview(resultRow(title: command.title, subtitle: command.subtitle, selected: index == selectedIndex) { [weak self] in
+                self?.selectedIndex = index
+                self?.executeSelected()
+            })
         }
     }
 
-    private func resultRow(title: String, subtitle: String, selected: Bool) -> NSView {
+    private func resultRow(title: String, subtitle: String, selected: Bool, action: (() -> Void)? = nil) -> NSView {
         let row = PaletteResultRowView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.selected = selected
+        row.action = action
 
         let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
         let titleField = NSTextField(labelWithString: displayTitle)
@@ -1749,10 +1772,15 @@ final class CommandPalettePanel: NSPanel {
 }
 
 final class PaletteResultRowView: NSView {
+    var action: (() -> Void)?
     var selected = false {
         didSet {
             needsDisplay = true
         }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        action?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1779,6 +1807,12 @@ private func configureSidebarButton(_ button: NSButton, selected: Bool) {
 private func configureSidebarRow(_ row: SidebarRowView, button: NSButton, iconView: NSImageView, selected: Bool) {
     row.translatesAutoresizingMaskIntoConstraints = false
     row.selected = selected
+    row.action = { [weak button] in
+        guard let button, let action = button.action else {
+            return
+        }
+        NSApp.sendAction(action, to: button.target, from: button)
+    }
     iconView.translatesAutoresizingMaskIntoConstraints = false
     button.translatesAutoresizingMaskIntoConstraints = false
     configureSidebarButton(button, selected: selected)
@@ -1796,10 +1830,15 @@ private func configureSidebarRow(_ row: SidebarRowView, button: NSButton, iconVi
 }
 
 final class SidebarRowView: NSView {
+    var action: (() -> Void)?
     var selected = false {
         didSet {
             needsDisplay = true
         }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        action?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
