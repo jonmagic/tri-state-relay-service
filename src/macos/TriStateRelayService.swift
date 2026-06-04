@@ -349,21 +349,25 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             },
         ]
 
+        let queuedLines = model.status.menuLines.filter { $0.queued > 0 }
+
+        if queuedLines.count > 1 {
+            commands.append(contentsOf: queuedLines.map { line in
+                CommandPaletteCommand(title: "Play Next: \(line.line)", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
+                    self?.model.setActiveLine(line.line)
+                    self?.model.playActiveLine()
+                    self?.nativePlayback.playNext(line: line.line)
+                    self?.refreshStatusItem()
+                    self?.schedulePlaybackRefresh()
+                }
+            })
+        }
+
         commands.append(contentsOf: model.status.menuLines.compactMap { line in
             guard line.queued > 0 else {
                 return nil
             }
 
-            return CommandPaletteCommand(title: "Play Next: \(line.line)", subtitle: "\(line.queued) queued", aliases: ["play", "next", line.line]) { [weak self] in
-                self?.model.setActiveLine(line.line)
-                self?.model.playActiveLine()
-                self?.nativePlayback.playNext(line: line.line)
-                self?.refreshStatusItem()
-                self?.schedulePlaybackRefresh()
-            }
-        })
-
-        commands.append(contentsOf: model.status.menuLines.compactMap { line in
             let children = commandPaletteCommands(for: line)
 
             guard !children.isEmpty else {

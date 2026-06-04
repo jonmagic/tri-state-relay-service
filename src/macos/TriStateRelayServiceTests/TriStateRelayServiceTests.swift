@@ -59,6 +59,14 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("CommandPaletteCommand(title: \"Quit\", subtitle: \"Command-Q\""))
         XCTAssertTrue(source.contains("event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == \"q\""))
     }
+
+    func testCommandPaletteOnlyShowsLinePlayNextWhenMultipleLinesAreQueued() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("let queuedLines = model.status.menuLines.filter { $0.queued > 0 }"))
+        XCTAssertTrue(source.contains("if queuedLines.count > 1"))
+        XCTAssertTrue(source.contains("CommandPaletteCommand(title: \"Play Next: \\(line.line)\""))
+    }
 }
 
 func triStateRelayServiceSource() throws -> String {
