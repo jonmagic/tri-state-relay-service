@@ -98,15 +98,19 @@ Use this order unless there is a strong reason to change it. After each item is
 completed and committed, update this section and any directly related docs so
 the next agent sees the current state instead of stale guidance:
 
-1. Require first-start configuration before normal app use. Open Settings on first launch and guide the user through CLI installation, shortcut selection, and voice selection without using a heavy "wizard" pattern.
-3. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
-4. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
-5. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
-6. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
+1. Improve the CLI install panel: encourage installing `relay` into an accessible path, keep safe overwrite behavior, and add a copy button for the full bundled app-contents CLI path.
+2. Improve voice selection during first-start setup and normal Settings. Favor natural voices when available and keep direct-profile `/usr/bin/say` behavior until an explicit product decision replaces it.
+3. Keep trimming docs and repository cruft from the user-facing path. Remove stale LLM evaluation references and any docs that no longer describe the active direct-download product direction.
+4. Maintain `docs/user-guide.md` as the primary user-facing guide. Update it whenever setup, shortcuts, CLI installation, voice behavior, line behavior, or queue commands change.
 
 Completed milestone: direct-download builds are arm64-only by default. Use
 `TSRS_MACOS_ARCHS="arm64 x86_64"` only for a deliberate future universal build
 path.
+
+Completed milestone: first-start configuration opens Settings on first launch,
+stores completion in the SQLite settings table, keeps Focus mode quiet, and
+reuses Settings to guide CLI installation, shortcut selection, and voice
+selection without a separate wizard.
 
 ## Task exit criteria
 

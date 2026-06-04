@@ -137,3 +137,16 @@ Direct-build architecture update:
    `TSRS_MACOS_ARCHS="arm64 x86_64"` override.
 3. `scripts/package-macos-direct.sh` inherits the same architecture selection and
    labels default direct releases as `macos-arm64`.
+
+First-start setup update:
+
+1. Fresh SQLite databases now default to needing first-start setup, while
+   existing databases with prior setup or queue signals default to complete for
+   backward compatibility.
+2. The macOS app opens Settings on first launch instead of showing the old CLI
+   prompt, keeps Focus mode as the quiet default, and reuses Settings to guide CLI
+   installation, shortcut selection, and voice selection.
+3. First-start completion is persisted in the existing `settings` key/value
+   table under `first_start_setup_complete`; no schema migration was added.
+4. XCTest coverage verifies fresh defaults, completion persistence, and
+   non-retrigger behavior for existing installs.

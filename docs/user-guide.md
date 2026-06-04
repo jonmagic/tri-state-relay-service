@@ -8,8 +8,9 @@ or manage those relays when you are ready.
 
 1. Build or install the direct-download macOS app.
 2. Launch Tri-State Relay Service from the app bundle.
-3. Open Settings from the menu bar app.
-4. Install the bundled `relay` CLI when prompted.
+3. On first launch, Settings opens automatically.
+4. Use the first-setup prompt in Settings to install the bundled `relay` CLI,
+   choose a command-palette shortcut, and choose a voice.
 
 The recommended CLI install path is `~/.local/bin/relay`. TSRS refuses to
 overwrite a different binary at that path. If you prefer not to install it, copy
@@ -18,17 +19,17 @@ instructions.
 
 ## First setup
 
-The first-run Settings screen should help you make three choices before normal
-use:
+The first-run Settings screen helps you make three choices before normal use:
 
 1. Install or locate the `relay` CLI so agents can enqueue updates.
 2. Choose the command-palette shortcut. The default is `Control` + `Option` +
    `Command` + `Space`.
 3. Choose the voice used by app-owned playback.
 
-This setup should feel like friendly settings, not a heavyweight onboarding
-wizard. You can return to Settings later to change the shortcut, CLI install, or
-voice.
+This setup is part of the normal Settings window, not a heavyweight onboarding
+wizard. TSRS remains in Focus mode during setup, so relays queue quietly until
+you explicitly play one. You can return to Settings later to change the
+shortcut, CLI install, or voice.
 
 ## Send a relay
 

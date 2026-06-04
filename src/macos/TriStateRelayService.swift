@@ -61,7 +61,15 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         }
         registerGlobalHotKeys()
 #if !APP_STORE
-        promptForRelayCliInstallIfNeeded()
+        if model.needsFirstStartSetup() {
+            showSettingsWindow()
+        } else {
+            promptForRelayCliInstallIfNeeded()
+        }
+#else
+        if model.needsFirstStartSetup() {
+            showSettingsWindow()
+        }
 #endif
     }
 
@@ -226,7 +234,11 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     @objc private func showSettingsWindow() {
         if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController(model: model) { [weak self] in
+            settingsWindowController = SettingsWindowController(model: model, onInstallRelayCli: { [weak self] in
+#if !APP_STORE
+                self?.installRelayCli()
+#endif
+            }) { [weak self] in
                 self?.refreshStatusItem()
                 self?.registerGlobalHotKeys()
             }
@@ -732,7 +744,10 @@ struct GlobalHotKeyRegistrationPlan: Equatable {
 
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: MenuBarModel
+    private let onInstallRelayCli: () -> Void
     private let onSave: () -> Void
+    private let setupIntroView = NSTextField(labelWithString: "")
+    private let setupInstallCliButton = NSButton(title: "Install relay CLI", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
@@ -750,8 +765,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
     private let voiceOptions = availableSpeechVoiceOptions()
 
-    init(model: MenuBarModel, onSave: @escaping () -> Void) {
+    init(model: MenuBarModel, onInstallRelayCli: @escaping () -> Void, onSave: @escaping () -> Void) {
         self.model = model
+        self.onInstallRelayCli = onInstallRelayCli
         self.onSave = onSave
 
         let sidebar = NSVisualEffectView()
@@ -792,6 +808,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+        configureSetupIntroView()
         settingsTabView.tabViewItem(at: 0).label = "Voice"
         settingsTabView.tabViewItem(at: 0).view = voiceTabView()
         settingsTabView.tabViewItem(at: 1).label = "Shortcut"
@@ -808,6 +825,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
         shortcutPopUpButton.target = self
         shortcutPopUpButton.action = #selector(selectShortcut(_:))
+        setupInstallCliButton.target = self
+        setupInstallCliButton.action = #selector(installRelayCliFromSetup)
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -864,13 +883,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func selectVoice(_ sender: Any?) {
         model.saveVoiceSetting(voiceIdentifier: selectedVoiceIdentifier())
+        model.completeFirstStartSetup()
+        updateSetupIntroVisibility()
         onSave()
         previewSelectedVoice(sender)
     }
 
     @objc private func selectShortcut(_ sender: Any?) {
         model.saveCommandPaletteShortcut(selectedShortcut())
+        model.completeFirstStartSetup()
+        updateSetupIntroVisibility()
         onSave()
+    }
+
+    @objc private func installRelayCliFromSetup() {
+        onInstallRelayCli()
     }
 
     @objc private func previewSelectedVoice(_ sender: Any?) {
@@ -891,6 +918,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         combinerTextView.string = settings.inactiveLineCombinerCommand
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutMenu(selectedShortcut: settings.commandPaletteShortcut)
+        updateSetupIntroVisibility()
     }
 
     private func saveCombinerIfNeeded() {
@@ -900,8 +928,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceIdentifier: selectedVoiceIdentifier(),
             commandPaletteShortcut: selectedShortcut()
         )
+        model.completeFirstStartSetup()
+        updateSetupIntroVisibility()
         onSave()
 #endif
+    }
+
+    private func configureSetupIntroView() {
+        setupIntroView.stringValue = "First setup: install or locate the relay CLI, choose a shortcut, and choose a voice. TSRS stays in Focus mode until you explicitly play a relay."
+        setupIntroView.textColor = .secondaryLabelColor
+        setupIntroView.font = NSFont.systemFont(ofSize: 12)
+        setupIntroView.lineBreakMode = .byWordWrapping
+        setupIntroView.maximumNumberOfLines = 0
+    }
+
+    private func updateSetupIntroVisibility() {
+        let needsSetup = model.needsFirstStartSetup()
+        setupIntroView.isHidden = !needsSetup
+        setupInstallCliButton.isHidden = !needsSetup
     }
 
     private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
@@ -989,13 +1033,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         note.lineBreakMode = .byWordWrapping
         note.maximumNumberOfLines = 0
 
-        let stack = NSStackView(views: [title, subtitle, shortcutLabel, shortcutPopUpButton, note])
+        let stack = NSStackView(views: [setupIntroView, setupInstallCliButton, title, subtitle, shortcutLabel, shortcutPopUpButton, note])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         shortcutPopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        setupIntroView.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
         note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
 
@@ -2025,6 +2070,15 @@ final class MenuBarModel {
         store.loadSettings()
     }
 
+    func needsFirstStartSetup() -> Bool {
+        store.needsFirstStartSetup()
+    }
+
+    func completeFirstStartSetup() {
+        store.completeFirstStartSetup()
+        refresh()
+    }
+
     func saveSettings(inactiveLineCombinerCommand: String, voiceIdentifier: String, commandPaletteShortcut: KeyboardShortcut) {
         store.saveSettings(
             inactiveLineCombinerCommand: inactiveLineCombinerCommand,
@@ -2334,6 +2388,7 @@ struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
+    let firstStartSetupComplete: Bool
 }
 
 #if !APP_STORE
@@ -2419,9 +2474,20 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
-                commandPaletteShortcut: commandPaletteShortcut(settings)
+                commandPaletteShortcut: commandPaletteShortcut(settings),
+                firstStartSetupComplete: firstStartSetupComplete(settings)
             )
         } ?? defaultSettings()
+    }
+
+    func needsFirstStartSetup() -> Bool {
+        !loadSettings().firstStartSetupComplete
+    }
+
+    func completeFirstStartSetup() {
+        write { database in
+            setSetting(database, key: "first_start_setup_complete", value: "true")
+        }
     }
 
     func loadStatus() -> QueueStatus {
@@ -2721,6 +2787,7 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "inactive_line_combiner", value: "none")
         setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
+        setSettingIfMissing(database, key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue(database))
         setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
     }
@@ -3190,6 +3257,38 @@ final class NativeRelayStore {
 
         return defaultSpeechVoiceIdentifier
     }
+
+    private func firstStartSetupComplete(_ settings: [String: String]) -> Bool {
+        settings["first_start_setup_complete"] == "true"
+    }
+
+    private func defaultFirstStartSetupCompleteValue(_ database: OpaquePointer) -> String {
+        hasExistingSetupSignal(database) ? "true" : "false"
+    }
+
+    private func hasExistingSetupSignal(_ database: OpaquePointer) -> Bool {
+        let setupKeys = [
+            "active_line",
+            "command_palette_shortcut",
+            "speech_voice_identifier",
+            "last_spoken_line",
+        ]
+        let settings = loadRawSettings(database)
+
+        if setupKeys.contains(where: { settings[$0] != nil }) {
+            return true
+        }
+
+        return scalarInt(database, "SELECT COUNT(*) FROM relays") > 0
+    }
+
+    private func scalarInt(_ database: OpaquePointer, _ sql: String, _ values: [String?] = []) -> Int {
+        var value = 0
+        query(database, sql, values) { statement in
+            value = Int(sqlite3_column_int(statement, 0))
+        }
+        return value
+    }
 }
 
 
@@ -3208,7 +3307,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private func playbackMode(_ value: String?) -> String {
