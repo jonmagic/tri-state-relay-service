@@ -180,11 +180,16 @@ def project_status(value):
         "mode": value.get("mode"),
         "muted": value.get("muted"),
         "inactiveLineCombiner": value.get("inactiveLineCombiner"),
+        "hasInactiveLineCombinerCommand": bool(value.get("inactiveLineCombinerCommand")),
+        "hasSpeechCommand": bool(value.get("speechCommand")),
         "activeLine": value.get("activeLine"),
         "counts": value.get("counts"),
         "queueCount": value.get("queueCount"),
         "attentionCount": value.get("attentionCount"),
         "lines": value.get("lines"),
+        "hasOverview": "overview" in value,
+        "hasCapabilities": "capabilities" in value,
+        "hasLineSources": "lineSources" in value,
     }
 
 def normalize(value):
@@ -204,10 +209,6 @@ if left != right:
     print("swift: ", json.dumps(right, sort_keys=True), file=sys.stderr)
     sys.exit(1)
 
-if mode == "status":
-    missing = sorted(set(oracle) - set(swift))
-    if missing:
-        print("MISSING_KEYS=" + ",".join(missing))
 PY
 }
 
@@ -222,11 +223,7 @@ assert_json_command() {
   assert_equal "$label exit" "$(code_of oracle)" "$(code_of swift)"
   assert_equal "$label stderr" "$(stderr_of oracle)" "$(stderr_of swift)"
 
-  local compare_output
-  compare_output="$(json_compare "$label" "$mode")"
-  if [[ "$compare_output" == MISSING_KEYS=* ]]; then
-    log_gap "$label Swift status JSON omits oracle keys: ${compare_output#MISSING_KEYS=}"
-  fi
+  json_compare "$label" "$mode" >/dev/null
   log_pass "$label"
 }
 
@@ -370,24 +367,16 @@ assert_equal "install-cli stderr" "$(stderr_of oracle)" "$(stderr_of swift)"
 json_compare "install-cli" install >/dev/null
 log_pass "install-cli"
 
-if supports_app_claim_next oracle "$ORACLE" && supports_app_claim_next swift "$SWIFT_RELAY"; then
-  fresh_pair_vars app-helpers
-  app_oracle_db="$ORACLE_DB"
-  app_swift_db="$SWIFT_DB"
-  assert_text_command "app helper enqueue" "$app_oracle_db" "$app_swift_db" --line Brain --message "Needs hearing"
-  assert_auth_json_command "app claim next" claim "$app_oracle_db" "$app_swift_db" app-claim-next
-  assert_auth_text_command "app mark heard" "$app_oracle_db" "$app_swift_db" app-mark-heard --id 1
-  assert_db_equal "app helper sequence" "$app_oracle_db" "$app_swift_db"
-elif supports_app_claim_next oracle "$ORACLE"; then
-  log_skip "app helper commands: Swift relay app-claim-next probe is unavailable"
-else
-  log_skip "app helper commands: oracle app-claim-next probe is unavailable"
-fi
+fresh_pair_vars app-helpers
+app_oracle_db="$ORACLE_DB"
+app_swift_db="$SWIFT_DB"
+assert_text_command "app helper enqueue" "$app_oracle_db" "$app_swift_db" --line Brain --message "Needs hearing"
+assert_auth_json_command "app claim next" claim "$app_oracle_db" "$app_swift_db" app-claim-next
+assert_auth_text_command "app mark heard" "$app_oracle_db" "$app_swift_db" app-mark-heard --id 1
+assert_db_equal "app helper sequence" "$app_oracle_db" "$app_swift_db"
 
-if "$SWIFT_RELAY" help 2>/dev/null | grep -q -- "--speech-command"; then
-  log_gap "settings --speech-command is advertised by Swift help but not covered"
-else
-  log_skip "settings --speech-command: Swift relay does not advertise it yet"
-fi
+fresh_pair_vars speech-settings
+assert_json_command "settings speech command" exact "$ORACLE_DB" "$SWIFT_DB" settings --speech-command "/usr/bin/say -v Samantha <message>"
+assert_db_equal "speech settings sequence" "$ORACLE_DB" "$SWIFT_DB"
 
 printf 'swift CLI parity harness: %d passed, %d skipped, %d gaps (strict=%s)\n' "$pass_count" "$skip_count" "$gap_count" "$STRICT"

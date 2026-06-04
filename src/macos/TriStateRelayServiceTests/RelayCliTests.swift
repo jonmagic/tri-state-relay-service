@@ -4,6 +4,7 @@ import XCTest
 final class RelayCliTests: XCTestCase {
     override func tearDown() {
         unsetenv("TSRS_DB_PATH")
+        unsetenv("TSRS_PROCESSOR_AUTH")
         super.tearDown()
     }
 
@@ -107,7 +108,7 @@ final class RelayCliTests: XCTestCase {
 
     func testStatusReportsJsonForQueue() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
-        _ = runRelayCli(["--line", "Brain", "--message", "json please"])
+        _ = runRelayCli(["--line", "Brain", "--message", "json please", "--session", "sess-1", "--app", "Copilot"])
 
         let result = runRelayCli(["status"])
         XCTAssertEqual(result.stderr, "")
@@ -117,9 +118,130 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(object["profile"] as? String, "direct")
         XCTAssertEqual(object["mode"] as? String, "focus")
         XCTAssertEqual(object["queueCount"] as? Int, 1)
+        XCTAssertNotNil(object["inactiveLineCombinerCommand"] as? String)
+        XCTAssertNotNil(object["speechCommand"] as? String)
 
         let counts = try XCTUnwrap(object["counts"] as? [String: Int])
         XCTAssertEqual(counts["queued"], 1)
+
+        let overview = try XCTUnwrap(object["overview"] as? [String: Any])
+        let byPriority = try XCTUnwrap(overview["byPriority"] as? [[String: Any]])
+        XCTAssertEqual(byPriority.first?["priority"] as? String, "normal")
+        XCTAssertEqual(byPriority.first?["count"] as? Int, 1)
+
+        let capabilities = try XCTUnwrap(object["capabilities"] as? [String: Any])
+        XCTAssertEqual(capabilities["terminalEnqueue"] as? Bool, true)
+        XCTAssertEqual(capabilities["nativeSpeech"] as? Bool, false)
+
+        let lineSources = try XCTUnwrap(object["lineSources"] as? [String: Any])
+        let brainSource = try XCTUnwrap(lineSources["Brain"] as? [String: Any])
+        XCTAssertEqual(brainSource["session"] as? String, "sess-1")
+        XCTAssertEqual(brainSource["app"] as? String, "Copilot")
+    }
+
+    func testSettingsPersistsSpeechCommand() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let updated = try jsonObject(runRelayCli(["settings", "--speech-command", "/usr/bin/say -v Samantha <message>"]).stdout)
+        XCTAssertEqual(updated["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
+
+        let reread = try jsonObject(runRelayCli(["settings"]).stdout)
+        XCTAssertEqual(reread["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
+    }
+
+    func testInactiveLineEnqueueKeepsLatestOnly() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        _ = runRelayCli(["line", "Brain"])
+        _ = runRelayCli(["--line", "Other", "--message", "first inactive"])
+        _ = runRelayCli(["--line", "Other", "--message", "second inactive"])
+
+        let list = runRelayCli(["list"]).stdout
+        XCTAssertTrue(list.contains("Other: second inactive"))
+        XCTAssertFalse(list.contains("first inactive"))
+    }
+
+    func testAppClaimNextRequiresAuthorization() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        unsetenv("TSRS_PROCESSOR_AUTH")
+
+        let result = runRelayCli(["app-claim-next"])
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("app authorization"))
+    }
+
+    func testAppClaimNextMarkHeardAndFailedFlow() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        _ = runRelayCli(["--line", "Brain", "--message", "hello relay"])
+        _ = runRelayCli(["ready"])
+
+        let claim = runRelayCli(["app-claim-next"])
+        XCTAssertEqual(claim.exitCode, 0)
+        let claimed = try jsonObject(claim.stdout)
+        let id = try XCTUnwrap(claimed["id"] as? Int)
+        XCTAssertEqual(claimed["line"] as? String, "Brain")
+        XCTAssertEqual(claimed["text"] as? String, "Brain. hello relay")
+
+        // Active-line claim bypasses ready mode and leaves it untouched.
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "ready, active-line=Brain, inactive-line-combiner=none")
+
+        let heard = runRelayCli(["app-mark-heard", "--id", String(id)])
+        XCTAssertEqual(heard.stdout, "heard #\(id)")
+        XCTAssertEqual(heard.exitCode, 0)
+
+        let status = try jsonObject(runRelayCli(["status"]).stdout)
+        let counts = try XCTUnwrap(status["counts"] as? [String: Int])
+        XCTAssertEqual(counts["heard"], 1)
+        XCTAssertEqual(counts["speaking"], 0)
+
+        let failed = runRelayCli(["app-mark-failed", "--id", String(id)])
+        XCTAssertEqual(failed.stdout, "failed #\(id)")
+    }
+
+    func testAppClaimNextOmitsLinePrefixWhenRecentlySpoken() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        _ = runRelayCli(["--line", "Brain", "--message", "first"])
+        _ = runRelayCli(["--line", "Brain", "--message", "second"])
+        _ = runRelayCli(["ready"])
+
+        let firstClaim = try jsonObject(runRelayCli(["app-claim-next", "--line", "Brain"]).stdout)
+        let firstId = try XCTUnwrap(firstClaim["id"] as? Int)
+        XCTAssertEqual(firstClaim["text"] as? String, "Brain. first")
+        _ = runRelayCli(["app-mark-heard", "--id", String(firstId)])
+
+        let secondClaim = try jsonObject(runRelayCli(["app-claim-next", "--line", "Brain"]).stdout)
+        XCTAssertEqual(secondClaim["text"] as? String, "second")
+    }
+
+    func testAppClaimNextReturnsNullWhenNothingEligible() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        let result = runRelayCli(["app-claim-next"])
+        XCTAssertEqual(result.stdout, "null")
+        XCTAssertEqual(result.exitCode, 0)
+    }
+
+    func testGlobalReadyClaimResetsModeToFocus() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        // Active line has no queued relays, so claiming uses the global ready path.
+        _ = runRelayCli(["line", "Idle"])
+        _ = runRelayCli(["--line", "Brain", "--message", "global claim"])
+        _ = runRelayCli(["ready"])
+
+        let claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        XCTAssertEqual(claim["line"] as? String, "Brain")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=Idle, inactive-line-combiner=none")
     }
 
     func testCliStatusAndInstallCliUseSourceAndTargetFlags() throws {

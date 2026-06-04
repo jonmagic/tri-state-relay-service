@@ -145,6 +145,30 @@ private func rejectUnsafeRelayMessage(_ message: String) throws {
 
 // MARK: - Native CLI dispatcher
 
+let directRelayCapabilities: [String: Any] = [
+    "profile": "direct",
+    "nativeSpeech": false,
+    "terminalEnqueue": true,
+    "externalSpeechCommand": true,
+    "externalInactiveLineCombiner": true,
+    "lineSourceActions": true,
+]
+
+let appProcessorAuthorization = "app-owned-processor"
+let appProcessorAuthorizationEnv = "TSRS_PROCESSOR_AUTH"
+
+func processorIsAppAuthorized(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+    environment[appProcessorAuthorizationEnv] == appProcessorAuthorization
+}
+
+// Mirrors core/message.ts spokenText: optional line prefix, type prefix for
+// non-update relays, then the message body.
+func spokenRelayText(line: String, type: String, message: String, includeLine: Bool) -> String {
+    let typePrefix = type == "update" ? "" : "\(type). "
+    let linePrefix = includeLine ? "\(line). " : ""
+    return "\(linePrefix)\(typePrefix)\(message)"
+}
+
 struct RelayCliResult: Equatable {
     let stdout: String
     let stderr: String
@@ -180,8 +204,14 @@ Commands:
                        Get or set active line.
   combiner [--command <command>]
                        Get or set inactive-line combiner command.
-  settings [--combiner-command <command>]
+  settings [--combiner-command <command>] [--speech-command <command>]
                        Print settings JSON.
+  app-claim-next [--line <line>]
+                       Claim the next eligible relay for app-owned playback.
+  app-mark-heard --id <id>
+                       Mark a relay delivered and record the spoken line.
+  app-mark-failed --id <id>
+                       Mark a relay failed.
   normalize --line <line> --message <message> [--type <type>] [--priority <priority>]
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and normalize a relay without writing to the queue.
@@ -289,6 +319,12 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
         return runCombinerCommand(Array(arguments.dropFirst()))
     case "settings":
         return runSettingsCommand(Array(arguments.dropFirst()))
+    case "app-claim-next":
+        return runAppClaimNextCommand(Array(arguments.dropFirst()))
+    case "app-mark-heard":
+        return runAppMarkStatusCommand(Array(arguments.dropFirst()), status: "heard", recordSpoken: true)
+    case "app-mark-failed":
+        return runAppMarkStatusCommand(Array(arguments.dropFirst()), status: "failed", recordSpoken: false)
     case "cli-status":
         return runCliStatusCommand(Array(arguments.dropFirst()))
     case "install-cli":
@@ -456,10 +492,13 @@ private func runCombinerCommand(_ arguments: [String]) -> RelayCliResult {
 
 private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
         do {
-            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command"])
+            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command"])
             return withRelayCliStore { store in
                 if let command = flags["combiner-command"] {
                     _ = try store.setInactiveLineCombinerCommand(command)
+                }
+                if let command = flags["speech-command"] {
+                    try store.setSpeechCommand(command)
                 }
                 return RelayCliResult(stdout: try store.settingsJSON(), stderr: "", exitCode: 0)
             }
@@ -467,6 +506,70 @@ private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
             return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
         } catch {
             return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runAppClaimNextCommand(_ arguments: [String]) -> RelayCliResult {
+    guard processorIsAppAuthorized() else {
+        return RelayCliResult(stdout: "", stderr: "app helper commands require TSRS app authorization", exitCode: 1)
+    }
+
+    do {
+        let flags = try parseRelayFlags(arguments, knownFlags: ["line"])
+        return withRelayCliStore { store in
+            _ = try store.failStaleSpeaking()
+            let activeLine = try store.state().activeLine
+
+            let relay: RelayCliStoredRelay?
+            if let line = flags["line"] {
+                relay = try store.claimNextForLine(line)
+            } else if let activeLine, try store.queuedCountForLine(activeLine) > 0 {
+                relay = try store.claimNextForLine(activeLine)
+            } else {
+                relay = try store.claimNextForSpeech()
+            }
+
+            guard let relay else {
+                return RelayCliResult(stdout: "null", stderr: "", exitCode: 0)
+            }
+
+            let includeLine = try store.shouldPrefixSpokenLine(relay.line)
+            let text = spokenRelayText(line: relay.line, type: relay.type, message: relay.message, includeLine: includeLine)
+            let json = try jsonString([
+                "id": relay.id,
+                "text": text,
+                "line": relay.line,
+            ])
+            return RelayCliResult(stdout: json, stderr: "", exitCode: 0)
+        }
+    } catch let error as RelayCliFlagError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch {
+        return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runAppMarkStatusCommand(_ arguments: [String], status: String, recordSpoken: Bool) -> RelayCliResult {
+    guard processorIsAppAuthorized() else {
+        return RelayCliResult(stdout: "", stderr: "app helper commands require TSRS app authorization", exitCode: 1)
+    }
+
+    do {
+        let flags = try parseRelayFlags(arguments, knownFlags: ["id"])
+        guard let idText = flags["id"], let id = Int(idText) else {
+            return RelayCliResult(stdout: "", stderr: "id is required", exitCode: 1)
+        }
+        return withRelayCliStore { store in
+            let relay = try store.markStatus(id: id, status: status)
+            if recordSpoken {
+                try store.recordSpokenLine(relay.line)
+            }
+            return RelayCliResult(stdout: "\(status) #\(relay.id)", stderr: "", exitCode: 0)
+        }
+    } catch let error as RelayCliFlagError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch {
+        return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
     }
 }
 
@@ -590,8 +693,24 @@ private final class RelayCliStore {
 
     func enqueue(_ input: NewRelayInput) throws -> RelayCliStoredRelay {
         let relay = try normalizeRelay(input)
+        let state = try state()
+
+        if let activeLine = state.activeLine, relay.line != activeLine {
+            // Inactive-line direct behavior keeps only the latest relay for the
+            // line. The shipped `relay` binary never runs the external combiner,
+            // so native parity is latest-only collapse.
+            _ = try clearQueued(line: relay.line)
+            return try insertRelay(relay)
+        }
+
+        let inserted = try insertRelay(relay)
+        try setSettingIfMissing(key: "active_line", value: inserted.line)
+        return inserted
+    }
+
+    private func insertRelay(_ relay: NormalizedRelay) throws -> RelayCliStoredRelay {
         let now = nowString()
-        let inserted = try returningRelay("""
+        return try returningRelay("""
             INSERT INTO relays (
               line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
             )
@@ -609,13 +728,18 @@ private final class RelayCliStore {
             now,
             now,
         ])
+    }
 
-        try execute("""
-            INSERT OR IGNORE INTO settings (key, value)
-            VALUES ('active_line', ?)
-        """, [relay.line])
-
-        return inserted
+    func queuedCountForLine(_ line: String) throws -> Int {
+        var count = 0
+        try query("""
+            SELECT COUNT(*) AS count
+            FROM relays
+            WHERE status = 'queued' AND line = ?
+        """, [line]) { statement in
+            count = Int(sqlite3_column_int(statement, 0))
+        }
+        return count
     }
 
     func list(limit: Int = 20) throws -> [RelayCliStoredRelay] {
@@ -649,20 +773,37 @@ private final class RelayCliStore {
     }
 
     func statusJSON() throws -> String {
+        _ = try expireStaleRelays()
         let state = try state()
         let counts = try countsByStatus()
         let lines = try lineSummaries()
-        let object: [String: Any] = [
+        var object: [String: Any] = [
             "profile": "direct",
             "mode": state.mode,
             "muted": state.muted,
             "inactiveLineCombiner": state.inactiveLineCombiner,
+            "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
+            "speechCommand": try speechCommand(),
             "activeLine": state.activeLine as Any,
             "counts": counts,
             "queueCount": counts["queued"] ?? 0,
             "attentionCount": (counts["queued"] ?? 0) + (counts["heard"] ?? 0) + (counts["failed"] ?? 0),
+            "overview": try queueOverview(),
             "lines": lines,
+            "capabilities": directRelayCapabilities,
         ]
+
+        let lineSources = try latestSourceContextsByLine()
+        if !lineSources.isEmpty {
+            var sources: [String: Any] = [:]
+            for source in lineSources {
+                if let line = source["line"] as? String {
+                    sources[line] = source
+                }
+            }
+            object["lineSources"] = sources
+        }
+
         return try jsonString(object)
     }
 
@@ -672,15 +813,8 @@ private final class RelayCliStore {
             "profile": "direct",
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
-            "speechCommand": try rawSettings()["speech_command"] ?? defaultSpeechCommand,
-            "capabilities": [
-                "profile": "direct",
-                "nativeSpeech": false,
-                "terminalEnqueue": true,
-                "externalSpeechCommand": true,
-                "externalInactiveLineCombiner": true,
-                "lineSourceActions": true,
-            ],
+            "speechCommand": try speechCommand(),
+            "capabilities": directRelayCapabilities,
         ]
         return try jsonString(object)
     }
@@ -710,6 +844,14 @@ private final class RelayCliStore {
     func setInactiveLineCombinerCommand(_ command: String) throws -> RelayCliQueueState {
         try setSetting(key: "inactive_line_combiner_command", value: resetBlankCommand(command, fallback: defaultInactiveLineCombinerCommand))
         return try state()
+    }
+
+    func speechCommand() throws -> String {
+        try rawSettings()["speech_command"] ?? defaultSpeechCommand
+    }
+
+    func setSpeechCommand(_ command: String) throws {
+        try setSetting(key: "speech_command", value: resetBlankCommand(command, fallback: defaultSpeechCommand))
     }
 
     func clear() throws -> Int {
@@ -743,6 +885,237 @@ private final class RelayCliStore {
 
     func replayLatestHeard(line: String?) throws -> RelayCliStoredRelay? {
         try markLatestMatchingStatus(from: "heard", to: "queued", line: line)
+    }
+
+    func expireStaleRelays(ageMinutes: Int = 30) throws -> Int {
+        let now = Date()
+        let staleBefore = nowString(from: now.addingTimeInterval(TimeInterval(-ageMinutes * 60)))
+        return try changes("""
+            UPDATE relays
+            SET status = 'expired', updated_at = ?
+            WHERE (
+              status IN ('heard', 'failed') AND updated_at <= ?
+            ) OR (
+              status = 'queued'
+              AND priority != 'high'
+              AND type IN ('update', 'complete')
+              AND created_at <= ?
+            )
+        """, [nowString(from: now), staleBefore, staleBefore])
+    }
+
+    func failStaleSpeaking(ttlSeconds: Int = 60) throws -> Int {
+        let now = Date()
+        let staleBefore = nowString(from: now.addingTimeInterval(TimeInterval(-ttlSeconds)))
+        return try changes("""
+            UPDATE relays
+            SET status = 'failed', updated_at = ?
+            WHERE status = 'speaking' AND updated_at <= ?
+        """, [nowString(from: now), staleBefore])
+    }
+
+    func claimNextForSpeech() throws -> RelayCliStoredRelay? {
+        let state = try state()
+        if state.muted || state.mode != "ready" {
+            return nil
+        }
+
+        let claimed = try optionalReturningRelay("""
+            UPDATE relays
+            SET status = 'speaking', updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = 'queued'
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status
+        """, [nowString()])
+
+        if claimed == nil {
+            return nil
+        }
+
+        _ = try setMode("focus")
+        return claimed
+    }
+
+    func claimNextForLine(_ line: String) throws -> RelayCliStoredRelay? {
+        if try state().muted {
+            return nil
+        }
+
+        return try optionalReturningRelay("""
+            UPDATE relays
+            SET status = 'speaking', updated_at = ?
+            WHERE id = (
+              SELECT id
+              FROM relays
+              WHERE status = 'queued' AND line = ?
+              ORDER BY
+                CASE priority
+                  WHEN 'high' THEN 0
+                  WHEN 'normal' THEN 1
+                  ELSE 2
+                END,
+                created_at ASC
+              LIMIT 1
+            )
+            RETURNING id, line, message, type, priority, status
+        """, [nowString(), line])
+    }
+
+    func markStatus(id: Int, status: String) throws -> RelayCliStoredRelay {
+        guard let relay = try optionalReturningRelay("""
+            UPDATE relays
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            RETURNING id, line, message, type, priority, status
+        """, [status, nowString(), String(id)]) else {
+            throw RelayCliStoreError(message: "relay \(id) not found")
+        }
+        return relay
+    }
+
+    func recordSpokenLine(_ line: String) throws {
+        let payload = try jsonString(["line": line, "spokenAt": nowString()])
+        try setSetting(key: "last_spoken_line", value: payload)
+    }
+
+    func shouldPrefixSpokenLine(_ line: String, timeoutSeconds: Double = 60) throws -> Bool {
+        guard let last = try lastSpokenLine(), last.line == line else {
+            return true
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let spokenAt = formatter.date(from: last.spokenAt) else {
+            return true
+        }
+
+        return Date().timeIntervalSince(spokenAt) >= timeoutSeconds
+    }
+
+    private func lastSpokenLine() throws -> (line: String, spokenAt: String)? {
+        guard
+            let value = try rawSettings()["last_spoken_line"],
+            let data = value.data(using: .utf8),
+            let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let line = parsed["line"] as? String,
+            let spokenAt = parsed["spokenAt"] as? String
+        else {
+            return nil
+        }
+        return (line, spokenAt)
+    }
+
+    func queueOverview(staleBlockerAgeMinutes: Int = 15, limit: Int = 10) throws -> [String: Any] {
+        let now = Date()
+        let staleBefore = nowString(from: now.addingTimeInterval(TimeInterval(-staleBlockerAgeMinutes * 60)))
+
+        var priorityCounts: [String: Int] = [:]
+        try query("""
+            SELECT priority, COUNT(*) AS count
+            FROM relays
+            WHERE status IN ('queued', 'heard', 'failed')
+            GROUP BY priority
+        """) { statement in
+            if let priority = columnString(statement, 0) {
+                priorityCounts[priority] = Int(sqlite3_column_int(statement, 1))
+            }
+        }
+
+        var byPriority: [[String: Any]] = []
+        for priority in relayPriorities.reversed() {
+            if let count = priorityCounts[priority], count > 0 {
+                byPriority.append(["priority": priority, "count": count])
+            }
+        }
+
+        var byProducer: [[String: Any]] = []
+        try query("""
+            SELECT
+              COALESCE(session, app, 'unknown') AS producer,
+              COUNT(*) AS count
+            FROM relays
+            WHERE status IN ('queued', 'heard', 'failed')
+            GROUP BY producer
+            ORDER BY count DESC, producer ASC
+            LIMIT ?
+        """, [String(limit)]) { statement in
+            if let producer = columnString(statement, 0) {
+                byProducer.append(["producer": producer, "count": Int(sqlite3_column_int(statement, 1))])
+            }
+        }
+
+        var staleCount = 0
+        var oldestCreatedAt: String?
+        try query("""
+            SELECT COUNT(*) AS count, MIN(created_at) AS oldestCreatedAt
+            FROM relays
+            WHERE status IN ('queued', 'heard')
+              AND priority = 'high'
+              AND type IN ('blocked', 'needs-input')
+              AND created_at <= ?
+        """, [staleBefore]) { statement in
+            staleCount = Int(sqlite3_column_int(statement, 0))
+            oldestCreatedAt = columnString(statement, 1)
+        }
+
+        var staleBlockers: [String: Any] = [
+            "count": staleCount,
+            "thresholdMinutes": staleBlockerAgeMinutes,
+        ]
+        if staleCount > 0, let oldestCreatedAt {
+            staleBlockers["oldestCreatedAt"] = oldestCreatedAt
+        }
+
+        return [
+            "byPriority": byPriority,
+            "byProducer": byProducer,
+            "staleBlockers": staleBlockers,
+        ]
+    }
+
+    func latestSourceContextsByLine() throws -> [[String: Any]] {
+        var sources: [[String: Any]] = []
+        try query("""
+            SELECT id, line, session, app, cwd, url
+            FROM relays AS source
+            WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
+              AND id = (
+                SELECT id
+                FROM relays AS candidate
+                WHERE candidate.line = source.line
+                  AND (
+                    candidate.cwd IS NOT NULL
+                    OR candidate.url IS NOT NULL
+                    OR candidate.app IS NOT NULL
+                    OR candidate.session IS NOT NULL
+                  )
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+            )
+            ORDER BY line ASC
+        """) { statement in
+            var object: [String: Any] = [
+                "id": Int(sqlite3_column_int(statement, 0)),
+                "line": columnString(statement, 1) ?? "",
+            ]
+            if let session = columnString(statement, 2) { object["session"] = session }
+            if let app = columnString(statement, 3) { object["app"] = app }
+            if let cwd = columnString(statement, 4) { object["cwd"] = cwd }
+            if let url = columnString(statement, 5) { object["url"] = url }
+            sources.append(object)
+        }
+        return sources
     }
 
     private func migrate() throws {
@@ -1144,10 +1517,10 @@ private func sqliteError(_ database: OpaquePointer) -> String {
     return "unknown sqlite error"
 }
 
-private func nowString() -> String {
+private func nowString(from date: Date = Date()) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.string(from: Date())
+    return formatter.string(from: date)
 }
 
 private func jsonString(_ object: Any) throws -> String {
