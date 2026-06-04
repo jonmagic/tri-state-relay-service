@@ -1394,7 +1394,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "Choose how relay updates sound when TSRS speaks. Direct builds use the app-owned /usr/bin/say path, so listed voices map to installed say voice names.")
+        let subtitle = NSTextField(labelWithString: "Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 0
@@ -1407,13 +1407,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceRow.alignment = .centerY
         voiceRow.spacing = 8
 
-        let note = NSTextField(labelWithString: "Natural installed voices are listed first when available. Changing the selection is quiet; use Preview when you explicitly want to hear a sample. Install additional macOS voices in System Settings > Accessibility > Spoken Content.")
-        note.textColor = .secondaryLabelColor
-        note.font = NSFont.systemFont(ofSize: 12)
-        note.lineBreakMode = .byWordWrapping
-        note.maximumNumberOfLines = 0
-
-        let stack = NSStackView(views: [title, subtitle, voiceLabel, voiceRow, note])
+        let stack = NSStackView(views: [title, subtitle, voiceLabel, voiceRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1422,9 +1416,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
         voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
         subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
-        note.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 230))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([

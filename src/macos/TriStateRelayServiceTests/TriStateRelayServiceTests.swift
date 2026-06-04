@@ -61,6 +61,14 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("window?.makeFirstResponder(keyboardNavigationFocusView)"))
     }
 
+    func testVoicePanelUsesConciseUserFacingHelperText() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample."))
+        XCTAssertFalse(source.contains("Direct builds use the app-owned /usr/bin/say path"))
+        XCTAssertFalse(source.contains("Natural installed voices are listed first when available."))
+    }
+
     func testCommandPaletteSupportsAndShowsQuitShortcut() throws {
         let source = try triStateRelayServiceSource()
 
