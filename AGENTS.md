@@ -118,7 +118,7 @@ Settings. Direct builds list installed `/usr/bin/say` voices, favor natural
 voices when available, and only speak a sample through explicit Preview.
 
 Completed milestone: the CLI install panel is the first Settings panel shown
-during first-start setup, encourages `~/.local/bin/relay`, preserves safe
+during first-start setup, encourages `/usr/local/bin/relay`, preserves safe
 overwrite behavior, and offers a copy button for the full bundled app-contents
 CLI path.
 

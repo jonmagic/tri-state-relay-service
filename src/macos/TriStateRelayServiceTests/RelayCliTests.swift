@@ -306,6 +306,19 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(try jsonObject(current.stdout)["status"] as? String, "current")
     }
 
+    func testCliStatusDefaultsToUsrLocalBinRelay() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("relay-source").path
+        try "#!/usr/bin/env sh\necho relay 0.1.0\n".write(toFile: source, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source)
+        unsetenv("TSRS_RELAY_INSTALL_TARGET")
+
+        let status = try jsonObject(runRelayCli(["cli-status", "--source", source]).stdout)
+
+        XCTAssertEqual(status["targetPath"] as? String, "/usr/local/bin/relay")
+    }
+
     func testLineCombinerSettingsAndLifecycleCommands() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 

@@ -984,7 +984,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let onSave: () -> Void
     private let setupIntroView = NSTextField(labelWithString: "")
     private let cliStatusView = NSTextField(labelWithString: "")
-    private let setupInstallCliButton = NSButton(title: "Install relay CLI to ~/.local/bin", target: nil, action: nil)
+    private let setupInstallCliButton = NSButton(title: "Install relay CLI to /usr/local/bin", target: nil, action: nil)
     private let copyBundledCliPathButton = NSButton(title: "Copy bundled CLI path", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
@@ -1316,7 +1316,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let cliLabel = NSTextField(labelWithString: "1. Install the CLI")
         cliLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-        let pathNote = NSTextField(labelWithString: "Recommended: ~/.local/bin/relay. Or copy the bundled path for agent instructions.")
+        let pathNote = NSTextField(labelWithString: "Recommended: /usr/local/bin/relay. Or copy the bundled path for agent instructions.")
         pathNote.textColor = .secondaryLabelColor
         pathNote.font = NSFont.systemFont(ofSize: 12)
         pathNote.lineBreakMode = .byWordWrapping
@@ -2580,7 +2580,7 @@ final class MenuBarModel {
                 status: "source-missing",
                 sourcePath: nil,
                 sourceSignature: nil,
-                targetPath: "~/.local/bin/relay",
+                targetPath: "/usr/local/bin/relay",
                 targetDirectoryOnPath: false,
                 version: "unknown",
                 message: command.stderr.isEmpty ? command.stdout : command.stderr
@@ -2852,7 +2852,7 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
             status: "source-missing",
             sourcePath: nil,
             sourceSignature: nil,
-            targetPath: "~/.local/bin/relay",
+            targetPath: "/usr/local/bin/relay",
             targetDirectoryOnPath: false,
             version: "unknown",
             message: "could not parse relay CLI status"
@@ -2861,7 +2861,7 @@ private func parseRelayCliInstallStatus(_ json: String) -> RelayCliInstallStatus
 
     let status = object["status"] as? String ?? "source-missing"
     let sourcePath = object["sourcePath"] as? String
-    let targetPath = object["targetPath"] as? String ?? "~/.local/bin/relay"
+    let targetPath = object["targetPath"] as? String ?? "/usr/local/bin/relay"
     let targetDirectoryOnPath = object["targetDirectoryOnPath"] as? Bool ?? false
     let version = object["version"] as? String ?? "unknown"
     let message = object["message"] as? String ?? "relay CLI status unavailable"

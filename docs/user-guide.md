@@ -16,10 +16,10 @@ Launch Tri-State Relay Service from the macOS app bundle. On first launch, Setti
 The first thing to set up is the command-line tool. The app can install `relay` for you at:
 
 ```text
-~/.local/bin/relay
+/usr/local/bin/relay
 ```
 
-That location works well because agents can use the same command from any project once `~/.local/bin` is on your `PATH`. If you would rather not install a copy, Settings can also show the full bundled app path so you can paste that into agent instructions instead.
+That location works well for normal macOS users because `/usr/local/bin` is commonly already on the shell path. If you would rather not install a copy, Settings can also show the full bundled app path so you can paste that into agent instructions instead.
 
 After the CLI step, choose a keyboard shortcut and a voice. The default shortcut is `Control` + `Option` + `Command` + `Space`. You can change it by clicking the shortcut button and pressing the combination you want.
 
@@ -173,7 +173,7 @@ Combiner output should follow the same rules as any other relay: no secrets, no 
 
 ## If something does not work
 
-If agents cannot find `relay`, open Settings and install the CLI to `~/.local/bin/relay`, then make sure `~/.local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
+If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
 
 If relays queue but do not speak, check whether TSRS is focused, muted, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
 

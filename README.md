@@ -72,7 +72,7 @@ The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue 
 
 The direct macOS app is packaged from the Swift/Xcode build and does not bundle or launch the legacy processor. Playback is claimed and spoken by the app. Direct builds currently launch `/usr/bin/say` from Swift so configured Siri/say voices keep working. The legacy App Store-safe profile uses AVFoundation and avoids external speech commands, but it is not the active product path.
 
-The direct app can install or update the bundled `relay` CLI from Settings. On first launch, Settings opens on the Setup panel first, recommends `~/.local/bin/relay`, lets you record the command-palette shortcut, refuses to overwrite a foreign `relay`, and offers a copy button for the full bundled app-contents CLI path. The CLI exposes the same mechanism through `relay cli-status`, `relay install-cli`, and `relay --version`.
+The direct app can install or update the bundled `relay` CLI from Settings. On first launch, Settings opens on the Setup panel first, recommends `/usr/local/bin/relay`, lets you record the command-palette shortcut, refuses to overwrite a foreign `relay`, and offers a copy button for the full bundled app-contents CLI path. The CLI exposes the same mechanism through `relay cli-status`, `relay install-cli`, and `relay --version`.
 
 Before claiming a relay for speech, the app checks whether the default input device appears to be actively captured by another app. When microphone capture is active, TSRS leaves relays queued and retries later instead of speaking over the user. This is a best-effort CoreAudio device-state check; TSRS does not record or inspect microphone audio.
 

@@ -31,7 +31,7 @@ Current state:
 23. Left-click playback makes the line it pulls from active before speaking.
 24. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.
 25. The menu bar app registers one configurable global command-palette hotkey. The default is Control-Option-Command-Space, which opens the palette with Play Next selected. Right click opens the palette with an empty query.
-26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `~/.local/bin/relay` without overwriting foreign binaries.
+26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `/usr/local/bin/relay` without overwriting foreign binaries.
 
 Roadmap gaps from the latest feature review:
 
@@ -163,7 +163,7 @@ CLI install panel update:
 
 1. Settings now opens with the Setup panel first, so first-start setup shows the
    install action before shortcut and voice choices.
-2. The Setup panel recommends installing to `~/.local/bin/relay`, explains that
+2. The Setup panel recommends installing to `/usr/local/bin/relay`, explains that
    agents need an accessible command path, and preserves safe overwrite behavior
    by relying on the existing TSRS-owned install checks.
 3. Settings includes a copy button for the full bundled app-contents `relay`

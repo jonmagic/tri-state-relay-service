@@ -1521,8 +1521,7 @@ private func installRelayCli(sourcePath: String?, targetPath: String?) throws ->
 }
 
 private func defaultCliInstallTarget() -> String {
-    let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
-    return "\(home)/.local/bin/relay"
+    return "/usr/local/bin/relay"
 }
 
 private func currentRelayExecutable() -> String {
