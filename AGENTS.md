@@ -80,6 +80,9 @@ When giving local development commands, do not point users at stale build paths
 such as `dist/native/relay`. Prefer installed `relay`; if it is not installed,
 use the bundled direct app CLI at
 `dist/macos/Tri-State Relay Service.app/Contents/MacOS/relay`.
+For fresh first-start app testing, prefer `scripts/fresh-start-macos-app.sh`
+because it clears the development DB with the bundled CLI and restarts the
+rebuilt direct app in one step.
 
 Messages are intentionally authored human status updates, not command output. Cap message length, reject empty messages, reject obvious token-looking strings, avoid stdin piping for v0, and do not speak code, secrets, logs, file contents, private data, or long explanations.
 

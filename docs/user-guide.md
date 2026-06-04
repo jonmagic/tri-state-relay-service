@@ -149,14 +149,15 @@ sqlite3 "$HOME/Library/Application Support/Tri-State Relay Service/relay.db" \
 This targeted reset does not clear queued or delivered relays. Avoid deleting
 `relay.db` unless you explicitly want to wipe all local queue data.
 
-For a true fresh first-start run, use the explicit development-only destructive
-reset:
+For a true fresh first-start run from a rebuilt app, use the development helper:
 
 ```sh
-relay first-start dev-reset-database --confirm
+scripts/fresh-start-macos-app.sh
 ```
 
-If `relay` is not installed on `PATH`, use the bundled CLI from the rebuilt app:
+It uses the bundled CLI from `dist/macos/Tri-State Relay Service.app`, clears the
+development database, and restarts the rebuilt app. If you only want to clear the
+database without restarting the app, run:
 
 ```sh
 "dist/macos/Tri-State Relay Service.app/Contents/MacOS/relay" first-start dev-reset-database --confirm
