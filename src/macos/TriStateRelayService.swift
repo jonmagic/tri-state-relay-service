@@ -989,11 +989,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let window = SettingsWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Tri-State Relay Service Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 560, height: 400)
         window.contentView = content
         window.center()
@@ -1039,7 +1041,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             sidebar.widthAnchor.constraint(equalToConstant: 160),
             cliSectionRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
             cliSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
-            cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 28),
+            cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 58),
             cliSectionRow.heightAnchor.constraint(equalToConstant: 38),
             voiceSectionRow.leadingAnchor.constraint(equalTo: cliSectionRow.leadingAnchor),
             voiceSectionRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
@@ -1049,7 +1051,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
-            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
+            settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 68),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
             settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
             settingsTabView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),
