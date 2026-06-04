@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000031 /* RelayCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000030 /* RelayCore.swift */; };
+		A10000000000000000000032 /* RelayCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000030 /* RelayCore.swift */; };
+		A10000000000000000000034 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000033 /* main.swift */; };
+		A10000000000000000000036 /* RelayCliTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000035 /* RelayCliTests.swift */; };
 		494AB3E4132FC06748332977 /* PlaybackProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */; };
 		6C027FAEF730B843C4623A0C /* NativeRelayStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D652781C9722ACAD54FC5DCA /* NativeRelayStoreTests.swift */; };
 		A10000000000000000000001 /* TriStateRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* TriStateRelayService.swift */; };
@@ -26,6 +30,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000030 /* RelayCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayCore.swift; sourceTree = "<group>"; };
+		A10000000000000000000033 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = main.swift; path = RelayCli/main.swift; sourceTree = "<group>"; };
+		A10000000000000000000035 /* RelayCliTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RelayCliTests.swift; path = TriStateRelayServiceTests/RelayCliTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000037 /* relay-native */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "relay-native"; sourceTree = BUILT_PRODUCTS_DIR; };
 		46D65056BE2A85D0F47C9BC6 /* MessageValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageValidationTests.swift; path = TriStateRelayServiceTests/MessageValidationTests.swift; sourceTree = "<group>"; };
 		72BF79CF9510CD591AB08B7B /* TriStateRelayServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TriStateRelayServiceTests.swift; path = TriStateRelayServiceTests/TriStateRelayServiceTests.swift; sourceTree = "<group>"; };
 		88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackProfileTests.swift; path = TriStateRelayServiceTests/PlaybackProfileTests.swift; sourceTree = "<group>"; };
@@ -71,6 +79,7 @@
 				D652781C9722ACAD54FC5DCA /* NativeRelayStoreTests.swift */,
 				46D65056BE2A85D0F47C9BC6 /* MessageValidationTests.swift */,
 				88D2908BC03DB5961CDC9EC9 /* PlaybackProfileTests.swift */,
+				A10000000000000000000035 /* RelayCliTests.swift */,
 			);
 			name = TriStateRelayServiceTests;
 			sourceTree = "<group>";
@@ -89,6 +98,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* TriStateRelayService.swift */,
+				A10000000000000000000030 /* RelayCore.swift */,
+				A10000000000000000000033 /* main.swift */,
 				A10000000000000000000003 /* Info.plist */,
 			);
 			path = .;
@@ -99,6 +110,7 @@
 			children = (
 				A10000000000000000000004 /* Tri-State Relay Service.app */,
 				B1695E7DC8AB544F35FC64A9 /* TriStateRelayServiceTests.xctest */,
+				A10000000000000000000037 /* relay-native */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,6 +160,21 @@
 			productReference = B1695E7DC8AB544F35FC64A9 /* TriStateRelayServiceTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A10000000000000000000038 /* relay-native */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000040 /* Build configuration list for PBXNativeTarget "relay-native" */;
+			buildPhases = (
+				A10000000000000000000039 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "relay-native";
+			productName = "relay-native";
+			productReference = A10000000000000000000037 /* relay-native */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -178,6 +205,7 @@
 			targets = (
 				A10000000000000000000009 /* Tri-State Relay Service */,
 				C969E59FC4AA91E224F71C20 /* TriStateRelayServiceTests */,
+				A10000000000000000000038 /* relay-native */,
 			);
 		};
 /* End PBXProject section */
@@ -201,6 +229,7 @@
 				6C027FAEF730B843C4623A0C /* NativeRelayStoreTests.swift in Sources */,
 				B9A14C0212CB6E308E5BBC00 /* MessageValidationTests.swift in Sources */,
 				494AB3E4132FC06748332977 /* PlaybackProfileTests.swift in Sources */,
+				A10000000000000000000036 /* RelayCliTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -209,6 +238,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* TriStateRelayService.swift in Sources */,
+				A10000000000000000000031 /* RelayCore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000039 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000032 /* RelayCore.swift in Sources */,
+				A10000000000000000000034 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -315,6 +354,30 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_NAME = "relay-native";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_NAME = "relay-native";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -341,6 +404,15 @@
 			buildConfigurations = (
 				7E0450E56DD663B118854EED /* Release */,
 				56F85957F6158C3937A96583 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000040 /* Build configuration list for PBXNativeTarget "relay-native" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000042 /* Release */,
+				A10000000000000000000041 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
