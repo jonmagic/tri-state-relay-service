@@ -196,9 +196,13 @@ prefix. Non-update relay types include a type prefix, for example
 4. App helper commands are authorization-gated by `TSRS_PROCESSOR_AUTH`, but the
    app now uses native Swift SQLite for playback. Keep the commands for parity
    until a product decision removes them.
-5. The direct app owns native Swift playback even though direct CLI capabilities
-   report `nativeSpeech=false`; treat the capabilities object as CLI/profile
-   reporting, not the full app runtime truth.
+5. App-owned playback is profile-specific. The direct profile currently uses
+   Swift-owned `Process(/usr/bin/say)` for Siri/say voice support; the App
+   Store-safe profile uses `AVSpeechSynthesizer`. Direct app-owned `say`
+   playback is not a parity regression by itself. The forbidden regressions are
+   reintroducing CLI-owned or `relay-processor`-owned speaking, or using
+   `/usr/bin/say` in the App Store-safe profile. Treat the capabilities object
+   as CLI/profile reporting, not the full app runtime truth.
 
 ## Parity harness recommendations
 
