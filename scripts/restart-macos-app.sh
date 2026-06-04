@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 APP_PATH="dist/macos/Tri-State Relay Service.app"
