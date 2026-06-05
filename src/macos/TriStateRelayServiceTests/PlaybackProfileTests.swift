@@ -10,6 +10,14 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("process.executableURL = URL(fileURLWithPath: \"/usr/bin/say\")"))
     }
 
+    func testExplicitReplayShowsPlaybackActivityWithoutQueueMutation() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("button.image = model.status.statusImage(appearance: button.effectiveAppearance, playbackActive: nativePlayback.isPlaying)"))
+        XCTAssertTrue(source.contains("var isPlaying: Bool {\n        currentProcess != nil || synthesizer.isSpeaking\n    }"))
+        XCTAssertTrue(source.contains("onChange()\n        speakReplay(text)"))
+    }
+
     func testRelayProcessorIsNotReferencedByAppBundleCode() throws {
         let source = try triStateRelayServiceSource()
         XCTAssertFalse(source.contains("relay-processor"))

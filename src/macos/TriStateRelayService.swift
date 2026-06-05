@@ -282,7 +282,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
         button.title = ""
         button.attributedTitle = NSAttributedString(string: "")
-        button.image = model.status.statusImage(appearance: button.effectiveAppearance)
+        button.image = model.status.statusImage(appearance: button.effectiveAppearance, playbackActive: nativePlayback.isPlaying)
     }
 
     private func showMenu() {
@@ -1884,7 +1884,13 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         let visibleItems = visibleCommands()
         for item in visibleItems {
-            resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex) { [weak self] in
+            resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex, onHover: { [weak self] in
+                guard let self, self.filteredCommands.indices.contains(item.index), self.selectedIndex != item.index else {
+                    return
+                }
+                self.selectedIndex = item.index
+                self.renderResults()
+            }) { [weak self] in
                 self?.selectedIndex = item.index
                 self?.executeSelected()
             })
@@ -2046,16 +2052,24 @@ final class CommandPalettePanel: NSPanel {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c", onCopy?() == true {
+            return true
+        }
+
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "q" {
             onQuit?()
             return true
         }
 
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c", onCopy?() == true {
-            return true
+            return
         }
 
-        return super.performKeyEquivalent(with: event)
+        super.keyDown(with: event)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -2093,12 +2107,12 @@ final class PaletteResultRowView: NSView {
         if let trackingAreaRef {
             removeTrackingArea(trackingAreaRef)
         }
-        let trackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self)
+        let trackingArea = NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(trackingArea)
         trackingAreaRef = trackingArea
     }
 
-    override func mouseEntered(with event: NSEvent) {
+    override func mouseMoved(with event: NSEvent) {
         onHover?()
     }
 
@@ -2231,6 +2245,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private var currentProcess: Process?
     private let synthesizer = AVSpeechSynthesizer()
 
+    var isPlaying: Bool {
+        currentProcess != nil || synthesizer.isSpeaking
+    }
+
     init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
         self.model = model
         self.inputCaptureSensor = inputCaptureSensor
@@ -2258,6 +2276,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         currentId = claim.id
 
+        onChange()
         speak(claim)
     }
 
@@ -2279,6 +2298,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         currentId = claim.id
+        onChange()
         speak(claim)
     }
 
@@ -2296,6 +2316,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
+        onChange()
         speakReplay(text)
     }
 
@@ -3235,8 +3256,8 @@ struct QueueStatus {
         return "cassette"
     }
 
-    func statusImage(appearance: NSAppearance) -> NSImage? {
-        if !muted && speaking == 0 {
+    func statusImage(appearance: NSAppearance, playbackActive: Bool = false) -> NSImage? {
+        if !muted && speaking == 0 && !playbackActive {
             return cassetteStatusImage(accessibilityDescription: title, hasMessages: queued > 0, appearance: appearance)
         }
 

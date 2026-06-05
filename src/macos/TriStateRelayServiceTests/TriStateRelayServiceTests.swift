@@ -152,9 +152,12 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("final class PaletteResultRowView: NSView {\n    var action: (() -> Void)?\n    var onHover: (() -> Void)?\n    var onScroll: ((Int) -> Bool)?"))
         XCTAssertTrue(source.contains("_ = onScroll?(delta)"))
         XCTAssertTrue(source.contains("if selector == #selector(NSText.copy(_:)), copySelectedCommandText()"))
-        XCTAssertFalse(source.contains("selectHoveredIndex"))
+        XCTAssertTrue(source.contains("options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect]"))
+        XCTAssertTrue(source.contains("override func mouseMoved(with event: NSEvent)"))
+        XCTAssertFalse(source.contains("mouseEntered(with event:"))
         XCTAssertTrue(source.contains("override func hitTest(_ point: NSPoint) -> NSView?"))
         XCTAssertTrue(source.contains("override func acceptsFirstMouse(for event: NSEvent?) -> Bool"))
+        XCTAssertTrue(source.contains("override func keyDown(with event: NSEvent)"))
     }
 
     func testCommandPaletteUsesRaycastStyleDynamicAppearance() throws {
