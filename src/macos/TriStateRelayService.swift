@@ -1690,6 +1690,9 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         content.material = .popover
         content.blendingMode = .behindWindow
         content.state = .active
+        content.onScroll = { [weak self] delta in
+            self?.moveSelection(delta)
+        }
         content.addSubview(searchField)
         content.addSubview(headerDivider)
         content.addSubview(resultsStack)
@@ -1795,7 +1798,12 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
             return
         }
 
-        selectedIndex = min(max(selectedIndex + delta, 0), filteredCommands.count - 1)
+        let nextIndex = min(max(selectedIndex + delta, 0), filteredCommands.count - 1)
+        guard nextIndex != selectedIndex else {
+            return
+        }
+
+        selectedIndex = nextIndex
         renderResults()
     }
 
@@ -1872,8 +1880,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         let visibleItems = visibleCommands()
         for item in visibleItems {
             resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex, onHover: { [weak self] in
-                self?.selectedIndex = item.index
-                self?.renderResults()
+                self?.selectHoveredIndex(item.index)
             }) { [weak self] in
                 self?.selectedIndex = item.index
                 self?.executeSelected()
@@ -1925,6 +1932,15 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         command.lineMessage != nil && selected ? 0 : Self.rowHeight
     }
 
+    private func selectHoveredIndex(_ index: Int) {
+        guard filteredCommands.indices.contains(index), selectedIndex != index else {
+            return
+        }
+
+        selectedIndex = index
+        renderResults()
+    }
+
     private func resultRow(command: CommandPaletteCommand, selected: Bool, onHover: (() -> Void)? = nil, action: (() -> Void)? = nil) -> NSView {
         resultRow(title: command.lineMessage.map { selected ? $0.message : $0.previewTitle } ?? command.title, subtitle: command.lineMessage.map { selected ? $0.expandedSubtitle : $0.compactSubtitle } ?? command.subtitle, selected: selected, height: rowHeight(command: command, selected: selected), onHover: onHover, action: action)
     }
@@ -1935,6 +1951,9 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         row.selected = selected
         row.action = action
         row.onHover = onHover
+        row.onScroll = { [weak self] delta in
+            self?.moveSelection(delta)
+        }
 
         let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
         let titleField = NSTextField(labelWithString: displayTitle)
@@ -1997,6 +2016,8 @@ final class CommandPaletteSearchField: NSTextField {
 }
 
 final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
+    var onScroll: ((Int) -> Void)?
+
     override func layout() {
         super.layout()
         maskImage = roundedMaskImage(size: bounds.size, radius: 18)
@@ -2009,6 +2030,11 @@ final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
         NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: radius, yRadius: radius).fill()
         image.unlockFocus()
         return image
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY < 0 ? 1 : -1
+        onScroll?(delta)
     }
 }
 
@@ -2048,6 +2074,7 @@ final class CommandPalettePanel: NSPanel {
 final class PaletteResultRowView: NSView {
     var action: (() -> Void)?
     var onHover: (() -> Void)?
+    var onScroll: ((Int) -> Void)?
     private var trackingAreaRef: NSTrackingArea?
     var selected = false {
         didSet {
@@ -2071,6 +2098,11 @@ final class PaletteResultRowView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         onHover?()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY < 0 ? 1 : -1
+        onScroll?(delta)
     }
 
     override func draw(_ dirtyRect: NSRect) {

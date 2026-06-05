@@ -142,6 +142,16 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("if selected {\n            constraints.append(stack.topAnchor.constraint(equalTo: row.topAnchor, constant: 8))"))
     }
 
+    func testCommandPaletteMouseSelectionAvoidsRedundantRenders() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("guard nextIndex != selectedIndex else"))
+        XCTAssertTrue(source.contains("private func selectHoveredIndex(_ index: Int)"))
+        XCTAssertTrue(source.contains("guard filteredCommands.indices.contains(index), selectedIndex != index else"))
+        XCTAssertTrue(source.contains("final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {\n    var onScroll: ((Int) -> Void)?"))
+        XCTAssertTrue(source.contains("final class PaletteResultRowView: NSView {\n    var action: (() -> Void)?\n    var onHover: (() -> Void)?\n    var onScroll: ((Int) -> Void)?"))
+    }
+
     func testCommandPaletteUsesRaycastStyleDynamicAppearance() throws {
         let source = try triStateRelayServiceSource()
         guard
