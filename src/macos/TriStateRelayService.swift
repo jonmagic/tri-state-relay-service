@@ -1633,7 +1633,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
             self?.copySelectedCommandText() ?? false
         }
         panel.onScroll = { [weak self] delta in
-            self?.moveSelection(delta)
+            self?.moveSelection(delta) ?? false
         }
         buildContent()
     }
@@ -1691,7 +1691,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         content.blendingMode = .behindWindow
         content.state = .active
         content.onScroll = { [weak self] delta in
-            self?.moveSelection(delta)
+            self?.moveSelection(delta) ?? false
         }
         content.addSubview(searchField)
         content.addSubview(headerDivider)
@@ -1747,6 +1747,10 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
             return true
         }
 
+        if selector == #selector(NSText.copy(_:)), copySelectedCommandText() {
+            return true
+        }
+
         if selector == #selector(NSResponder.deleteBackward(_:)), searchField.stringValue.isEmpty, !navigationStack.isEmpty {
             navigateBack()
             return true
@@ -1793,18 +1797,19 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         filterCommands()
     }
 
-    private func moveSelection(_ delta: Int) {
+    private func moveSelection(_ delta: Int) -> Bool {
         guard !filteredCommands.isEmpty else {
-            return
+            return false
         }
 
         let nextIndex = min(max(selectedIndex + delta, 0), filteredCommands.count - 1)
         guard nextIndex != selectedIndex else {
-            return
+            return false
         }
 
         selectedIndex = nextIndex
         renderResults()
+        return true
     }
 
     private func executeSelected() {
@@ -1879,9 +1884,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         let visibleItems = visibleCommands()
         for item in visibleItems {
-            resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex, onHover: { [weak self] in
-                self?.selectHoveredIndex(item.index)
-            }) { [weak self] in
+            resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex) { [weak self] in
                 self?.selectedIndex = item.index
                 self?.executeSelected()
             })
@@ -1932,15 +1935,6 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         command.lineMessage != nil && selected ? 0 : Self.rowHeight
     }
 
-    private func selectHoveredIndex(_ index: Int) {
-        guard filteredCommands.indices.contains(index), selectedIndex != index else {
-            return
-        }
-
-        selectedIndex = index
-        renderResults()
-    }
-
     private func resultRow(command: CommandPaletteCommand, selected: Bool, onHover: (() -> Void)? = nil, action: (() -> Void)? = nil) -> NSView {
         resultRow(title: command.lineMessage.map { selected ? $0.message : $0.previewTitle } ?? command.title, subtitle: command.lineMessage.map { selected ? $0.expandedSubtitle : $0.compactSubtitle } ?? command.subtitle, selected: selected, height: rowHeight(command: command, selected: selected), onHover: onHover, action: action)
     }
@@ -1952,7 +1946,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         row.action = action
         row.onHover = onHover
         row.onScroll = { [weak self] delta in
-            self?.moveSelection(delta)
+            self?.moveSelection(delta) ?? false
         }
 
         let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
@@ -2016,7 +2010,7 @@ final class CommandPaletteSearchField: NSTextField {
 }
 
 final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
-    var onScroll: ((Int) -> Void)?
+    var onScroll: ((Int) -> Bool)?
 
     override func layout() {
         super.layout()
@@ -2034,14 +2028,14 @@ final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
 
     override func scrollWheel(with event: NSEvent) {
         let delta = event.scrollingDeltaY < 0 ? 1 : -1
-        onScroll?(delta)
+        _ = onScroll?(delta)
     }
 }
 
 final class CommandPalettePanel: NSPanel {
     var onQuit: (() -> Void)?
     var onCopy: (() -> Bool)?
-    var onScroll: ((Int) -> Void)?
+    var onScroll: ((Int) -> Bool)?
 
     override var canBecomeKey: Bool {
         true
@@ -2066,7 +2060,7 @@ final class CommandPalettePanel: NSPanel {
 
     override func scrollWheel(with event: NSEvent) {
         let delta = event.scrollingDeltaY < 0 ? 1 : -1
-        onScroll?(delta)
+        _ = onScroll?(delta)
     }
 
 }
@@ -2074,7 +2068,7 @@ final class CommandPalettePanel: NSPanel {
 final class PaletteResultRowView: NSView {
     var action: (() -> Void)?
     var onHover: (() -> Void)?
-    var onScroll: ((Int) -> Void)?
+    var onScroll: ((Int) -> Bool)?
     private var trackingAreaRef: NSTrackingArea?
     var selected = false {
         didSet {
@@ -2084,6 +2078,14 @@ final class PaletteResultRowView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         action?()
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
     }
 
     override func updateTrackingAreas() {
@@ -2102,7 +2104,7 @@ final class PaletteResultRowView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         let delta = event.scrollingDeltaY < 0 ? 1 : -1
-        onScroll?(delta)
+        _ = onScroll?(delta)
     }
 
     override func draw(_ dirtyRect: NSRect) {

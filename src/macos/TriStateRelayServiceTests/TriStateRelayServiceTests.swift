@@ -146,10 +146,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         let source = try triStateRelayServiceSource()
 
         XCTAssertTrue(source.contains("guard nextIndex != selectedIndex else"))
-        XCTAssertTrue(source.contains("private func selectHoveredIndex(_ index: Int)"))
-        XCTAssertTrue(source.contains("guard filteredCommands.indices.contains(index), selectedIndex != index else"))
-        XCTAssertTrue(source.contains("final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {\n    var onScroll: ((Int) -> Void)?"))
-        XCTAssertTrue(source.contains("final class PaletteResultRowView: NSView {\n    var action: (() -> Void)?\n    var onHover: (() -> Void)?\n    var onScroll: ((Int) -> Void)?"))
+        XCTAssertTrue(source.contains("private func moveSelection(_ delta: Int) -> Bool"))
+        XCTAssertTrue(source.contains("return false\n        }\n\n        selectedIndex = nextIndex"))
+        XCTAssertTrue(source.contains("final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {\n    var onScroll: ((Int) -> Bool)?"))
+        XCTAssertTrue(source.contains("final class PaletteResultRowView: NSView {\n    var action: (() -> Void)?\n    var onHover: (() -> Void)?\n    var onScroll: ((Int) -> Bool)?"))
+        XCTAssertTrue(source.contains("_ = onScroll?(delta)"))
+        XCTAssertTrue(source.contains("if selector == #selector(NSText.copy(_:)), copySelectedCommandText()"))
+        XCTAssertFalse(source.contains("selectHoveredIndex"))
+        XCTAssertTrue(source.contains("override func hitTest(_ point: NSPoint) -> NSView?"))
+        XCTAssertTrue(source.contains("override func acceptsFirstMouse(for event: NSEvent?) -> Bool"))
     }
 
     func testCommandPaletteUsesRaycastStyleDynamicAppearance() throws {
