@@ -28,4 +28,6 @@
 - name: wontfix
   color: ffffff
   description: Outside current scope or intentionally unsupported.
-
+- name: dependencies
+  color: 0366d6
+  description: Dependency or workflow update.

@@ -82,7 +82,7 @@ final class MessageValidationTests: XCTestCase {
 
     func testRejectsTokenLookingMessages() throws {
         let unsafeMessages = [
-            "token=TEST_TOKEN",
+            "token=ghp_" + "abcdefghijklmnopqrstuvwxyz",
             "github_pat_abcdefghijklmnopqrstuvwxyz123456",
             "api_key: abcdefghijklmnop",
             "abcdefghijklmnopqrstuvwxyzABCDEF012345",

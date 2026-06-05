@@ -10,6 +10,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   label:
     name: Label issue safely
@@ -59,4 +63,3 @@ jobs:
               issue_number: issue.number,
               labels: [...labels]
             });
-

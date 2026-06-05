@@ -32,13 +32,13 @@ scripts/release-macos.sh
 Before cutting a release, increment both `CFBundleShortVersionString` in `src/macos/Info.plist` and `relayCliVersion` in `src/macos/RelayCore.swift`. The app and CLI should report the same version. The Settings sidebar shows the app version, and `relay --version` shows the CLI version.
 
 The release script uses the `tsrs` notarytool profile by default, then builds,
-signs, notarizes, staples, validates, writes `dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`, and copies that zip to `~/code/jonmagic/jonmagic.com/src/downloads/`. It refuses to overwrite an existing download zip with the same filename, so a repeated release requires a version bump first. Override the profile only when needed:
+signs, notarizes, staples, validates, writes `dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`, and can copy that zip to a configured downloads directory. It refuses to overwrite an existing download zip with the same filename, so a repeated release requires a version bump first. Override the profile only when needed:
 
 ```sh
 TSRS_NOTARYTOOL_PROFILE=other-profile scripts/release-macos.sh
 ```
 
-Override the website download destination only for local testing:
+Override the download destination when publishing somewhere other than the maintainer's default local website checkout:
 
 ```sh
 TSRS_DOWNLOADS_DIR=/tmp/tsrs-downloads scripts/release-macos.sh

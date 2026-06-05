@@ -3,4 +3,3 @@ contact_links:
   - name: Security-sensitive report
     url: https://github.com/jonmagic/tri-state-relay-service/security/policy
     about: Do not post vulnerabilities, secrets, relay queue contents, private notifications, or personal data in public issues.
-

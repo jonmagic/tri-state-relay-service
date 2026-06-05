@@ -9,3 +9,9 @@ xcuserdata/
 *.db-wal
 tmp/
 .swift-cli-parity/
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
