@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Tri-State Relay Service is pre-1.0 and does not yet have a long-term supported release line. Use the latest public source or latest signed direct-download release when releases are available.
+Tri-State Relay Service is currently 1.0.0 and does not yet have multiple supported release lines. Use the latest public source or latest signed direct-download release when releases are available.
 
 ## Reporting vulnerabilities
 
