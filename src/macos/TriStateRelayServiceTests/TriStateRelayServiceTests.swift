@@ -71,6 +71,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32)"))
     }
 
+    func testSettingsSidebarShowsSubtleVersion() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("let appVersion = Bundle.main.object(forInfoDictionaryKey: \"CFBundleShortVersionString\") as? String ?? relayCliVersion"))
+        XCTAssertTrue(source.contains("private let versionLabel = NSTextField(labelWithString: \"Version \\(appVersion)\""))
+        XCTAssertTrue(source.contains("versionLabel.textColor = .tertiaryLabelColor"))
+        XCTAssertTrue(source.contains("versionLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16)"))
+    }
+
     func testStatusMenuOrderKeepsCoreActionsSimple() throws {
         let source = try triStateRelayServiceSource()
         guard

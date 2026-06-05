@@ -11,9 +11,21 @@ final class RelayCliTests: XCTestCase {
     func testVersionPrintsRelayVersion() {
         let result = runRelayCli(["--version"])
 
-        XCTAssertEqual(result.stdout, "relay 0.1.0")
+        XCTAssertEqual(result.stdout, "relay 1.0.0")
         XCTAssertEqual(result.stderr, "")
         XCTAssertEqual(result.exitCode, 0)
+    }
+
+    func testCliVersionMatchesAppBundleVersion() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let infoPlistURL = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Info.plist")
+        let infoPlist = try String(contentsOf: infoPlistURL, encoding: .utf8)
+
+        XCTAssertTrue(infoPlist.contains("<key>CFBundleShortVersionString</key>\n  <string>1.0.0</string>"))
+        XCTAssertEqual(relayCliVersion, "1.0.0")
     }
 
     func testNoArgumentsPrintsUsage() {

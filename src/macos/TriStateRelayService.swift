@@ -11,6 +11,8 @@ let distributionProfile = "app-store"
 let distributionProfile = "direct"
 #endif
 
+let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? relayCliVersion
+
 @main
 final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private static weak var sharedDelegate: TriStateRelayServiceApp?
@@ -996,6 +998,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cliIconView = NSImageView(image: sidebarIcon(systemName: "terminal"))
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
+    private let versionLabel = NSTextField(labelWithString: "Version \(appVersion)")
     private let voiceOptions = availableSpeechVoiceOptions()
     private let keyboardNavigationFocusView = SettingsKeyboardFocusView(frame: .zero)
 
@@ -1018,6 +1021,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureSidebarRow(cliSectionRow, button: cliSectionButton, iconView: cliIconView, selected: true)
         configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: false)
         configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        versionLabel.font = NSFont.systemFont(ofSize: 11)
+        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.alignment = .center
         settingsTabView.translatesAutoresizingMaskIntoConstraints = false
         settingsTabView.tabViewType = .noTabsNoBorder
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Setup"))
@@ -1034,6 +1041,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.addSubview(cliSectionRow)
         sidebar.addSubview(voiceSectionRow)
         sidebar.addSubview(secondarySectionRow)
+        sidebar.addSubview(versionLabel)
         content.addSubview(settingsTabView)
         content.addSubview(keyboardNavigationFocusView)
 
@@ -1104,6 +1112,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
+            versionLabel.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            versionLabel.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            versionLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16),
             settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32),
             settingsTabView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 28),
             settingsTabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),

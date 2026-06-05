@@ -66,7 +66,7 @@ Create a signed and notarized direct-download zip:
 scripts/release-macos.sh
 ```
 
-The release script uses the `tsrs` notarytool profile by default and requires a `Developer ID Application` certificate. Set `TSRS_CODESIGN_IDENTITY` if more than one is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
+Before cutting a release, increment both `CFBundleShortVersionString` in `src/macos/Info.plist` and `relayCliVersion` in `src/macos/RelayCore.swift`. The release script uses the `tsrs` notarytool profile by default, requires a `Developer ID Application` certificate, writes the notarized zip to `dist/releases/`, and copies it to `~/code/jonmagic/jonmagic.com/src/downloads/`. It refuses to overwrite an existing download zip for the same version. Set `TSRS_CODESIGN_IDENTITY` if more than one certificate is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
 
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue controls, speech claims, and playback in Swift. The app reads and mutates the local SQLite queue directly without scraping or exposing message text. Right click opens line controls; left click selects the next queued line for playback. When unmuted, the app keeps playing incoming relays on the active line. Other lines stay quiet and can be pulled from their line submenu.
 
