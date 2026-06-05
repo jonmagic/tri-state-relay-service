@@ -41,36 +41,13 @@ The invariant is more important than the surface: many producers can enqueue rel
 
 ## Getting started
 
-Run the Swift/Xcode test suite:
+For installation and everyday use, start with `docs/user-guide.md`.
 
-```sh
-xcodebuild test   -project src/macos/TriStateRelayService.xcodeproj   -scheme "Tri-State Relay Service"   -derivedDataPath dist/xcode/tests   CODE_SIGNING_ALLOWED=NO
-```
-
-Build and run the direct-download macOS menu bar app:
-
-```sh
-scripts/build-macos.sh direct
-scripts/restart-macos-app.sh
-```
-
-The macOS app is built through `src/macos/TriStateRelayService.xcodeproj`; the build wrapper bundles the Swift `relay` CLI for agent integrations and rejects any app bundle that contains `relay-processor`.
-
-Direct-download builds are arm64-only by default. If a future distribution need
-requires a universal app, opt in explicitly with
-`TSRS_MACOS_ARCHS="arm64 x86_64" scripts/build-macos.sh direct`.
+For local development, validation, build, and release commands, see `docs/development.md`.
 
 The primary distribution direction is a signed and notarized direct-download Mac app with a standard bundled or installable `relay` CLI. The Mac App Store is no longer an active product goal; developer customization is favored instead, including settings such as which agent summarizes many queued messages. Future Pro licensing should use a direct-download license-key flow rather than StoreKit. See `docs/distribution.md`.
 
-The legacy App Store-safe profile remains only as a hardening reference. Do not optimize new product work for App Store constraints when that conflicts with direct-download customization. Signing/notarization should copy and sign the bundled `relay` helper before sealing the app bundle.
-
-Create a signed and notarized direct-download zip:
-
-```sh
-scripts/release-macos.sh
-```
-
-Before cutting a release, increment both `CFBundleShortVersionString` in `src/macos/Info.plist` and `relayCliVersion` in `src/macos/RelayCore.swift`. The release script uses the `tsrs` notarytool profile by default, requires a `Developer ID Application` certificate, writes the notarized zip to `dist/releases/`, and can copy it to a configured downloads directory. It refuses to overwrite an existing download zip for the same version. Set `TSRS_CODESIGN_IDENTITY` if more than one certificate is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
+The legacy App Store-safe profile remains only as a hardening reference. Do not optimize new product work for App Store constraints when that conflicts with direct-download customization.
 
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue controls, speech claims, and playback in Swift. The app reads and mutates the local SQLite queue directly without scraping or exposing message text. Right click opens line controls; left click selects the next queued line for playback. When unmuted, the app keeps playing incoming relays on the active line. Other lines stay quiet and can be pulled from their line submenu.
 
@@ -89,16 +66,6 @@ Each line submenu scopes lifecycle controls to that line: play next, skip next, 
 To keep old lines from living in the menu forever, TSRS expires stale relays from menu views after 30 minutes. Delivered and failed relays expire by `updated_at`; queued normal or low-priority update/complete relays expire by `created_at`. High-priority queued relays and blocked/needs-input relays stay until handled explicitly.
 
 By default, TSRS stores its database at `~/Library/Application Support/Tri-State Relay Service/relay.db`. For tests or local experiments, set `TSRS_DB_PATH` to another path inside this repository or another safe working directory.
-
-## Dogfooding
-
-When developing TSRS, use the built Swift CLI to enqueue real progress messages:
-
-```sh
-./dist/macos/Tri-State\ Relay\ Service.app/Contents/MacOS/relay --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
-```
-
-Good dogfood relays are short, intentionally authored status updates: start of a meaningful slice, phase changes, blockers, requests for human input, and completion summaries. Do not enqueue raw terminal output, code, logs, secrets, private data, or long explanations.
 
 ## Inactive-line combiner setting
 
@@ -132,7 +99,7 @@ The command-palette shortcut is configurable in Settings. The default is
 `play next` preselected. `Control` + `Option` + `Command` + `V` is not registered
 as a global palette shortcut.
 
-For the user-facing walkthrough, see `docs/user-guide.md`. For local development, validation, and safety invariants, see `docs/development.md`.
+For command-palette details, see `docs/command-palette.md`.
 
 ## Public project posture
 
@@ -143,21 +110,5 @@ TSRS is licensed under the ISC License. See `LICENSE`.
 Use `SECURITY.md` for vulnerabilities or reports that include secrets, private notification content, relay queue contents, personal transcripts, credentials, or unsanitized logs. Do not paste that material into public issues.
 
 Before publishing a release or changing repository visibility, run the local safety checks and review repository settings, release artifacts, and security reporting paths.
-
-## Next slices
-
-Keep trimming internal-only documentation from the user-facing path while preserving useful implementation notes.
-
-## Repository shape
-
-- `.github/skills/` contains local workflow skills for agents.
-- `docs/` contains product direction, architecture notes, progress, and combiner prompt files.
-- `scripts/` contains shell/Xcode validation, build, restart, packaging, and helper entrypoints.
-- `src/macos/` contains the Swift/Xcode app, Swift CLI target, shared relay core, tests, assets, and project metadata.
-- `tests/` contains shell-level repository guardrail tests.
-
-## App Review note draft
-
-Tri-State Relay Service is a local macOS menu bar status inbox for developer tools. It stores short user-authored status relays locally and plays them through the app-controlled speech path only when the user enables playback. The legacy App Store-safe profile does not execute arbitrary user-provided shell commands or download executable code. External command integrations are reserved for the separately distributed direct-download edition.
 
 See `docs/distribution.md` for the signed direct-download direction and `docs/app-store-profile.md` for the legacy App Store-safe hardening profile.

@@ -11,6 +11,35 @@ Tri-State Relay Service is a Swift/Xcode-first macOS app with a bundled Swift `r
 5. `tests/`: shell-level guardrail tests.
 6. `docs/`: public product docs and implementation notes.
 
+## Build and run
+
+Build and run the direct-download macOS menu bar app:
+
+```sh
+scripts/build-macos.sh direct
+scripts/restart-macos-app.sh
+```
+
+The macOS app is built through `src/macos/TriStateRelayService.xcodeproj`; the build wrapper bundles the Swift `relay` CLI for agent integrations and rejects any app bundle that contains `relay-processor`.
+
+Direct-download builds are arm64-only by default. If a future distribution need requires a universal app, opt in explicitly:
+
+```sh
+TSRS_MACOS_ARCHS="arm64 x86_64" scripts/build-macos.sh direct
+```
+
+## Release build
+
+Create a signed and notarized direct-download zip:
+
+```sh
+scripts/release-macos.sh
+```
+
+Before cutting a release, increment both `CFBundleShortVersionString` in `src/macos/Info.plist` and `relayCliVersion` in `src/macos/RelayCore.swift`. The release script uses the `tsrs` notarytool profile by default, requires a `Developer ID Application` certificate, writes the notarized zip to `dist/releases/`, and can copy it to a configured downloads directory. It refuses to overwrite an existing download zip for the same version. Set `TSRS_CODESIGN_IDENTITY` if more than one certificate is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
+
+Signing/notarization should copy and sign the bundled `relay` helper before sealing the app bundle.
+
 ## Local validation
 
 Run the closest relevant validation for the change. For Swift or app-visible changes, use:
@@ -44,6 +73,16 @@ scripts/oss-history-scan.sh
 ```
 
 The readiness check validates GitHub YAML, rejects obvious private paths and token-looking strings in the working tree, runs `gitleaks` when it is installed, and checks whitespace in the current diff. The history scan searches reachable commits for the same high-signal patterns.
+
+## Dogfooding
+
+When developing TSRS, use the built Swift CLI to enqueue real progress messages:
+
+```sh
+./dist/macos/Tri-State\ Relay\ Service.app/Contents/MacOS/relay --line "Tri-State Relay Service" --type update --priority normal --cwd "$PWD" --message "I am starting the next implementation slice."
+```
+
+Good dogfood relays are short, intentionally authored status updates: start of a meaningful slice, phase changes, blockers, requests for human input, and completion summaries. Do not enqueue raw terminal output, code, logs, secrets, private data, or long explanations.
 
 ## Safety invariants
 
