@@ -8,9 +8,9 @@ Tri-State Relay Service is pre-1.0 and does not yet have a long-term supported r
 
 Do not report vulnerabilities in public issues if the report includes secrets, private notification content, relay queue contents, logs with credentials, personal transcripts, signing material, or exploit details that would put users at risk.
 
-Preferred private path: use GitHub private vulnerability reporting for this repository when it is enabled.
+Preferred private path: use GitHub private vulnerability reporting for this repository.
 
-If private vulnerability reporting is not enabled yet, wait for a maintainer-provided disclosure address before sharing sensitive details publicly.
+If private vulnerability reporting is unavailable, wait for a maintainer-provided disclosure path before sharing sensitive details publicly.
 
 ## Scope
 
@@ -27,4 +27,3 @@ Security-sensitive areas include:
 ## Public issue hygiene
 
 When reporting non-sensitive bugs publicly, sanitize logs and examples. Do not include real relay messages, private notification text, queue database files, tokens, customer content, or full terminal output.
-
