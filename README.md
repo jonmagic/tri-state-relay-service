@@ -41,6 +41,8 @@ The invariant is more important than the surface: many producers can enqueue rel
 
 For installation and everyday use, start with `docs/user-guide.md`. For local development, validation, build, and release commands, see `docs/development.md`.
 
+For future direction, see `ROADMAP.md`.
+
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue controls, speech claims, and playback in Swift. The app reads and mutates the local SQLite queue directly without scraping or exposing message text. Right click opens line controls; left click selects the next queued line for playback. When unmuted, the app keeps playing incoming relays on the active line. Other lines stay quiet and can be pulled from their line submenu.
 
 The direct app can install or update the bundled `relay` CLI from Settings. On first launch, Settings opens on the Setup panel first, recommends `/usr/local/bin/relay`, lets you record the command-palette shortcut, refuses to overwrite a foreign `relay`, and offers a copy button for the full bundled app-contents CLI path. The CLI exposes the same mechanism through `relay cli-status`, `relay install-cli`, and `relay --version`.
