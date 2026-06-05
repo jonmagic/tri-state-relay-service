@@ -36,14 +36,14 @@ scripts/restart-macos-app.sh
 
 The restart helper should report a running PID from `dist/macos/Tri-State Relay Service.app`.
 
-For publication-readiness checks, run:
+For repository safety checks, run:
 
 ```sh
 scripts/oss-readiness-check.sh
 scripts/oss-history-scan.sh
 ```
 
-The readiness check validates GitHub YAML, rejects obvious private paths and token-looking strings in the candidate tree, runs `gitleaks` when it is installed, and checks whitespace in the current diff. The history scan searches all reachable commits for the same high-signal patterns so publication can choose between a clean import and a deliberate history rewrite.
+The readiness check validates GitHub YAML, rejects obvious private paths and token-looking strings in the working tree, runs `gitleaks` when it is installed, and checks whitespace in the current diff. The history scan searches reachable commits for the same high-signal patterns.
 
 ## Safety invariants
 

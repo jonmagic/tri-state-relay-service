@@ -138,7 +138,7 @@ TSRS is licensed under the ISC License. See `LICENSE`.
 
 Use `SECURITY.md` for vulnerabilities or reports that include secrets, private notification content, relay queue contents, personal transcripts, credentials, or unsanitized logs. Do not paste that material into public issues.
 
-The OSS readiness checklist lives in `docs/oss-readiness.md`. Publication still requires human checkpoints for license choice, public history strategy, disclosure path, release posture, repo settings, and secret/history scan results.
+Before publishing a release or changing repository visibility, run the local safety checks and review repository settings, release artifacts, and security reporting paths.
 
 ## Next slices
 
