@@ -2,6 +2,10 @@
 
 Tri-State Relay Service is a local macOS agent relay inbox. Agents submit short status messages with the `relay` CLI, TSRS stores them as relays in a local SQLite queue, and the Swift app-owned playback path speaks one relay at a time.
 
+Product page: https://jonmagic.com/tsrs/
+
+Background: https://jonmagic.com/posts/the-feedback-loop-i-was-missing/
+
 The first useful contract is intentionally small:
 
 ```sh
