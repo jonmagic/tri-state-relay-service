@@ -39,9 +39,9 @@ The invariant is more important than the surface: many producers can enqueue rel
 
 ## Getting started
 
-For installation and everyday use, start with `docs/user-guide.md`. For local development, validation, build, and release commands, see `docs/development.md`.
+For installation and everyday use, start with [the user guide](docs/user-guide.md). For local development, validation, build, and release commands, see [the development guide](docs/development.md).
 
-For future direction, see `ROADMAP.md`.
+For future direction, see [the roadmap](ROADMAP.md).
 
 The direct profile is an AppKit `NSStatusItem` host that owns menu state, queue controls, speech claims, and playback in Swift. The app reads and mutates the local SQLite queue directly without scraping or exposing message text. Right click opens line controls; left click selects the next queued line for playback. When unmuted, the app keeps playing incoming relays on the active line. Other lines stay quiet and can be pulled from their line submenu.
 
@@ -68,10 +68,10 @@ relay line "Tri-State Relay Service"
 
 The first accepted relay becomes the active line when no active line is set. The menu bar app uses a Raycast-style command palette for interactive relay actions. Right click opens the palette for search-driven actions, while left click remains the fastest pointer path for Play Next. When unmuted, the app keeps playing queued messages from the active line as they arrive. Messages from other lines remain queued until you switch lines or pull them manually. Pulling a message from another line makes that line active.
 
-Line-scoped source actions use the selected line's latest source context, not the newest source from another line. See `docs/command-palette.md`.
+Line-scoped source actions use the selected line's latest source context, not the newest source from another line. See [the command-palette guide](docs/command-palette.md).
 
 The command-palette shortcut is configurable in Settings. The default is `Control` + `Option` + `Command` + `Space`, which opens the command palette with `play next` preselected. For command-palette details, see `docs/command-palette.md`.
 
 TSRS is licensed under the ISC License. See `LICENSE`.
 
-Use `SECURITY.md` for vulnerabilities or reports that include secrets, private notification content, relay queue contents, personal transcripts, credentials, or unsanitized logs. See `docs/distribution.md` for the signed direct-download direction.
+Use [the security policy](SECURITY.md) for vulnerabilities or reports that include secrets, private notification content, relay queue contents, personal transcripts, credentials, or unsanitized logs. See [the distribution notes](docs/distribution.md) for the signed direct-download direction.
