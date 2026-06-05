@@ -1,0 +1,62 @@
+name: Issue triage
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    name: Label issue safely
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply conservative triage labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const text = `${issue.title || ""}\n${issue.body || ""}`.toLowerCase();
+            const labels = new Set(["triage/ai-reviewed"]);
+
+            const securitySignals = [
+              "token",
+              "secret",
+              "credential",
+              "password",
+              "private key",
+              "relay.db",
+              "queue database",
+              "notification content",
+              "private notification",
+              "vulnerability",
+              "exploit",
+              "cve"
+            ];
+            if (securitySignals.some((signal) => text.includes(signal))) {
+              labels.add("security-sensitive");
+              labels.add("triage/human-needed");
+            }
+
+            const hasReproSection = text.includes("reproduction") || text.includes("steps");
+            const looksLikeBug = issue.title.toLowerCase().startsWith("bug:") || text.includes("expected behavior") || text.includes("actual behavior");
+            if (looksLikeBug && !hasReproSection) {
+              labels.add("needs-repro");
+            }
+
+            const speakingSignals = ["speak", "speech", "audio", "voice", "ready", "focus", "mute", "played unexpectedly"];
+            if (speakingSignals.some((signal) => text.includes(signal))) {
+              labels.add("triage/human-needed");
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: [...labels]
+            });
+

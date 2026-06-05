@@ -1,0 +1,24 @@
+name: Documentation issue
+description: Report confusing, stale, or missing documentation.
+title: "Docs: "
+labels:
+  - docs
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      placeholder: "Example: docs/user-guide.md"
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is confusing or stale?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested correction
+

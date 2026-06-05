@@ -1,0 +1,13 @@
+name: Security or private report
+description: Do not file security-sensitive details publicly.
+title: "Security/private report: "
+labels:
+  - security-sensitive
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not submit this issue if it includes vulnerabilities, secrets, relay queue contents, private notifications, personal transcripts, credentials, exploit details, or unsanitized logs.
+
+        Use GitHub private vulnerability reporting when it is enabled for this repository. See SECURITY.md for the current policy.
+

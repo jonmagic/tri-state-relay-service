@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest a product or workflow improvement.
+title: "Feature: "
+labels:
+  - feature
+  - needs-design
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep requests focused on the local direct-download app and `relay` CLI direction. Do not include secrets, private notification text, queue contents, or personal data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem should TSRS solve?
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: speaking-impact
+    attributes:
+      label: Does this change speaking behavior?
+      options:
+        - "No"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+  - type: dropdown
+    id: privacy-impact
+    attributes:
+      label: Does this affect private relay data, logs, queue storage, or external commands?
+      options:
+        - "No"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+

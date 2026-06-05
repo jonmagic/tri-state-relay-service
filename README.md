@@ -128,7 +128,15 @@ The command-palette shortcut is configurable in Settings. The default is
 `play next` preselected. `Control` + `Option` + `Command` + `V` is not registered
 as a global palette shortcut.
 
-For the user-facing walkthrough, see `docs/user-guide.md`.
+For the user-facing walkthrough, see `docs/user-guide.md`. For local development, validation, and safety invariants, see `docs/development.md`.
+
+## Public project posture
+
+TSRS is being prepared as an issues-first public project. Issues and documentation feedback are welcome, but unsolicited pull requests are not accepted by default right now. Substantial changes should start with an issue, especially anything that affects playback, persistence, permissions, signing, or distribution.
+
+Use `SECURITY.md` for vulnerabilities or reports that include secrets, private notification content, relay queue contents, personal transcripts, credentials, or unsanitized logs. Do not paste that material into public issues.
+
+The OSS readiness checklist lives in `docs/oss-readiness.md`. Publication still requires human checkpoints for license choice, public history strategy, disclosure path, release posture, repo settings, and secret/history scan results.
 
 ## Next slices
 

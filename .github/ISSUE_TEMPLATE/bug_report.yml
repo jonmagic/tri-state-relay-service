@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible TSRS bug.
+title: "Bug: "
+labels:
+  - bug
+  - needs-repro
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste secrets, private notification text, relay queue databases, access tokens, customer data, transcripts, or unsanitized logs.
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Use the Settings sidebar version or the release version.
+      placeholder: "Example: 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "Example: macOS 15.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Signed direct-download app
+        - Local development build
+        - Source only
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: cli-path
+    attributes:
+      label: relay CLI path
+      description: If relevant, paste only the path to the CLI, not command output.
+      placeholder: "/usr/local/bin/relay"
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Do not include private relay contents or raw logs.
+      placeholder: |
+        1. Launch TSRS.
+        2. Run relay --line "Example" --message "Sanitized example."
+        3. Click Play Next.
+    validations:
+      required: true
+  - type: dropdown
+    id: speaking-impact
+    attributes:
+      label: Did audio play unexpectedly?
+      options:
+        - "No"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized-logs
+    attributes:
+      label: Sanitized diagnostics
+      description: Optional. Remove secrets, paths you do not want public, queue contents, notification text, and tokens.
+
