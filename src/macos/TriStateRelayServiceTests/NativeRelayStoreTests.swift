@@ -116,6 +116,57 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(settings.inactiveLineCombinerCommand, "llm prompt <input> --system <system> --no-stream --no-log")
     }
 
+    func testRecentLineMessagesReturnQueuedThenDelivered() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        let deliveredOlder = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "delivered older", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+        let deliveredNewer = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "delivered newer", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+        _ = store.claimQueuedMessageForNativeSpeech(line: "Brain", id: deliveredOlder.id)
+        store.markNativeSpeechHeard(id: deliveredOlder.id)
+        _ = store.claimQueuedMessageForNativeSpeech(line: "Brain", id: deliveredNewer.id)
+        store.markNativeSpeechHeard(id: deliveredNewer.id)
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "queued low", type: "update", priority: "low", session: nil, app: nil, cwd: nil, url: nil))
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "queued high", type: "update", priority: "high", session: nil, app: nil, cwd: nil, url: nil))
+        _ = try store.enqueue(NewRelayInput(line: "Other", message: "other line", type: "update", priority: "high", session: nil, app: nil, cwd: nil, url: nil))
+
+        let messages = store.recentMessages(line: "Brain")
+
+        XCTAssertEqual(messages.map(\.message), ["queued high", "queued low", "delivered newer", "delivered older"])
+        XCTAssertEqual(messages.map(\.displayStatus), ["Queued", "Queued", "Delivered", "Delivered"])
+    }
+
+    func testClaimQueuedMessageForNativeSpeechMarksExactQueuedMessage() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        let first = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "first queued", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+        let second = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "second queued", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+
+        let claim = store.claimQueuedMessageForNativeSpeech(line: "Brain", id: second.id)
+
+        XCTAssertEqual(claim?.id, second.id)
+        XCTAssertEqual(store.recentMessages(line: "Brain").map(\.id), [first.id])
+        store.markNativeSpeechHeard(id: second.id)
+        XCTAssertEqual(store.recentMessages(line: "Brain").map(\.message), ["first queued", "second queued"])
+    }
+
     private func testArtifactDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

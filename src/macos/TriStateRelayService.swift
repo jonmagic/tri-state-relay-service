@@ -362,7 +362,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 return nil
             }
 
-            return CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued, \(line.heard) delivered", aliases: ["line", line.line], children: children)
+            return CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued", aliases: ["line", line.line], children: children, matchesChildren: false)
         })
 
         if model.status.muted {
@@ -397,6 +397,34 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     private func commandPaletteCommands(for line: LineSummary) -> [CommandPaletteCommand] {
+        let messages = model.recentMessages(line: line.line)
+        if !messages.isEmpty {
+            return messages.map { message in
+                CommandPaletteCommand(
+                    title: message.compactTitle,
+                    subtitle: message.expandedSubtitle,
+                    aliases: [message.displayStatus, message.localTime],
+                    restoresPreviousFocus: true,
+                    copyText: message.message,
+                    lineMessage: message
+                ) { [weak self] in
+                    guard let self else {
+                        return
+                    }
+
+                    switch message.status {
+                    case "queued":
+                        self.model.setActiveLine(message.line)
+                        self.nativePlayback.playQueuedMessage(line: message.line, id: message.id)
+                    default:
+                        self.nativePlayback.replayDeliveredMessage(message.message)
+                    }
+                    self.refreshStatusItem()
+                    self.schedulePlaybackRefresh()
+                }
+            }
+        }
+
         let isActive = line.line == model.status.activeLine
         let activePrefix = isActive ? "Current line" : "Line"
         var commands: [CommandPaletteCommand] = [
@@ -1511,14 +1539,20 @@ struct CommandPaletteCommand {
     let aliases: [String]
     let children: [CommandPaletteCommand]
     let restoresPreviousFocus: Bool
+    let copyText: String?
+    let lineMessage: LineMessage?
+    let matchesChildren: Bool
     let action: () -> Void
 
-    init(title: String, subtitle: String, aliases: [String] = [], children: [CommandPaletteCommand] = [], restoresPreviousFocus: Bool = true, action: @escaping () -> Void = {}) {
+    init(title: String, subtitle: String, aliases: [String] = [], children: [CommandPaletteCommand] = [], restoresPreviousFocus: Bool = true, copyText: String? = nil, lineMessage: LineMessage? = nil, matchesChildren: Bool = true, action: @escaping () -> Void = {}) {
         self.title = title
         self.subtitle = subtitle
         self.aliases = aliases
         self.children = children
         self.restoresPreviousFocus = restoresPreviousFocus
+        self.copyText = copyText
+        self.lineMessage = lineMessage
+        self.matchesChildren = matchesChildren
         self.action = action
     }
 
@@ -1545,7 +1579,7 @@ struct CommandPaletteCommand {
             return 80
         }
 
-        if children.contains(where: { $0.matches(normalized) }) {
+        if matchesChildren && children.contains(where: { $0.matches(normalized) }) {
             return 10
         }
 
@@ -1595,6 +1629,12 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         }
 
         super.init(window: panel)
+        panel.onCopy = { [weak self] in
+            self?.copySelectedCommandText() ?? false
+        }
+        panel.onScroll = { [weak self] delta in
+            self?.moveSelection(delta)
+        }
         buildContent()
     }
 
@@ -1782,6 +1822,16 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         }
     }
 
+    private func copySelectedCommandText() -> Bool {
+        guard filteredCommands.indices.contains(selectedIndex), let copyText = filteredCommands[selectedIndex].copyText else {
+            return false
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(copyText, forType: .string)
+        return true
+    }
+
     private func navigateBack() {
         guard let previous = navigationStack.popLast() else {
             return
@@ -1812,19 +1862,24 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         }
 
         if filteredCommands.isEmpty {
-            resultsStack.addArrangedSubview(resultRow(title: "No actions found", subtitle: "Try another query", selected: false))
+            let emptyTitle = navigationStack.isEmpty ? "No matches." : "No messages on this line yet."
+            let emptySubtitle = navigationStack.isEmpty ? "Try another query" : ""
+            resultsStack.addArrangedSubview(resultRow(title: emptyTitle, subtitle: emptySubtitle, selected: false, height: Self.rowHeight))
             resizeWindow(rowCount: 1)
             return
         }
 
         let visibleItems = visibleCommands()
         for item in visibleItems {
-            resultsStack.addArrangedSubview(resultRow(title: item.command.title, subtitle: item.command.subtitle, selected: item.index == selectedIndex) { [weak self] in
+            resultsStack.addArrangedSubview(resultRow(command: item.command, selected: item.index == selectedIndex, onHover: { [weak self] in
+                self?.selectedIndex = item.index
+                self?.renderResults()
+            }) { [weak self] in
                 self?.selectedIndex = item.index
                 self?.executeSelected()
             })
         }
-        resizeWindow(rowCount: visibleItems.count)
+        resizeWindow(rowHeights: visibleItems.map { rowHeight(command: $0.command, selected: $0.index == selectedIndex) })
     }
 
     private func visibleCommands(limit: Int = 5) -> [(index: Int, command: CommandPaletteCommand)] {
@@ -1841,12 +1896,16 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
     }
 
     private func resizeWindow(rowCount: Int) {
+        resizeWindow(rowHeights: Array(repeating: Self.rowHeight, count: rowCount))
+    }
+
+    private func resizeWindow(rowHeights: [CGFloat]) {
         guard let window else {
             return
         }
 
-        let rowsHeight = CGFloat(rowCount) * Self.rowHeight
-        let rowGapsHeight = CGFloat(max(0, rowCount - 1)) * Self.rowSpacing
+        let rowsHeight = rowHeights.reduce(0, +)
+        let rowGapsHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.rowSpacing
         let height = Self.outerPadding
             + Self.searchHeight
             + Self.searchToDividerSpacing
@@ -1862,19 +1921,31 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         window.setFrame(frame, display: true)
     }
 
-    private func resultRow(title: String, subtitle: String, selected: Bool, action: (() -> Void)? = nil) -> NSView {
+    private func rowHeight(command: CommandPaletteCommand, selected: Bool) -> CGFloat {
+        command.lineMessage != nil && selected ? 108 : Self.rowHeight
+    }
+
+    private func resultRow(command: CommandPaletteCommand, selected: Bool, onHover: (() -> Void)? = nil, action: (() -> Void)? = nil) -> NSView {
+        resultRow(title: command.lineMessage.map { selected ? $0.message : $0.previewTitle } ?? command.title, subtitle: command.lineMessage.map { selected ? $0.expandedSubtitle : $0.compactSubtitle } ?? command.subtitle, selected: selected, height: rowHeight(command: command, selected: selected), onHover: onHover, action: action)
+    }
+
+    private func resultRow(title: String, subtitle: String, selected: Bool, height: CGFloat, onHover: (() -> Void)? = nil, action: (() -> Void)? = nil) -> NSView {
         let row = PaletteResultRowView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.selected = selected
         row.action = action
+        row.onHover = onHover
 
         let displayTitle = subtitle == "submenu" ? "\(title) ›" : title
         let titleField = NSTextField(labelWithString: displayTitle)
         titleField.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         titleField.textColor = .labelColor
+        titleField.lineBreakMode = selected ? .byTruncatingTail : .byTruncatingTail
+        titleField.maximumNumberOfLines = selected ? 4 : 1
         let subtitleField = NSTextField(labelWithString: subtitle)
         subtitleField.font = NSFont.systemFont(ofSize: 11)
         subtitleField.textColor = .secondaryLabelColor
+        subtitleField.maximumNumberOfLines = selected ? 2 : 1
         let stack = NSStackView(views: [titleField, subtitleField])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -1883,7 +1954,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         row.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: Self.rowHeight),
+            row.heightAnchor.constraint(equalToConstant: height),
             row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.rowOuterPadding * 2)),
             stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.contentInset - Self.rowOuterPadding),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -(Self.contentInset - Self.rowOuterPadding)),
@@ -1935,6 +2006,8 @@ final class RoundedCommandPaletteBackgroundView: NSVisualEffectView {
 
 final class CommandPalettePanel: NSPanel {
     var onQuit: (() -> Void)?
+    var onCopy: (() -> Bool)?
+    var onScroll: ((Int) -> Void)?
 
     override var canBecomeKey: Bool {
         true
@@ -1950,13 +2023,24 @@ final class CommandPalettePanel: NSPanel {
             return true
         }
 
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c", onCopy?() == true {
+            return true
+        }
+
         return super.performKeyEquivalent(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY < 0 ? 1 : -1
+        onScroll?(delta)
     }
 
 }
 
 final class PaletteResultRowView: NSView {
     var action: (() -> Void)?
+    var onHover: (() -> Void)?
+    private var trackingAreaRef: NSTrackingArea?
     var selected = false {
         didSet {
             needsDisplay = true
@@ -1965,6 +2049,20 @@ final class PaletteResultRowView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         action?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let trackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self)
+        addTrackingArea(trackingArea)
+        trackingAreaRef = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHover?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -2121,6 +2219,44 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         speak(claim)
     }
 
+    func playQueuedMessage(line: String, id: Int) {
+        guard !synthesizer.isSpeaking, currentProcess == nil else {
+            return
+        }
+
+        if inputCaptureSensor.isInputCaptureActive() {
+            model.refresh()
+            onChange()
+            return
+        }
+
+        guard let claim = model.claimQueuedMessageForNativeSpeech(line: line, id: id) else {
+            model.refresh()
+            onChange()
+            return
+        }
+
+        currentId = claim.id
+        speak(claim)
+    }
+
+    func replayDeliveredMessage(_ text: String) {
+        model.refresh()
+        guard !model.status.muted, !synthesizer.isSpeaking, currentProcess == nil else {
+            model.refresh()
+            onChange()
+            return
+        }
+
+        if inputCaptureSensor.isInputCaptureActive() {
+            model.refresh()
+            onChange()
+            return
+        }
+
+        speakReplay(text)
+    }
+
     private func speak(_ claim: NativeSpeechClaim) {
 #if APP_STORE
         let utterance = AVSpeechUtterance(string: claim.text)
@@ -2165,8 +2301,44 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 #endif
     }
 
+    private func speakReplay(_ text: String) {
+#if APP_STORE
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = preferredRelayVoice(identifier: model.loadSettings().speechVoiceIdentifier)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        utterance.pitchMultiplier = 1
+        synthesizer.speak(utterance)
+#else
+        let option = speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        process.arguments = sayArguments(text: text, option: option)
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+
+                self.currentProcess = nil
+                self.onChange()
+            }
+        }
+
+        do {
+            currentProcess = process
+            try process.run()
+        } catch {
+            currentProcess = nil
+            onChange()
+        }
+#endif
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         guard let id = currentId else {
+            onChange()
             return
         }
 
@@ -2177,6 +2349,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         guard let id = currentId else {
+            onChange()
             return
         }
 
@@ -2582,6 +2755,10 @@ final class MenuBarModel {
         store.claimNextForNativeSpeech(line: line)
     }
 
+    func claimQueuedMessageForNativeSpeech(line: String, id: Int) -> NativeSpeechClaim? {
+        store.claimQueuedMessageForNativeSpeech(line: line, id: id)
+    }
+
     func markNativeSpeechHeard(id: Int) {
         store.markNativeSpeechHeard(id: id)
         refresh()
@@ -2594,6 +2771,10 @@ final class MenuBarModel {
 
     func loadSettings() -> SettingsSnapshot {
         store.loadSettings()
+    }
+
+    func recentMessages(line: String, limit: Int = 20) -> [LineMessage] {
+        store.recentMessages(line: line, limit: limit)
     }
 
     func needsFirstStartSetup() -> Bool {
@@ -2873,6 +3054,65 @@ struct NativeRelay {
     let createdAt: String
     let updatedAt: String
 }
+
+struct LineMessage {
+    let id: Int
+    let line: String
+    let message: String
+    let status: String
+    let createdAt: String
+    let updatedAt: String
+
+    var displayStatus: String {
+        status == "queued" ? "Queued" : "Delivered"
+    }
+
+    var localTime: String {
+        guard let date = nativeRelayTimestampFormatter.date(from: updatedAt.isEmpty ? createdAt : updatedAt) else {
+            return ""
+        }
+        return lineMessageTimeFormatter.string(from: date)
+    }
+
+    var previewTitle: String {
+        "\(displayStatus) \(localTime)   \(truncatedMessage(limit: 64))"
+    }
+
+    var compactTitle: String {
+        previewTitle
+    }
+
+    var compactSubtitle: String {
+        ""
+    }
+
+    var expandedSubtitle: String {
+        "\(displayStatus) \(localTime)\nEnter Replay    Command-C Copy"
+    }
+
+    private func truncatedMessage(limit: Int) -> String {
+        guard message.count > limit else {
+            return message
+        }
+
+        return "\(message.prefix(limit - 1))…"
+    }
+}
+
+private let nativeRelayTimestampFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    return formatter
+}()
+
+private let lineMessageTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.timeStyle = .short
+    formatter.dateStyle = .none
+    return formatter
+}()
 
 struct QueueStatus {
     let mode: String
@@ -3336,6 +3576,66 @@ final class NativeRelayStore {
                 text: spokenText(relay, includeLine: shouldPrefixSpokenLine(database, line: relay.line))
             )
         }
+    }
+
+    func claimQueuedMessageForNativeSpeech(line: String, id: Int) -> NativeSpeechClaim? {
+        writeResult { database in
+            expireStaleRelays(database)
+            failStaleSpeaking(database)
+            let settings = loadRawSettings(database)
+            guard settings["muted"] != "true" else {
+                return nil
+            }
+
+            guard let relay = returningRelay(database, """
+                UPDATE relays
+                SET status = 'speaking', updated_at = ?
+                WHERE id = ? AND line = ? AND status = 'queued'
+                RETURNING id, line, message, type, priority, status, created_at, updated_at
+            """, [nowString(), String(id), line]) else {
+                return nil
+            }
+
+            return NativeSpeechClaim(
+                id: relay.id,
+                text: spokenText(relay, includeLine: shouldPrefixSpokenLine(database, line: relay.line))
+            )
+        }
+    }
+
+    func recentMessages(line: String, limit: Int = 20) -> [LineMessage] {
+        withWriteDatabase { database in
+            expireStaleRelays(database)
+            failStaleSpeaking(database)
+            var messages: [LineMessage] = []
+            query(database, """
+                SELECT id, line, message, status, created_at, updated_at
+                FROM relays
+                WHERE line = ? AND status IN ('queued', 'heard')
+                ORDER BY
+                  CASE status WHEN 'queued' THEN 0 ELSE 1 END,
+                  CASE
+                    WHEN status = 'queued' AND priority = 'high' THEN 0
+                    WHEN status = 'queued' AND priority = 'normal' THEN 1
+                    WHEN status = 'queued' THEN 2
+                    ELSE 0
+                  END,
+                  CASE WHEN status = 'queued' THEN created_at END ASC,
+                  CASE WHEN status = 'heard' THEN updated_at END DESC,
+                  id DESC
+                LIMIT ?
+            """, [line, String(limit)]) { statement in
+                messages.append(LineMessage(
+                    id: Int(sqlite3_column_int(statement, 0)),
+                    line: columnString(statement, 1) ?? "",
+                    message: columnString(statement, 2) ?? "",
+                    status: columnString(statement, 3) ?? "queued",
+                    createdAt: columnString(statement, 4) ?? "",
+                    updatedAt: columnString(statement, 5) ?? ""
+                ))
+            }
+            return messages
+        } ?? []
     }
 
     func markNativeSpeechHeard(id: Int) {
