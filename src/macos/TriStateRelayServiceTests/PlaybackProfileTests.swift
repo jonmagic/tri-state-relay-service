@@ -116,4 +116,15 @@ final class PlaybackProfileTests: XCTestCase {
         }
         XCTAssertTrue(message.contains("Include Control, Option, or Shift"))
     }
+
+    func testShortcutRecordingSuspendsGlobalHotKeyRegistration() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("onShortcutRecordingChanged: { [weak self] isRecording in"))
+        XCTAssertTrue(source.contains("self?.unregisterGlobalHotKeys()"))
+        XCTAssertTrue(source.contains("self?.registerGlobalHotKeys()"))
+        XCTAssertTrue(source.contains("setupShortcutRecorderButton.onRecordingChanged = { [weak self] isRecording in"))
+        XCTAssertTrue(source.contains("onRecordingChanged?(true)"))
+        XCTAssertTrue(source.contains("onRecordingChanged?(false)"))
+    }
 }

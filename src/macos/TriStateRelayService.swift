@@ -237,6 +237,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 #if !APP_STORE
                 self?.installRelayCli()
 #endif
+            }, onShortcutRecordingChanged: { [weak self] isRecording in
+                if isRecording {
+                    self?.unregisterGlobalHotKeys()
+                } else {
+                    self?.registerGlobalHotKeys()
+                }
             }) { [weak self] in
                 self?.refreshStatusItem()
                 self?.registerGlobalHotKeys()
@@ -796,6 +802,7 @@ final class ShortcutRecorderButton: NSButton {
         }
     }
     var onShortcut: ((ShortcutValidationResult) -> Void)?
+    var onRecordingChanged: ((Bool) -> Void)?
     private var isRecording = false
     private var keyMonitor: Any?
 
@@ -817,7 +824,11 @@ final class ShortcutRecorderButton: NSButton {
     }
 
     @objc private func startRecording() {
+        guard !isRecording else {
+            return
+        }
         isRecording = true
+        onRecordingChanged?(true)
         title = "Press shortcut…"
         window?.makeFirstResponder(self)
         installKeyMonitor()
@@ -861,8 +872,12 @@ final class ShortcutRecorderButton: NSButton {
     }
 
     private func stopRecording(resetTitle: Bool) {
+        guard isRecording else {
+            return
+        }
         isRecording = false
         removeKeyMonitor()
+        onRecordingChanged?(false)
         if resetTitle {
             title = shortcut.displayName
         }
@@ -928,6 +943,7 @@ struct GlobalHotKeyRegistrationPlan: Equatable {
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: MenuBarModel
     private let onInstallRelayCli: () -> Void
+    private let onShortcutRecordingChanged: (Bool) -> Void
     private let onSave: () -> Void
     private let setupIntroView = NSTextField(labelWithString: "")
     private let cliStatusView = NSTextField(labelWithString: "")
@@ -955,9 +971,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let voiceOptions = availableSpeechVoiceOptions()
     private let keyboardNavigationFocusView = SettingsKeyboardFocusView(frame: .zero)
 
-    init(model: MenuBarModel, onInstallRelayCli: @escaping () -> Void, onSave: @escaping () -> Void) {
+    init(
+        model: MenuBarModel,
+        onInstallRelayCli: @escaping () -> Void,
+        onShortcutRecordingChanged: @escaping (Bool) -> Void,
+        onSave: @escaping () -> Void
+    ) {
         self.model = model
         self.onInstallRelayCli = onInstallRelayCli
+        self.onShortcutRecordingChanged = onShortcutRecordingChanged
         self.onSave = onSave
 
         let sidebar = NSVisualEffectView()
@@ -1029,6 +1051,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
         setupShortcutRecorderButton.onShortcut = { [weak self] result in
             self?.recordShortcut(result)
+        }
+        setupShortcutRecorderButton.onRecordingChanged = { [weak self] isRecording in
+            self?.onShortcutRecordingChanged(isRecording)
         }
         setupInstallCliButton.target = self
         setupInstallCliButton.action = #selector(installRelayCliFromSetup)
