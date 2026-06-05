@@ -68,4 +68,4 @@ For the full walkthrough, see [the user guide](docs/user-guide.md).
 - [Roadmap](ROADMAP.md)
 - [Security policy](SECURITY.md)
 
-TSRS is licensed under the ISC License. See `LICENSE`.
+TSRS is licensed under the ISC License. See [LICENSE](LICENSE).
