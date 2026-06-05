@@ -1842,6 +1842,8 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
 
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(copyText, forType: .string)
+        close()
+        restorePreviousApplication()
         return true
     }
 

@@ -152,6 +152,7 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("final class PaletteResultRowView: NSView {\n    var action: (() -> Void)?\n    var onHover: (() -> Void)?\n    var onScroll: ((Int) -> Bool)?"))
         XCTAssertTrue(source.contains("_ = onScroll?(delta)"))
         XCTAssertTrue(source.contains("if selector == #selector(NSText.copy(_:)), copySelectedCommandText()"))
+        XCTAssertTrue(source.contains("NSPasteboard.general.setString(copyText, forType: .string)\n        close()\n        restorePreviousApplication()"))
         XCTAssertTrue(source.contains("options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect]"))
         XCTAssertTrue(source.contains("override func mouseMoved(with event: NSEvent)"))
         XCTAssertFalse(source.contains("mouseEntered(with event:"))
