@@ -132,6 +132,16 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertFalse(source.contains("filteredCommands.prefix(5)"))
     }
 
+    func testSelectedLineMessageRowsWrapInsteadOfTruncating() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("titleField.lineBreakMode = selected ? .byWordWrapping : .byTruncatingTail"))
+        XCTAssertTrue(source.contains("titleField.preferredMaxLayoutWidth = Self.panelWidth - (Self.contentInset * 2)"))
+        XCTAssertTrue(source.contains("stack.trailingAnchor.constraint(equalTo: row.trailingAnchor"))
+        XCTAssertTrue(source.contains("resizeWindow(rowHeights: resultsStack.arrangedSubviews.map(\\.fittingSize.height))"))
+        XCTAssertTrue(source.contains("if selected {\n            constraints.append(stack.topAnchor.constraint(equalTo: row.topAnchor, constant: 8))"))
+    }
+
     func testCommandPaletteUsesRaycastStyleDynamicAppearance() throws {
         let source = try triStateRelayServiceSource()
         guard

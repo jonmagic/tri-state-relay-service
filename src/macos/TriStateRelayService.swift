@@ -1879,7 +1879,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
                 self?.executeSelected()
             })
         }
-        resizeWindow(rowHeights: visibleItems.map { rowHeight(command: $0.command, selected: $0.index == selectedIndex) })
+        resizeWindow(rowHeights: resultsStack.arrangedSubviews.map(\.fittingSize.height))
     }
 
     private func visibleCommands(limit: Int = 5) -> [(index: Int, command: CommandPaletteCommand)] {
@@ -1922,7 +1922,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
     }
 
     private func rowHeight(command: CommandPaletteCommand, selected: Bool) -> CGFloat {
-        command.lineMessage != nil && selected ? 108 : Self.rowHeight
+        command.lineMessage != nil && selected ? 0 : Self.rowHeight
     }
 
     private func resultRow(command: CommandPaletteCommand, selected: Bool, onHover: (() -> Void)? = nil, action: (() -> Void)? = nil) -> NSView {
@@ -1940,12 +1940,14 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         let titleField = NSTextField(labelWithString: displayTitle)
         titleField.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         titleField.textColor = .labelColor
-        titleField.lineBreakMode = selected ? .byTruncatingTail : .byTruncatingTail
+        titleField.lineBreakMode = selected ? .byWordWrapping : .byTruncatingTail
         titleField.maximumNumberOfLines = selected ? 4 : 1
+        titleField.preferredMaxLayoutWidth = Self.panelWidth - (Self.contentInset * 2)
         let subtitleField = NSTextField(labelWithString: subtitle)
         subtitleField.font = NSFont.systemFont(ofSize: 11)
         subtitleField.textColor = .secondaryLabelColor
         subtitleField.maximumNumberOfLines = selected ? 2 : 1
+        subtitleField.lineBreakMode = .byTruncatingTail
         let stack = NSStackView(views: [titleField, subtitleField])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -1953,13 +1955,19 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         stack.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(stack)
 
-        NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: height),
+        var constraints = [
             row.widthAnchor.constraint(equalToConstant: Self.panelWidth - (Self.rowOuterPadding * 2)),
             stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.contentInset - Self.rowOuterPadding),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -(Self.contentInset - Self.rowOuterPadding)),
-            stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-        ])
+            stack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -(Self.contentInset - Self.rowOuterPadding)),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor, constant: selected ? -8 : 0),
+        ]
+        if selected {
+            constraints.append(stack.topAnchor.constraint(equalTo: row.topAnchor, constant: 8))
+        } else {
+            constraints.append(row.heightAnchor.constraint(equalToConstant: height))
+            constraints.append(stack.centerYAnchor.constraint(equalTo: row.centerYAnchor))
+        }
+        NSLayoutConstraint.activate(constraints)
 
         return row
     }
