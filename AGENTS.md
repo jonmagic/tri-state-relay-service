@@ -8,7 +8,7 @@ Tri-State Relay Service is a local macOS agent relay queue. Agents are implement
 2. Use red-green-refactor wherever practical.
 3. The CLI must never speak directly. App playback is owned by the Swift app; direct builds currently use Swift-launched `/usr/bin/say` for Siri voice fidelity, App Store-safe builds use AVFoundation, and `relay-processor` is legacy compatibility that must not be bundled into the macOS app.
 4. Preserve the single-writer invariant for claiming and speaking messages.
-5. Focus mode is the safe default. Ready mode releases one relay, then returns to focus.
+5. Focus, Ready, and Live are the playback states. Focus is the safe default, Ready releases one relay then returns to Focus, and Live keeps playing relays automatically by bounded line batches. Mute is a separate safety override.
 6. Reject or scrub unsafe message input rather than speaking arbitrary terminal output.
 7. Keep queue, policy, and validation logic testable without macOS UI or audio.
 8. Require human checkpoints for persistence schema changes, permissions, launch agents, Accessibility/Input Monitoring, or anything that could speak unexpectedly.
@@ -58,7 +58,7 @@ Start with these message states:
 
 Heard and handled are separate storage states. In user-facing copy, prefer delivered and acknowledged.
 
-Focus mode is safe and quiet. Incoming relays queue but do not play. Ready mode releases exactly one relay. If a relay is queued, the next eligible relay plays. If none are queued, the next incoming eligible relay may play. After one relay is spoken, return to focus mode. Mute overrides ready. Muted systems should enqueue and show relays without speaking.
+Focus mode is safe and quiet. Incoming relays queue but do not play. Ready mode releases exactly one relay. If a relay is queued, the next eligible relay plays. If none are queued, the next incoming eligible relay may play. After one relay is spoken, return to Focus mode. Live mode keeps playing eligible relays automatically, grouped by bounded line batches so a chatty line cannot starve other lines. Mute overrides playback in every state. Muted systems should enqueue and show relays without speaking.
 
 Keep the agent-facing command readable:
 
@@ -67,6 +67,8 @@ relay --line "Brain" --message "The plan is ready."
 relay --line "Brain" --type complete --priority normal --message "The plan is ready."
 relay list
 relay ready
+relay live
+relay focus
 relay mute
 relay unmute
 relay clear
@@ -86,7 +88,7 @@ rebuilt direct app in one step.
 
 Messages are intentionally authored human status updates, not command output. Cap message length, reject empty messages, reject obvious token-looking strings, avoid stdin piping for v0, and do not speak code, secrets, logs, file contents, private data, or long explanations.
 
-Queue changes need tests for accepted message shape and defaults, rejected unsafe input, focus/ready/mute transitions, claiming exactly one eligible message, and durable persistence across store instances.
+Queue changes need tests for accepted message shape and defaults, rejected unsafe input, focus/ready/live/mute transitions, claiming eligible messages, inactive-line combiner behavior, and durable persistence across store instances.
 
 ## Architecture boundaries
 

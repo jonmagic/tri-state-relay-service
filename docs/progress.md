@@ -15,14 +15,14 @@ Current state:
 7. The app-owned playback path marks successful playback as `heard` and speech failures as `failed`.
 8. Playback claiming uses a SQLite-backed single-writer lock before claiming messages.
 9. `src/macos/RelayCore.swift` provides queue, storage, and CLI behavior.
-10. `src/macos/TriStateRelayService.swift` provides menu-bar-facing queue status and ready/focus/mute/unmute/clear controls without exposing message text.
+10. `src/macos/TriStateRelayService.swift` provides menu-bar-facing queue status and focus/ready/live/mute/unmute/clear controls without exposing message text.
 11. Swift app code composes queue controls and the app-owned playback loop for native macOS behavior.
 12. Swift menu rendering maps queue snapshots and actions into a safe native menu contract.
 13. `src/macos/TriStateRelayService.swift` builds an interactable AppKit `NSStatusItem` app around the Swift CLI and app-owned playback path.
 14. `relay status` exposes JSON queue state for the app without scraping message text.
 15. The CLI and menu bar app support skip next, replay last, mark handled, and clear heard lifecycle controls.
 16. The menu bar app supports line-scoped source actions for revealing the latest captured cwd and copying the latest cwd or URL.
-17. The menu bar app periodically refreshes queue state and processes one queued relay when ready and unmuted.
+17. The menu bar app periodically refreshes queue state and processes queued relays when Ready or Live is active and playback is unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the combiner prompt for collapsing inactive-line updates into one pending message.
 19. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
 20. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.

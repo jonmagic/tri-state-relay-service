@@ -13,6 +13,8 @@ relay --line "Brain" --message "The daily line note is ready."
 relay --line "Brain" --type complete --priority normal --message "The plan is ready to review."
 relay list
 relay ready
+relay live
+relay focus
 relay mute
 relay unmute
 relay clear
@@ -22,6 +24,7 @@ relay acknowledge
 relay replay-last
 relay line
 relay line "Tri-State Relay Service"
+relay combiner
 relay settings
 relay status
 ```
@@ -33,9 +36,10 @@ The invariant is more important than the surface: many producers can enqueue rel
 1. The CLI never calls `/usr/bin/say` directly.
 2. The app owns relay playback. Direct builds currently use Swift-launched `/usr/bin/say` for Siri voice fidelity; the legacy App Store-safe profile uses AVFoundation.
 3. The SQLite store owns message state and persistent mode.
-4. Focus mode is the safe default.
-5. Ready mode releases exactly one relay, then returns to focus.
-6. Messages stay short and intentionally authored.
+4. Focus, Ready, and Live are the three playback states.
+5. Focus mode is the safe default. Ready releases exactly one relay, then returns to Focus. Live keeps playing relays automatically, grouped by line.
+6. Mute is a separate safety override that blocks playback in any state.
+7. Messages stay short and intentionally authored.
 
 ## Getting started
 
@@ -55,6 +59,14 @@ relay ready
 ```
 
 The app then returns to Focus mode. Left click the menu bar item for the fastest Play Next path, or use the command palette for search-driven relay actions. The default command-palette shortcut is `Control` + `Option` + `Command` + `Space`.
+
+When you want TSRS to keep playing new relays automatically, use Live mode:
+
+```sh
+relay live
+```
+
+Live drains the relays that were available for one line, switches to the next queued line, and then returns to earlier lines if more relays arrived there. Use Stop Live in the menu bar app or `relay focus` to go quiet again.
 
 The first accepted relay becomes the active line when no active line is set. Messages from other lines remain queued until you switch lines or pull from them manually. Line-scoped source actions use the selected line's latest source context, not the newest source from another line.
 

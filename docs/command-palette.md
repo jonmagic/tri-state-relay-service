@@ -32,9 +32,10 @@ Global actions:
 
 1. Play Next
 2. Focus
-3. Mute
-4. Unmute
-5. Open Settings
+3. Start Live / Stop Live
+4. Mute
+5. Unmute
+6. Open Settings
 
 Line rows show the line name and queued count only. Return on a line opens its Messages list with up to 20 recent messages: queued messages first in playback order, then delivered messages newest first.
 
