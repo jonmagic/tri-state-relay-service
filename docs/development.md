@@ -93,8 +93,9 @@ Good dogfood relays are short, intentionally authored status updates: start of a
 5. `relay-processor` must not be bundled into the app.
 6. Focus mode is the safe default.
 7. Ready mode releases one relay, then returns to Focus.
-8. Message validation must reject empty, oversized, and token-looking strings.
-9. Queue state and persistence rules should remain testable without launching the app UI or audio path.
+8. Live mode plays new relays automatically by bounded line batches so a chatty line cannot starve other lines.
+9. Message validation must reject empty, oversized, and token-looking strings.
+10. Queue state and persistence rules should remain testable without launching the app UI or audio path.
 
 ## Contribution posture
 

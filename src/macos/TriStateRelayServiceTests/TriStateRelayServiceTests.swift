@@ -3,6 +3,13 @@ import XCTest
 
 final class TriStateRelayServiceTests: XCTestCase {
     func testDefaultStatusStartsFocused() throws {
+        let databasePath = isolatedTriStateDatabasePath()
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(atPath: URL(fileURLWithPath: databasePath).deletingLastPathComponent().path)
+        }
+
         let store = NativeRelayStore(profile: "direct")
         let status = store.loadStatus()
 
@@ -219,4 +226,11 @@ func triStateRelayServiceSource() throws -> String {
         .appendingPathComponent("TriStateRelayService.swift")
 
     return try String(contentsOf: sourceURL, encoding: .utf8)
+}
+
+private func isolatedTriStateDatabasePath() -> String {
+    FileManager.default.temporaryDirectory
+        .appendingPathComponent("tsrs-tests-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("relay.db")
+        .path
 }

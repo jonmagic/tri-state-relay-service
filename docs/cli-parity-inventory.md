@@ -24,7 +24,7 @@ future universal distribution path.
 
 ## Covered CLI surface
 
-The Swift XCTest suite and validation harness cover version/help behavior, enqueue/list/state/status/settings output, line and combiner settings, ready/focus/mute/unmute transitions, queue mutations, CLI install/update safety, app-owned claim/mark-heard helpers, source metadata, and SQLite persistence.
+The Swift XCTest suite and validation harness cover version/help behavior, enqueue/list/state/status/settings output, line and combiner settings, ready/live/focus/mute/unmute transitions, queue mutations, CLI install/update safety, app-owned claim/mark-heard helpers, source metadata, and SQLite persistence.
 
 ## Retired surfaces
 

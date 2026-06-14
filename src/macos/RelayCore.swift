@@ -5,7 +5,7 @@ import SQLite3
 // command-line target. This file must not import AppKit, AVFoundation, or any
 // macOS UI/audio frameworks so it can compile into a plain command-line tool.
 
-let relayCliVersion = "1.0.0"
+let relayCliVersion = "1.1.0"
 
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
@@ -186,6 +186,7 @@ Commands:
   status               Print queue status JSON.
   state                Print focus/ready/mute state.
   ready                Release one relay.
+  live                 Play new relays automatically, grouped by line.
   focus                Keep queued relays quiet.
   mute                 Mute playback.
   unmute               Unmute playback.
@@ -266,6 +267,11 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
         return withRelayCliStore { store in
             let state = try store.setMode("ready")
             return RelayCliResult(stdout: state.muted ? "release queued, but muted is on" : "ready to release one relay", stderr: "", exitCode: 0)
+        }
+    case "live":
+        return withRelayCliStore { store in
+            let state = try store.setMode("live")
+            return RelayCliResult(stdout: state.muted ? "live mode on, but muted is on" : "live mode on", stderr: "", exitCode: 0)
         }
     case "focus":
         return withRelayCliStore { store in
@@ -585,7 +591,7 @@ private func runAppClaimNextCommand(_ arguments: [String]) -> RelayCliResult {
             let relay: RelayCliStoredRelay?
             if let line = flags["line"] {
                 relay = try store.claimNextForLine(line)
-            } else if let activeLine, try store.queuedCountForLine(activeLine) > 0 {
+            } else if let activeLine, try store.queuedCountForLine(activeLine) > 0, try store.state().mode != "live" {
                 relay = try store.claimNextForLine(activeLine)
             } else {
                 relay = try store.claimNextForSpeech()
@@ -757,7 +763,7 @@ private final class RelayCliStore {
         let relay = try normalizeRelay(input)
         let state = try state()
 
-        if let activeLine = state.activeLine, relay.line != activeLine {
+        if state.mode != "live", let activeLine = state.activeLine, relay.line != activeLine {
             // Inactive-line direct behavior keeps only the latest relay for the
             // line. The shipped `relay` binary never runs the external combiner,
             // so native parity is latest-only collapse.
@@ -827,7 +833,7 @@ private final class RelayCliStore {
     func state() throws -> RelayCliQueueState {
         let settings = try rawSettings()
         return RelayCliQueueState(
-            mode: settings["mode"] == "ready" ? "ready" : "focus",
+            mode: playbackMode(settings["mode"]),
             muted: settings["muted"] == "true",
             inactiveLineCombiner: commandIsEnabled(settings["inactive_line_combiner_command"]) ? "custom" : "none",
             activeLine: settings["active_line"]
@@ -882,7 +888,13 @@ private final class RelayCliStore {
     }
 
     func setMode(_ mode: String) throws -> RelayCliQueueState {
+        guard ["focus", "ready", "live"].contains(mode) else {
+            throw RelayCliStoreError(message: "invalid mode: \(mode)")
+        }
         try setSetting(key: "mode", value: mode)
+        if mode != "live" {
+            try clearLiveBatch()
+        }
         return try state()
     }
 
@@ -986,7 +998,15 @@ private final class RelayCliStore {
 
     func claimNextForSpeech() throws -> RelayCliStoredRelay? {
         let state = try state()
-        if state.muted || state.mode != "ready" {
+        if state.muted {
+            return nil
+        }
+
+        if state.mode == "live" {
+            return try claimNextForLive()
+        }
+
+        if state.mode != "ready" {
             return nil
         }
 
@@ -1017,7 +1037,7 @@ private final class RelayCliStore {
         return claimed
     }
 
-    func claimNextForLine(_ line: String) throws -> RelayCliStoredRelay? {
+    func claimNextForLine(_ line: String, maxId: Int? = nil) throws -> RelayCliStoredRelay? {
         if try state().muted {
             return nil
         }
@@ -1028,7 +1048,7 @@ private final class RelayCliStore {
             WHERE id = (
               SELECT id
               FROM relays
-              WHERE status = 'queued' AND line = ?
+              WHERE status = 'queued' AND line = ? AND (? IS NULL OR id <= ?)
               ORDER BY
                 CASE priority
                   WHEN 'high' THEN 0
@@ -1039,7 +1059,76 @@ private final class RelayCliStore {
               LIMIT 1
             )
             RETURNING id, line, message, type, priority, status
-        """, [nowString(), line])
+        """, [nowString(), line, maxId.map(String.init), maxId.map(String.init)])
+    }
+
+    private func claimNextForLive() throws -> RelayCliStoredRelay? {
+        if let batch = try liveBatch(), let claimed = try claimNextForLine(batch.line, maxId: batch.maxId) {
+            return claimed
+        }
+
+        try clearLiveBatch()
+
+        guard let batch = try startNextLiveBatch() else {
+            return nil
+        }
+
+        return try claimNextForLine(batch.line, maxId: batch.maxId)
+    }
+
+    private func liveBatch() throws -> (line: String, maxId: Int)? {
+        let settings = try rawSettings()
+        guard
+            let line = settings["live_batch_line"],
+            !line.isEmpty,
+            let maxIdValue = settings["live_batch_max_id"],
+            let maxId = Int(maxIdValue)
+        else {
+            return nil
+        }
+        return (line, maxId)
+    }
+
+    private func startNextLiveBatch() throws -> (line: String, maxId: Int)? {
+        var batch: (line: String, maxId: Int)?
+        try query("""
+            SELECT line, MAX(id) AS max_id
+            FROM relays
+            WHERE status = 'queued'
+              AND line = (
+                SELECT line
+                FROM relays
+                WHERE status = 'queued'
+                ORDER BY
+                  CASE priority
+                    WHEN 'high' THEN 0
+                    WHEN 'normal' THEN 1
+                    ELSE 2
+                  END,
+                  created_at ASC,
+                  id ASC
+                LIMIT 1
+              )
+            GROUP BY line
+        """) { statement in
+            if let line = columnString(statement, 0) {
+                batch = (line, Int(sqlite3_column_int(statement, 1)))
+            }
+        }
+
+        guard let batch else {
+            return nil
+        }
+
+        try setSetting(key: "active_line", value: batch.line)
+        try setSetting(key: "live_batch_line", value: batch.line)
+        try setSetting(key: "live_batch_max_id", value: String(batch.maxId))
+        return batch
+    }
+
+    private func clearLiveBatch() throws {
+        try setSetting(key: "live_batch_line", value: "")
+        try setSetting(key: "live_batch_max_id", value: "0")
     }
 
     func markStatus(id: Int, status: String) throws -> RelayCliStoredRelay {
@@ -1644,6 +1733,13 @@ func commandIsEnabled(_ command: String?) -> Bool {
 
 func resetBlankCommand(_ command: String, fallback: String) -> String {
     commandIsEnabled(command) ? command : fallback
+}
+
+func playbackMode(_ value: String?) -> String {
+    if value == "ready" || value == "live" {
+        return value!
+    }
+    return "focus"
 }
 
 let defaultInactiveLineCombinerCommand = """

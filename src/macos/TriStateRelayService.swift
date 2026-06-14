@@ -29,6 +29,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         self?.model.refresh()
         self?.refreshStatusItem()
     }
+
     private lazy var commandPaletteCommandsProvider: () -> [CommandPaletteCommand] = { [weak self] in
         guard let self else {
             return []
@@ -95,6 +96,13 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     @objc private func ready() {
         model.ready()
+        nativePlayback.playNext()
+        refreshStatusItem()
+        schedulePlaybackRefresh()
+    }
+
+    @objc private func live() {
+        model.live()
         nativePlayback.playNext()
         refreshStatusItem()
         schedulePlaybackRefresh()
@@ -291,6 +299,11 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(menuItem("Play Next", action: #selector(linePlayNext), enabled: model.status.queued > 0))
+        if model.status.mode == "live" {
+            menu.addItem(menuItem("Stop Live", action: #selector(focus), enabled: true))
+        } else {
+            menu.addItem(menuItem("Start Live", action: #selector(live), enabled: !model.status.muted))
+        }
         menu.addItem(.separator())
         for item in lineMenuItems() {
             menu.addItem(item)
@@ -366,6 +379,20 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
             return CommandPaletteCommand(title: line.line, subtitle: "\(line.queued) queued", aliases: ["line", line.line], children: children, matchesChildren: false)
         })
+
+        if model.status.mode == "live" {
+            commands.append(CommandPaletteCommand(title: "Stop Live", subtitle: "Return to quiet focus mode", aliases: ["live", "focus", "stop"]) { [weak self] in
+                self?.model.focus()
+                self?.refreshStatusItem()
+            })
+        } else {
+            commands.append(CommandPaletteCommand(title: "Start Live", subtitle: "Play new relays automatically by line", aliases: ["live", "continuous"]) { [weak self] in
+                self?.model.live()
+                self?.nativePlayback.playNext()
+                self?.refreshStatusItem()
+                self?.schedulePlaybackRefresh()
+            })
+        }
 
         if model.status.muted {
             commands.append(CommandPaletteCommand(title: "Unmute", subtitle: "Allow relays to speak") { [weak self] in
@@ -592,7 +619,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             self.model.refresh()
             self.refreshStatusItem()
 
-            if self.model.status.speaking == 0 {
+            if self.model.status.speaking == 0 && (self.model.status.mode != "live" || self.model.status.queued == 0) {
                 timer.invalidate()
             }
         }
@@ -2236,6 +2263,14 @@ private func menuBarQueuedAccentColor(appearance: NSAppearance) -> NSColor {
     return resolvedColor(.systemRed, appearance: appearance)
 }
 
+private func menuBarLiveAccentColor(appearance: NSAppearance) -> NSColor {
+    if menuBarIsDark(appearance: appearance) {
+        return NSColor(calibratedRed: 0.28, green: 0.9, blue: 0.38, alpha: 1)
+    }
+
+    return resolvedColor(.systemGreen, appearance: appearance)
+}
+
 private func menuBarIsDark(appearance: NSAppearance) -> Bool {
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 }
@@ -2362,6 +2397,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
                 self.currentId = nil
                 self.currentProcess = nil
                 self.onChange()
+                if self.model.status.mode == "live" {
+                    self.playNext()
+                }
             }
         }
 
@@ -2421,6 +2459,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         model.markNativeSpeechHeard(id: id)
         currentId = nil
         onChange()
+        if model.status.mode == "live" {
+            playNext()
+        }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
@@ -2743,6 +2784,11 @@ final class MenuBarModel {
 
     func ready() {
         playNext()
+    }
+
+    func live() {
+        store.setMode("live")
+        refresh()
     }
 
     func focus() {
@@ -3250,6 +3296,10 @@ struct QueueStatus {
             return "TSRS muted (\(queued))"
         }
 
+        if mode == "live" {
+            return "TSRS live (\(queued))"
+        }
+
         if queued > 0 {
             return "TSRS ready (\(queued))"
         }
@@ -3271,7 +3321,7 @@ struct QueueStatus {
 
     func statusImage(appearance: NSAppearance, playbackActive: Bool = false) -> NSImage? {
         if !muted && speaking == 0 && !playbackActive {
-            return cassetteStatusImage(accessibilityDescription: title, hasMessages: queued > 0, appearance: appearance)
+            return cassetteStatusImage(accessibilityDescription: title, hasMessages: queued > 0, liveActive: mode == "live", appearance: appearance)
         }
 
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
@@ -3282,7 +3332,7 @@ struct QueueStatus {
     }
 }
 
-private func cassetteStatusImage(accessibilityDescription: String, hasMessages: Bool, appearance: NSAppearance) -> NSImage {
+private func cassetteStatusImage(accessibilityDescription: String, hasMessages: Bool, liveActive: Bool, appearance: NSAppearance) -> NSImage {
     let image = NSImage(size: NSSize(width: 20, height: 20))
     image.accessibilityDescription = accessibilityDescription
     image.isTemplate = false
@@ -3317,8 +3367,8 @@ private func cassetteStatusImage(accessibilityDescription: String, hasMessages: 
     tapeLine.line(to: NSPoint(x: 11.5, y: 8.8))
     tapeLine.stroke()
 
-    if hasMessages {
-        menuBarQueuedAccentColor(appearance: appearance).setFill()
+    if liveActive || hasMessages {
+        (liveActive ? menuBarLiveAccentColor(appearance: appearance) : menuBarQueuedAccentColor(appearance: appearance)).setFill()
         NSBezierPath(ovalIn: NSRect(x: 13.8, y: 12.7, width: 4.2, height: 4.2)).fill()
     }
 
@@ -3486,13 +3536,16 @@ final class NativeRelayStore {
     }
 
     func setMode(_ mode: String) {
-        guard mode == "ready" || mode == "focus" else {
+        guard mode == "ready" || mode == "focus" || mode == "live" else {
             NSLog("TSRS native store rejected invalid mode: \(mode)")
             return
         }
 
         write { database in
             setSetting(database, key: "mode", value: mode)
+            if mode != "live" {
+                clearLiveBatch(database)
+            }
         }
     }
 
@@ -3636,7 +3689,7 @@ final class NativeRelayStore {
                 relay = claimNextForLine(database, line: line)
             } else {
                 let settings = loadRawSettings(database)
-                if let activeLine = settings["active_line"], queuedCount(database, line: activeLine) > 0 {
+                if playbackMode(settings["mode"]) != "live", let activeLine = settings["active_line"], queuedCount(database, line: activeLine) > 0 {
                     relay = claimNextForLine(database, line: activeLine)
                 } else {
                     relay = claimNextForSpeech(database)
@@ -4073,7 +4126,16 @@ final class NativeRelayStore {
     private func claimNextForSpeech(_ database: OpaquePointer) -> NativeRelay? {
         let settings = loadRawSettings(database)
 
-        guard settings["muted"] != "true", playbackMode(settings["mode"]) == "ready" else {
+        guard settings["muted"] != "true" else {
+            return nil
+        }
+
+        let mode = playbackMode(settings["mode"])
+        if mode == "live" {
+            return claimNextForLive(database)
+        }
+
+        guard mode == "ready" else {
             return nil
         }
 
@@ -4103,7 +4165,76 @@ final class NativeRelayStore {
         return relay
     }
 
-    private func claimNextForLine(_ database: OpaquePointer, line: String) -> NativeRelay? {
+    private func claimNextForLive(_ database: OpaquePointer) -> NativeRelay? {
+        if let batch = liveBatch(database), let relay = claimNextForLine(database, line: batch.line, maxId: batch.maxId) {
+            return relay
+        }
+
+        clearLiveBatch(database)
+
+        guard let batch = startNextLiveBatch(database) else {
+            return nil
+        }
+
+        return claimNextForLine(database, line: batch.line, maxId: batch.maxId)
+    }
+
+    private func liveBatch(_ database: OpaquePointer) -> (line: String, maxId: Int)? {
+        let settings = loadRawSettings(database)
+        guard
+            let line = settings["live_batch_line"],
+            !line.isEmpty,
+            let maxIdValue = settings["live_batch_max_id"],
+            let maxId = Int(maxIdValue)
+        else {
+            return nil
+        }
+        return (line, maxId)
+    }
+
+    private func startNextLiveBatch(_ database: OpaquePointer) -> (line: String, maxId: Int)? {
+        var batch: (line: String, maxId: Int)?
+        query(database, """
+            SELECT line, MAX(id) AS max_id
+            FROM relays
+            WHERE status = 'queued'
+              AND line = (
+                SELECT line
+                FROM relays
+                WHERE status = 'queued'
+                ORDER BY
+                  CASE priority
+                    WHEN 'high' THEN 0
+                    WHEN 'normal' THEN 1
+                    ELSE 2
+                  END,
+                  created_at ASC,
+                  id ASC
+                LIMIT 1
+              )
+            GROUP BY line
+        """) { statement in
+            if let line = columnString(statement, 0) {
+                batch = (line, Int(sqlite3_column_int(statement, 1)))
+            }
+        }
+
+        guard let batch else {
+            return nil
+        }
+
+        setSetting(database, key: "active_line", value: batch.line)
+        setSetting(database, key: "live_batch_line", value: batch.line)
+        setSetting(database, key: "live_batch_max_id", value: String(batch.maxId))
+        return batch
+    }
+
+    private func clearLiveBatch(_ database: OpaquePointer) {
+        setSetting(database, key: "live_batch_line", value: "")
+        setSetting(database, key: "live_batch_max_id", value: "0")
+    }
+
+    private func claimNextForLine(_ database: OpaquePointer, line: String, maxId: Int? = nil) -> NativeRelay? {
         let settings = loadRawSettings(database)
 
         guard settings["muted"] != "true" else {
@@ -4116,7 +4247,7 @@ final class NativeRelayStore {
             WHERE id = (
               SELECT id
               FROM relays
-              WHERE status = 'queued' AND line = ?
+              WHERE status = 'queued' AND line = ? AND (? IS NULL OR id <= ?)
               ORDER BY
                 CASE priority
                   WHEN 'high' THEN 0
@@ -4127,7 +4258,7 @@ final class NativeRelayStore {
               LIMIT 1
             )
             RETURNING id, line, message, type, priority, status, created_at, updated_at
-        """, [nowString(), line])
+        """, [nowString(), line, maxId.map(String.init), maxId.map(String.init)])
     }
 
     private func markFirstMatchingStatus(_ database: OpaquePointer, from: String, to: String, line: String?) -> NativeRelay? {
@@ -4345,14 +4476,6 @@ private func defaultStatus() -> QueueStatus {
 private func defaultSettings() -> SettingsSnapshot {
     SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
-
-private func playbackMode(_ value: String?) -> String {
-    value == "ready" ? "ready" : "focus"
-}
-
-
-
-
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 

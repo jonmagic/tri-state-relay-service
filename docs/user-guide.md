@@ -7,7 +7,7 @@ The basic idea is simple:
 1. Install the app and the `relay` command.
 2. Tell your agents when to send short status updates.
 3. Let relays queue quietly while you work.
-4. Press Play Next when you are ready to hear one.
+4. Press Play Next when you are ready to hear one, or Start Live when you want new relays to play automatically.
 
 ## Start with the app
 
@@ -42,6 +42,14 @@ relay ready
 ```
 
 TSRS plays one eligible relay, then returns to quiet mode.
+
+If you want TSRS to keep playing new relays automatically, choose Start Live from the menu bar app or run:
+
+```sh
+relay live
+```
+
+Live mode plays queued relays by line. TSRS drains the relays that were available for one line, switches to the next queued line, and then returns to a previous line if more relays arrived there in the meantime. A high-priority relay on another line waits until the current line batch finishes. Use Stop Live, Focus, or `relay focus` to go quiet again.
 
 ## What makes a good relay
 
@@ -124,20 +132,22 @@ The goal is not to make agents chatty. The goal is to make their important state
 
 TSRS is designed to be quiet by default.
 
-Focus mode queues relays without speaking. Ready mode releases one relay, then returns to Focus. Mute prevents playback even if relays are queued.
+Focus mode queues relays without speaking. Ready mode releases one relay, then returns to Focus. Live mode keeps playing new relays automatically, grouped by line. Mute prevents playback even if relays are queued.
 
 Common commands:
 
 ```sh
 relay list
 relay ready
+relay live
+relay focus
 relay mute
 relay unmute
 relay acknowledge
 relay clear-delivered
 ```
 
-In the menu bar app, left click for the fastest Play Next path. Right click opens the command palette. Your keyboard shortcut opens the command palette with Play Next selected, so pressing Return immediately plays the next eligible relay.
+In the menu bar app, left click for the fastest Play Next path. Use Start Live when you want automatic playback and Stop Live when you want to return to Focus. Right click opens the command palette. Your keyboard shortcut opens the command palette with Play Next selected, so pressing Return immediately plays the next eligible relay.
 
 The app owns playback. The CLI submits and manages relays, but it does not speak directly.
 
@@ -175,7 +185,7 @@ Combiner output should follow the same rules as any other relay: no secrets, no 
 
 If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
 
-If relays queue but do not speak, check whether TSRS is focused, muted, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
+If relays queue but do not speak, check whether TSRS is focused, muted, not in Live mode, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
 
 The local queue lives on your Mac at:
 

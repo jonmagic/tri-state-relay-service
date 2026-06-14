@@ -8,8 +8,8 @@ Current state:
 
 1. Agent-first line guide and local skills are in place.
 2. The initial relay line skeleton has been replaced by the Swift implementation.
-3. Swift SQLite-backed queue core supports enqueue, list, clear, focus, ready, mute, unmute, and app-owned speech claiming.
-4. Ready mode claims exactly one queued relay and returns to focus.
+3. Swift SQLite-backed queue core supports enqueue, list, clear, focus, ready, live, mute, unmute, and app-owned speech claiming.
+4. Ready mode claims exactly one queued relay and returns to focus; Live mode plays queued relays automatically in bounded line batches.
 5. The CLI accepts the v0 `relay --line ... --message ...` contract.
 6. The original generated-helper path has been retired in favor of Swift/Xcode builds.
 7. The app-owned playback path marks successful playback as `heard` and speech failures as `failed`.

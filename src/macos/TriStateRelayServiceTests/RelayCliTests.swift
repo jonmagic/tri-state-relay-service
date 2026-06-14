@@ -11,7 +11,7 @@ final class RelayCliTests: XCTestCase {
     func testVersionPrintsRelayVersion() {
         let result = runRelayCli(["--version"])
 
-        XCTAssertEqual(result.stdout, "relay 1.0.0")
+        XCTAssertEqual(result.stdout, "relay 1.1.0")
         XCTAssertEqual(result.stderr, "")
         XCTAssertEqual(result.exitCode, 0)
     }
@@ -24,8 +24,8 @@ final class RelayCliTests: XCTestCase {
             .appendingPathComponent("Info.plist")
         let infoPlist = try String(contentsOf: infoPlistURL, encoding: .utf8)
 
-        XCTAssertTrue(infoPlist.contains("<key>CFBundleShortVersionString</key>\n  <string>1.0.0</string>"))
-        XCTAssertEqual(relayCliVersion, "1.0.0")
+        XCTAssertTrue(infoPlist.contains("<key>CFBundleShortVersionString</key>\n  <string>1.1.0</string>"))
+        XCTAssertEqual(relayCliVersion, "1.1.0")
     }
 
     func testNoArgumentsPrintsUsage() {
@@ -108,8 +108,10 @@ final class RelayCliTests: XCTestCase {
 
         XCTAssertEqual(runRelayCli(["ready"]).stdout, "ready to release one relay")
         XCTAssertEqual(runRelayCli(["state"]).stdout, "ready, active-line=none, inactive-line-combiner=none")
+        XCTAssertEqual(runRelayCli(["live"]).stdout, "live mode on")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "live, active-line=none, inactive-line-combiner=none")
         XCTAssertEqual(runRelayCli(["mute"]).stdout, "muted")
-        XCTAssertEqual(runRelayCli(["ready"]).stdout, "release queued, but muted is on")
+        XCTAssertEqual(runRelayCli(["live"]).stdout, "live mode on, but muted is on")
         XCTAssertEqual(runRelayCli(["unmute"]).stdout, "unmuted")
         XCTAssertEqual(runRelayCli(["focus"]).stdout, "focus mode on")
 
@@ -214,6 +216,43 @@ final class RelayCliTests: XCTestCase {
         let list = runRelayCli(["list"]).stdout
         XCTAssertTrue(list.contains("Other: second inactive"))
         XCTAssertFalse(list.contains("first inactive"))
+    }
+
+    func testLiveModePreservesInactiveMessagesAndRotatesLineBatches() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        _ = runRelayCli(["line", "Brain"])
+        _ = runRelayCli(["live"])
+        _ = runRelayCli(["--line", "Other", "--message", "other one"])
+        _ = runRelayCli(["--line", "Other", "--message", "other two"])
+        _ = runRelayCli(["--line", "API", "--message", "api one"])
+
+        var claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        let otherOneId = try XCTUnwrap(claim["id"] as? Int)
+        XCTAssertEqual(claim["line"] as? String, "Other")
+        XCTAssertEqual(claim["text"] as? String, "Other. other one")
+        _ = runRelayCli(["app-mark-heard", "--id", String(otherOneId)])
+
+        _ = runRelayCli(["--line", "Other", "--message", "other three"])
+
+        claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        let otherTwoId = try XCTUnwrap(claim["id"] as? Int)
+        XCTAssertEqual(claim["line"] as? String, "Other")
+        XCTAssertEqual(claim["text"] as? String, "other two")
+        _ = runRelayCli(["app-mark-heard", "--id", String(otherTwoId)])
+
+        claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        let apiId = try XCTUnwrap(claim["id"] as? Int)
+        XCTAssertEqual(claim["line"] as? String, "API")
+        XCTAssertEqual(claim["text"] as? String, "API. api one")
+        _ = runRelayCli(["app-mark-heard", "--id", String(apiId)])
+
+        claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        XCTAssertEqual(claim["line"] as? String, "Other")
+        XCTAssertEqual(claim["text"] as? String, "Other. other three")
+        XCTAssertEqual(runRelayCli(["state"]).stdout, "live, active-line=Other, inactive-line-combiner=none")
     }
 
     func testAppClaimNextRequiresAuthorization() {
