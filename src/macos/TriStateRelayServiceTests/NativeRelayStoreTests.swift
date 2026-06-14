@@ -167,6 +167,69 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(store.recentMessages(line: "Brain").map(\.message), ["first queued", "second queued"])
     }
 
+    func testConfiguredInactiveLineCombinerReplacesPendingDigest() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let script = try inactiveCombinerScript(outputMessage: "Other summary: setup issue is isolated to the old CLI path.")
+        let store = NativeRelayStore(profile: "direct")
+        store.saveSettings(inactiveLineCombinerCommand: "\(script) <input> <system>", voiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette)
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "active", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+        store.setActiveLine("Brain")
+
+        _ = try store.enqueue(NewRelayInput(line: "Other", message: "first inactive", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+        _ = try store.enqueue(NewRelayInput(line: "Other", message: "second inactive", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+
+        XCTAssertEqual(store.recentMessages(line: "Other").map(\.message), ["Other summary: setup issue is isolated to the old CLI path."])
+    }
+
+    func testActiveLineChangeWhileCombiningDoesNotClearNewActiveLine() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let startedPath = directory.appendingPathComponent("started").path
+        let releasePath = directory.appendingPathComponent("release").path
+        let script = try blockingInactiveCombinerScript(outputMessage: "Other summary should not be inserted after line switch.", startedPath: startedPath, releasePath: releasePath)
+        let store = NativeRelayStore(profile: "direct")
+        store.saveSettings(inactiveLineCombinerCommand: "\(script) <input> <system>", voiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette)
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "active", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+        store.setActiveLine("Brain")
+
+        let done = DispatchSemaphore(value: 0)
+        var enqueued: NativeRelay?
+        var enqueueError: Error?
+        DispatchQueue.global().async {
+            do {
+                enqueued = try store.enqueue(NewRelayInput(line: "Other", message: "first inactive", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+            } catch {
+                enqueueError = error
+            }
+            done.signal()
+        }
+
+        try waitForFile(atPath: startedPath)
+        store.setActiveLine("Other")
+        FileManager.default.createFile(atPath: releasePath, contents: Data())
+        XCTAssertEqual(done.wait(timeout: .now() + 5), .success)
+        XCTAssertNil(enqueueError)
+        XCTAssertEqual(enqueued?.message, "first inactive")
+        XCTAssertEqual(store.recentMessages(line: "Other").map(\.message), ["first inactive"])
+    }
+
     private func testArtifactDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -220,5 +283,48 @@ private final class DatabaseSnapshot {
         }
 
         return String(cString: sqlite3_column_text(statement, 0))
+    }
+}
+
+private func inactiveCombinerScript(outputMessage: String) throws -> String {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tsrs-combiner-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let script = directory.appendingPathComponent("combiner").path
+    let escapedMessage = outputMessage.replacingOccurrences(of: "'", with: "'\\''")
+    let body = """
+    #!/bin/sh
+    printf '%s\\n' '{"action":"replace","type":"update","priority":"normal","message":"\(escapedMessage)"}'
+    """
+    try body.write(toFile: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+    return script
+}
+
+private func blockingInactiveCombinerScript(outputMessage: String, startedPath: String, releasePath: String) throws -> String {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tsrs-combiner-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let script = directory.appendingPathComponent("combiner").path
+    let escapedMessage = outputMessage.replacingOccurrences(of: "'", with: "'\\''")
+    let body = """
+    #!/bin/sh
+    : > '\(startedPath)'
+    while [ ! -f '\(releasePath)' ]; do sleep 0.05; done
+    printf '%s\\n' '{"action":"replace","type":"update","priority":"normal","message":"\(escapedMessage)"}'
+    """
+    try body.write(toFile: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+    return script
+}
+
+private func waitForFile(atPath path: String) throws {
+    let deadline = Date().addingTimeInterval(5)
+    while !FileManager.default.fileExists(atPath: path) {
+        if Date() > deadline {
+            XCTFail("timed out waiting for \(path)")
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.05)
     }
 }

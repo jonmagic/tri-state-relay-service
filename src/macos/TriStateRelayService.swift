@@ -3602,28 +3602,51 @@ final class NativeRelayStore {
     func enqueue(_ input: NewRelayInput) throws -> NativeRelay? {
         let relay = try normalizeRelay(input)
         var inserted: NativeRelay?
+        let snapshot = writeResult { database in
+            let settings = loadRawSettings(database)
+            return (
+                settings: settings,
+                existing: latestQueuedRelay(database, line: relay.line).map {
+                    RelayCliStoredRelay(id: $0.id, line: $0.line, message: $0.message, type: $0.type, priority: $0.priority, status: $0.status)
+                }
+            )
+        }
+        let settings = snapshot?.settings ?? [:]
+        let activeLine = settings["active_line"]
+        let shouldCombineInactive = playbackMode(settings["mode"]) != "live" && activeLine != nil && relay.line != activeLine
+        let combinedRelay: NormalizedRelay?
+
+        if shouldCombineInactive, let activeLine {
+            do {
+                combinedRelay = try combineInactiveRelay(
+                    activeLine: activeLine,
+                    incoming: relay,
+                    existing: snapshot?.existing,
+                    command: inactiveLineCombinerCommand(settings)
+                ).relay
+            } catch {
+                NSLog("TSRS inactive-line combiner failed: \(error)")
+                combinedRelay = relay
+            }
+        } else {
+            combinedRelay = nil
+        }
 
         write { database in
-            inserted = returningRelay(database, """
-                INSERT INTO relays (
-                  line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
-                RETURNING id, line, message, type, priority, status, created_at, updated_at
-            """, [
-                relay.line,
-                relay.message,
-                relay.type,
-                relay.priority,
-                relay.session,
-                relay.app,
-                relay.cwd,
-                relay.url,
-                nowString(),
-                nowString()
-            ])
+            let currentActiveLine = loadRawSettings(database)["active_line"]
+            let stillInactive = shouldCombineInactive && currentActiveLine != relay.line
 
-            if inserted != nil {
+            if stillInactive {
+                guard let combinedRelay else {
+                    return
+                }
+                clearQueued(database, line: relay.line)
+                inserted = insertRelay(database, combinedRelay)
+            } else {
+                inserted = insertRelay(database, relay)
+            }
+
+            if inserted != nil && !stillInactive {
                 execute(database, """
                     INSERT OR IGNORE INTO settings (key, value)
                     VALUES ('active_line', ?)
@@ -3632,6 +3655,37 @@ final class NativeRelayStore {
         }
 
         return inserted
+    }
+
+    private func insertRelay(_ database: OpaquePointer, _ relay: NormalizedRelay) -> NativeRelay? {
+        returningRelay(database, """
+            INSERT INTO relays (
+              line, message, type, priority, session, app, cwd, url, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [
+            relay.line,
+            relay.message,
+            relay.type,
+            relay.priority,
+            relay.session,
+            relay.app,
+            relay.cwd,
+            relay.url,
+            nowString(),
+            nowString()
+        ])
+    }
+
+    private func latestQueuedRelay(_ database: OpaquePointer, line: String) -> NativeRelay? {
+        returningRelay(database, """
+            SELECT id, line, message, type, priority, status, created_at, updated_at
+            FROM relays
+            WHERE status = 'queued' AND line = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        """, [line])
     }
 
     func clear() {
@@ -3654,11 +3708,15 @@ final class NativeRelayStore {
 
     func clearQueued(line: String) {
         write { database in
-            execute(database, """
-                DELETE FROM relays
-                WHERE status = 'queued' AND line = ?
-            """, [line])
+            clearQueued(database, line: line)
         }
+    }
+
+    private func clearQueued(_ database: OpaquePointer, line: String) {
+        execute(database, """
+            DELETE FROM relays
+            WHERE status = 'queued' AND line = ?
+        """, [line])
     }
 
     func skipNextQueued(line: String? = nil) {

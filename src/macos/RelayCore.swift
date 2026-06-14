@@ -175,6 +175,10 @@ struct RelayCliResult: Equatable {
     let exitCode: Int32
 }
 
+struct RelayEnqueueOutcome {
+    let relay: RelayCliStoredRelay?
+}
+
 let relayCliUsage = """
 Usage: relay <command> [options]
 
@@ -381,7 +385,7 @@ private func runEnqueueCommand(_ arguments: [String]) -> RelayCliResult {
     }
 
     return withRelayCliStore { store in
-        let relay = try store.enqueue(NewRelayInput(
+        let outcome = try store.enqueue(NewRelayInput(
             line: flags["line"],
             message: flags["message"] ?? "",
             type: flags["type"],
@@ -391,6 +395,10 @@ private func runEnqueueCommand(_ arguments: [String]) -> RelayCliResult {
             cwd: flags["cwd"],
             url: flags["url"]
         ))
+
+        guard let relay = outcome.relay else {
+            return RelayCliResult(stdout: "inactive relay dropped", stderr: "", exitCode: 0)
+        }
 
         return RelayCliResult(stdout: "queued relay #\(relay.id) \(relay.line): \(relay.message)", stderr: "", exitCode: 0)
     }
@@ -759,21 +767,28 @@ private final class RelayCliStore {
         sqlite3_close(database)
     }
 
-    func enqueue(_ input: NewRelayInput) throws -> RelayCliStoredRelay {
+    func enqueue(_ input: NewRelayInput) throws -> RelayEnqueueOutcome {
         let relay = try normalizeRelay(input)
         let state = try state()
 
         if state.mode != "live", let activeLine = state.activeLine, relay.line != activeLine {
-            // Inactive-line direct behavior keeps only the latest relay for the
-            // line. The shipped `relay` binary never runs the external combiner,
-            // so native parity is latest-only collapse.
+            let combined = try combineInactiveRelay(
+                activeLine: activeLine,
+                incoming: relay,
+                existing: latestQueuedRelay(line: relay.line),
+                command: inactiveLineCombinerCommand()
+            )
+            guard let combinedRelay = combined.relay else {
+                return RelayEnqueueOutcome(relay: nil)
+            }
+
             _ = try clearQueued(line: relay.line)
-            return try insertRelay(relay)
+            return RelayEnqueueOutcome(relay: try insertRelay(combinedRelay))
         }
 
         let inserted = try insertRelay(relay)
         try setSettingIfMissing(key: "active_line", value: inserted.line)
-        return inserted
+        return RelayEnqueueOutcome(relay: inserted)
     }
 
     private func insertRelay(_ relay: NormalizedRelay) throws -> RelayCliStoredRelay {
@@ -796,6 +811,16 @@ private final class RelayCliStore {
             now,
             now,
         ])
+    }
+
+    private func latestQueuedRelay(line: String) throws -> RelayCliStoredRelay? {
+        try optionalReturningRelay("""
+            SELECT id, line, message, type, priority, status
+            FROM relays
+            WHERE status = 'queued' AND line = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        """, [line])
     }
 
     func queuedCountForLine(_ line: String) throws -> Int {
@@ -1741,6 +1766,233 @@ func playbackMode(_ value: String?) -> String {
     }
     return "focus"
 }
+
+struct InactiveLineCombinerOutcome {
+    let action: String
+    let relay: NormalizedRelay?
+}
+
+func combineInactiveRelay(activeLine: String, incoming: NormalizedRelay, existing: RelayCliStoredRelay?, command: String) throws -> InactiveLineCombinerOutcome {
+    guard let commandLine = firstEnabledCommandLine(command) else {
+        return InactiveLineCombinerOutcome(action: "replace", relay: incoming)
+    }
+
+    let input: [String: Any] = [
+        "activeLine": activeLine,
+        "inactiveLine": incoming.line,
+        "existingPendingMessage": existing?.message as Any? ?? NSNull(),
+        "incoming": [[
+            "type": incoming.type,
+            "priority": incoming.priority,
+            "message": incoming.message,
+        ]],
+    ]
+    let inputJSON = try jsonString(input)
+    let output = try runInactiveLineCombiner(commandLine: commandLine, inputJSON: inputJSON, systemPrompt: inactiveLineCombinerSystemPrompt)
+    return try parseInactiveLineCombinerOutput(output, incoming: incoming)
+}
+
+func firstEnabledCommandLine(_ command: String?) -> String? {
+    guard let command else {
+        return nil
+    }
+
+    for line in command.components(separatedBy: .newlines) {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
+            return trimmed
+        }
+    }
+
+    return nil
+}
+
+private func runInactiveLineCombiner(commandLine: String, inputJSON: String, systemPrompt: String) throws -> String {
+    let parts = try splitCommandLine(commandLine)
+    guard let executable = parts.first else {
+        throw RelayCliStoreError(message: "inactive-line combiner command is empty")
+    }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: try resolveExecutablePath(executable))
+    process.arguments = parts.dropFirst().map {
+        expandCombinerArgument($0, inputJSON: inputJSON, systemPrompt: systemPrompt)
+    }
+    let output = Pipe()
+    let error = Pipe()
+    process.standardOutput = output
+    process.standardError = error
+
+    let semaphore = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in
+        semaphore.signal()
+    }
+    try process.run()
+    let completed = semaphore.wait(timeout: .now() + 30) == .success
+    if !completed {
+        process.terminate()
+        throw RelayCliStoreError(message: "inactive-line combiner timed out")
+    }
+
+    let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    guard process.terminationStatus == 0 else {
+        let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw RelayCliStoreError(message: detail.isEmpty ? "inactive-line combiner failed" : "inactive-line combiner failed: \(detail)")
+    }
+
+    return stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func splitCommandLine(_ commandLine: String) throws -> [String] {
+    var parts: [String] = []
+    var current = ""
+    var quote: Character?
+    var escaping = false
+
+    for character in commandLine {
+        if escaping {
+            current.append(character)
+            escaping = false
+            continue
+        }
+
+        if character == "\\" {
+            escaping = true
+            continue
+        }
+
+        if let activeQuote = quote {
+            if character == activeQuote {
+                quote = nil
+            } else {
+                current.append(character)
+            }
+            continue
+        }
+
+        if character == "\"" || character == "'" {
+            quote = character
+            continue
+        }
+
+        if character.isWhitespace {
+            if !current.isEmpty {
+                parts.append(current)
+                current = ""
+            }
+            continue
+        }
+
+        current.append(character)
+    }
+
+    if escaping {
+        current.append("\\")
+    }
+
+    if quote != nil {
+        throw RelayCliStoreError(message: "inactive-line combiner command has an unterminated quote")
+    }
+
+    if !current.isEmpty {
+        parts.append(current)
+    }
+
+    return parts
+}
+
+private func expandCombinerArgument(_ argument: String, inputJSON: String, systemPrompt: String) -> String {
+    var expanded = ""
+    var index = argument.startIndex
+
+    while index < argument.endIndex {
+        if argument[index...].hasPrefix("<input>") {
+            expanded.append(inputJSON)
+            index = argument.index(index, offsetBy: "<input>".count)
+        } else if argument[index...].hasPrefix("<system>") {
+            expanded.append(systemPrompt)
+            index = argument.index(index, offsetBy: "<system>".count)
+        } else {
+            expanded.append(argument[index])
+            index = argument.index(after: index)
+        }
+    }
+
+    return expanded
+}
+
+private func resolveExecutablePath(_ executable: String) throws -> String {
+    if executable.contains("/") {
+        guard FileManager.default.isExecutableFile(atPath: executable) else {
+            throw RelayCliStoreError(message: "inactive-line combiner executable is not runnable: \(executable)")
+        }
+        return executable
+    }
+
+    for directory in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") {
+        let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(executable).path
+        if FileManager.default.isExecutableFile(atPath: candidate) {
+            return candidate
+        }
+    }
+
+    throw RelayCliStoreError(message: "inactive-line combiner executable not found on PATH: \(executable)")
+}
+
+private func parseInactiveLineCombinerOutput(_ output: String, incoming: NormalizedRelay) throws -> InactiveLineCombinerOutcome {
+    guard let data = output.data(using: .utf8),
+          let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw RelayCliStoreError(message: "inactive-line combiner must return one JSON object")
+    }
+
+    guard let action = object["action"] as? String, ["drop", "replace", "promote"].contains(action) else {
+        throw RelayCliStoreError(message: "inactive-line combiner action must be drop, replace, or promote")
+    }
+
+    if action == "drop" {
+        return InactiveLineCombinerOutcome(action: action, relay: nil)
+    }
+
+    let relay = try normalizeRelay(NewRelayInput(
+        line: incoming.line,
+        message: object["message"] as? String ?? "",
+        type: object["type"] as? String,
+        priority: object["priority"] as? String,
+        session: incoming.session,
+        app: incoming.app,
+        cwd: incoming.cwd,
+        url: incoming.url
+    ))
+    return InactiveLineCombinerOutcome(action: action, relay: relay)
+}
+
+let inactiveLineCombinerSystemPrompt = """
+You compose one useful relay from several short agent status updates.
+
+The user is actively listening to one line. Messages from other lines should not become a noisy backlog. Your job is to decide what single relay, if any, a thoughtful agent would leave after waiting until the useful point.
+
+Rules:
+1. Return exactly one JSON object and no other text.
+2. Output keys: action, type, priority, message.
+3. action must be one of drop, replace, or promote.
+4. type must be one of update, complete, blocked, or needs-input.
+5. priority must be one of low, normal, or high.
+6. message must be 160 characters or fewer.
+7. Do not invent facts, names, decisions, errors, files, links, or outcomes.
+8. Do not include code, logs, terminal output, secrets, raw file contents, or private data.
+9. Preserve the most important human-actionable information.
+10. Prefer calm, concise wording suitable for spoken playback.
+11. Write like a human leaving one relay, not like a dashboard summary.
+12. Do not count updates unless the count itself matters.
+
+Decision policy:
+- If the incoming messages are only routine progress with no user action, return replace with one natural progress relay.
+- If the incoming messages repeat information already present in the existing pending message and add no important change, return drop.
+- If any message is blocked, needs-input, or priority high, return promote.
+- If any message is complete, preserve that completion unless a newer blocked or needs-input message is more important.
+- If multiple routine updates arrive, compress the progress arc and end on the current useful point.
+"""
 
 let defaultInactiveLineCombinerCommand = """
 # Inactive line combiner command.

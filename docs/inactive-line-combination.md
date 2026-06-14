@@ -33,6 +33,10 @@ as single argv values:
 Pipes, redirects, command substitution, and shell expansion are
 intentionally unsupported.
 
+Direct builds execute the configured command for inactive-line enqueues. The
+App Store-safe profile does not execute external combiner commands and uses
+latest-only inactive-line behavior.
+
 `apfel` uses local Apple Intelligence:
 
 ```sh

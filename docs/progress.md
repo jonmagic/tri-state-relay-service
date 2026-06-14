@@ -26,7 +26,7 @@ Current state:
 18. `docs/prompts/combine-inactive-line.md` defines the combiner prompt for collapsing inactive-line updates into one pending message.
 19. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
 20. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
-21. Inactive-line enqueue policy is implemented: native falls back to latest-only, while the CLI can call the configured `llm` or `apfel` helper to combine pending inactive-line updates.
+21. Inactive-line enqueue policy is implemented: direct builds call the configured `llm`, `apfel`, or other no-shell helper command to combine pending inactive-line updates; when no combiner is configured, inactive lines use latest-only behavior.
 22. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
 23. Left-click playback makes the line it pulls from active before speaking.
 24. Settings moved from a menu submenu into a tabbed window for inactive-line combiner and voice selection; speech command templates remain legacy CLI settings.

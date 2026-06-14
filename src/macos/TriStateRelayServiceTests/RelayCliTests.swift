@@ -218,6 +218,33 @@ final class RelayCliTests: XCTestCase {
         XCTAssertFalse(list.contains("first inactive"))
     }
 
+    func testConfiguredInactiveLineCombinerReplacesPendingDigest() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        let script = try inactiveCombinerScript(outputMessage: "Other summary: setup issue is isolated to the old CLI path.")
+
+        _ = runRelayCli(["line", "Brain"])
+        XCTAssertEqual(runRelayCli(["combiner", "--command", "\(script) <input> <system>"]).stdout, "inactive line combiner set to custom")
+        _ = runRelayCli(["--line", "Other", "--message", "first inactive"])
+        _ = runRelayCli(["--line", "Other", "--message", "second inactive"])
+
+        let list = runRelayCli(["list"]).stdout
+        XCTAssertTrue(list.contains("Other summary: setup issue is isolated to the old CLI path."))
+        XCTAssertFalse(list.contains("first inactive"))
+        XCTAssertFalse(list.contains("second inactive"))
+    }
+
+    func testInactiveLineCombinerDoesNotExpandPlaceholdersInsideInput() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        let script = try inactiveCombinerScript(outputMessage: "Other summary: placeholder text stayed inside input.", rejectSystemPromptInInput: true)
+
+        _ = runRelayCli(["line", "Brain"])
+        _ = runRelayCli(["combiner", "--command", "\(script) <input>"])
+        let result = runRelayCli(["--line", "Other", "--message", "literal <system> marker"])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(runRelayCli(["list"]).stdout.contains("Other summary: placeholder text stayed inside input."))
+    }
+
     func testLiveModePreservesInactiveMessagesAndRotatesLineBatches() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
         setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
@@ -405,4 +432,21 @@ private func isolatedDatabasePath() -> String {
 private func jsonObject(_ text: String) throws -> [String: Any] {
     let data = try XCTUnwrap(text.data(using: .utf8))
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+private func inactiveCombinerScript(outputMessage: String, rejectSystemPromptInInput: Bool = false) throws -> String {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tsrs-combiner-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let script = directory.appendingPathComponent("combiner").path
+    let escapedMessage = outputMessage.replacingOccurrences(of: "'", with: "'\\''")
+    let guardSystemPrompt = rejectSystemPromptInInput ? "case \"$1\" in *'You compose one useful relay'*) exit 7 ;; esac\n" : ""
+    let body = """
+    #!/bin/sh
+    \(guardSystemPrompt)\
+    printf '%s\\n' '{"action":"replace","type":"update","priority":"normal","message":"\(escapedMessage)"}'
+    """
+    try body.write(toFile: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+    return script
 }
