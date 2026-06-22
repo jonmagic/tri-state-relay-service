@@ -5,7 +5,7 @@ import SQLite3
 // command-line target. This file must not import AppKit, AVFoundation, or any
 // macOS UI/audio frameworks so it can compile into a plain command-line tool.
 
-let relayCliVersion = "1.1.1"
+let relayCliVersion = "1.1.2"
 
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
