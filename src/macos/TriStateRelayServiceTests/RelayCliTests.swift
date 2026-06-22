@@ -120,6 +120,26 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["list"]).stdout, "mode=focus muted=false")
     }
 
+    func testMutatingCommandsPostQueueWakeNotifications() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        let wakes = WakeCounter()
+
+        XCTAssertEqual(runRelayCli(["status"], wakeNotifier: wakes.notifier).exitCode, 0)
+        XCTAssertEqual(wakes.count, 0)
+
+        XCTAssertEqual(runRelayCli(["--line", "Brain", "--message", "wake me"], wakeNotifier: wakes.notifier).exitCode, 0)
+        XCTAssertEqual(wakes.count, 1)
+
+        XCTAssertEqual(runRelayCli(["ready"], wakeNotifier: wakes.notifier).stdout, "ready to release one relay")
+        XCTAssertEqual(wakes.count, 2)
+
+        XCTAssertEqual(runRelayCli(["debug", "wake"], wakeNotifier: wakes.notifier).stdout, "posted queue wake notification")
+        XCTAssertEqual(wakes.count, 3)
+
+        XCTAssertEqual(runRelayCli(["clear-delivered"], wakeNotifier: wakes.notifier).stdout, "cleared 0 delivered relays")
+        XCTAssertEqual(wakes.count, 3)
+    }
+
     func testStatusReportsJsonForQueue() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
         _ = runRelayCli(["--line", "Brain", "--message", "json please", "--session", "sess-1", "--app", "Copilot"])
@@ -427,6 +447,16 @@ private func isolatedDatabasePath() -> String {
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
         .appendingPathComponent("relay.db")
         .path
+}
+
+private final class WakeCounter {
+    private(set) var count = 0
+
+    var notifier: RelayWakeNotifier {
+        RelayWakeNotifier { [weak self] in
+            self?.count += 1
+        }
+    }
 }
 
 private func jsonObject(_ text: String) throws -> [String: Any] {

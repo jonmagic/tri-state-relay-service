@@ -9,6 +9,27 @@ let relayCliVersion = "1.1.1"
 
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
+let relayQueueChangedDarwinNotification = "com.jonmagic.tristaterelayservice.queue-changed"
+
+struct RelayWakeNotifier {
+    let post: () -> Void
+
+    static let darwin = RelayWakeNotifier {
+        postRelayQueueChangedNotification()
+    }
+
+    static let disabled = RelayWakeNotifier {}
+}
+
+func postRelayQueueChangedNotification() {
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(relayQueueChangedDarwinNotification as CFString),
+        nil,
+        nil,
+        true
+    )
+}
 
 struct NewRelayInput {
     let line: String?
@@ -222,6 +243,7 @@ Commands:
                        Mark a relay delivered and record the spoken line.
   app-mark-failed --id <id>
                        Mark a relay failed.
+  debug wake            Post the app wake notification without changing queue data.
   normalize --line <line> --message <message> [--type <type>] [--priority <priority>]
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and normalize a relay without writing to the queue.
@@ -233,7 +255,7 @@ docs/cli-parity-inventory.md for the validation inventory.
 """
 
 // Pure argument dispatcher so behavior is testable without a process boundary.
-func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> RelayCliResult {
+func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeNotifier: RelayWakeNotifier = .darwin) -> RelayCliResult {
     guard let command = arguments.first else {
         return RelayCliResult(stdout: relayCliUsage, stderr: "", exitCode: 0)
     }
@@ -270,46 +292,61 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
     case "ready":
         return withRelayCliStore { store in
             let state = try store.setMode("ready")
+            wakeNotifier.post()
             return RelayCliResult(stdout: state.muted ? "release queued, but muted is on" : "ready to release one relay", stderr: "", exitCode: 0)
         }
     case "live":
         return withRelayCliStore { store in
             let state = try store.setMode("live")
+            wakeNotifier.post()
             return RelayCliResult(stdout: state.muted ? "live mode on, but muted is on" : "live mode on", stderr: "", exitCode: 0)
         }
     case "focus":
         return withRelayCliStore { store in
             _ = try store.setMode("focus")
+            wakeNotifier.post()
             return RelayCliResult(stdout: "focus mode on", stderr: "", exitCode: 0)
         }
     case "mute":
         return withRelayCliStore { store in
             try store.setMuted(true)
+            wakeNotifier.post()
             return RelayCliResult(stdout: "muted", stderr: "", exitCode: 0)
         }
     case "unmute":
         return withRelayCliStore { store in
             try store.setMuted(false)
+            wakeNotifier.post()
             return RelayCliResult(stdout: "unmuted", stderr: "", exitCode: 0)
         }
     case "clear":
         return withRelayCliStore { store in
             let count = try store.clear()
+            if count > 0 {
+                wakeNotifier.post()
+            }
             return RelayCliResult(stdout: "cleared \(count) relays", stderr: "", exitCode: 0)
         }
     case "clear-line":
         return runLineRequiredCommand(Array(arguments.dropFirst())) { store, line in
             let count = try store.clearQueued(line: line)
+            if count > 0 {
+                wakeNotifier.post()
+            }
             return RelayCliResult(stdout: "cleared \(count) queued relays from \(line)", stderr: "", exitCode: 0)
         }
     case "clear-delivered", "clear-heard":
         return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
             let count = try store.clearHeard(line: line)
+            if count > 0 {
+                wakeNotifier.post()
+            }
             return RelayCliResult(stdout: "cleared \(count) delivered relays", stderr: "", exitCode: 0)
         }
     case "skip-next":
         return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
             if let skipped = try store.skipNextQueued(line: line) {
+                wakeNotifier.post()
                 return RelayCliResult(stdout: "skipped relay #\(skipped.id)", stderr: "", exitCode: 0)
             }
             return RelayCliResult(stdout: "no queued relay to skip", stderr: "", exitCode: 0)
@@ -317,6 +354,7 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
     case "acknowledge", "mark-handled":
         return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
             if let handled = try store.markLatestHeardHandled(line: line) {
+                wakeNotifier.post()
                 return RelayCliResult(stdout: "handled relay #\(handled.id)", stderr: "", exitCode: 0)
             }
             return RelayCliResult(stdout: "no delivered relay to mark handled", stderr: "", exitCode: 0)
@@ -324,18 +362,19 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
     case "replay-last":
         return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
             if let replayed = try store.replayLatestHeard(line: line) {
+                wakeNotifier.post()
                 return RelayCliResult(stdout: "queued relay #\(replayed.id) for replay", stderr: "", exitCode: 0)
             }
             return RelayCliResult(stdout: "no delivered relay to replay", stderr: "", exitCode: 0)
         }
     case "line":
-        return runLineCommand(Array(arguments.dropFirst()))
+        return runLineCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "combiner":
-        return runCombinerCommand(Array(arguments.dropFirst()))
+        return runCombinerCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "settings":
-        return runSettingsCommand(Array(arguments.dropFirst()))
+        return runSettingsCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "first-start":
-        return runFirstStartCommand(Array(arguments.dropFirst()))
+        return runFirstStartCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "app-claim-next":
         return runAppClaimNextCommand(Array(arguments.dropFirst()))
     case "app-mark-heard":
@@ -346,11 +385,13 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion) -> Re
         return runCliStatusCommand(Array(arguments.dropFirst()))
     case "install-cli":
         return runInstallCliCommand(Array(arguments.dropFirst()))
+    case "debug":
+        return runDebugCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "normalize":
         return runNormalizeCommand(Array(arguments.dropFirst()))
     default:
         if command.hasPrefix("--") || command == "enqueue" {
-            return runEnqueueCommand(command == "enqueue" ? Array(arguments.dropFirst()) : arguments)
+            return runEnqueueCommand(command == "enqueue" ? Array(arguments.dropFirst()) : arguments, wakeNotifier: wakeNotifier)
         }
 
         return RelayCliResult(stdout: "", stderr: "unknown command: \(command)\n\(relayCliUsage)", exitCode: 1)
@@ -373,7 +414,7 @@ private func withRelayCliStore(_ action: (RelayCliStore) throws -> RelayCliResul
     }
 }
 
-private func runEnqueueCommand(_ arguments: [String]) -> RelayCliResult {
+private func runEnqueueCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
     let flags: [String: String]
 
     do {
@@ -400,6 +441,7 @@ private func runEnqueueCommand(_ arguments: [String]) -> RelayCliResult {
             return RelayCliResult(stdout: "inactive relay dropped", stderr: "", exitCode: 0)
         }
 
+        wakeNotifier.post()
         return RelayCliResult(stdout: "queued relay #\(relay.id) \(relay.line): \(relay.message)", stderr: "", exitCode: 0)
     }
 }
@@ -460,7 +502,7 @@ private func runLineRequiredCommand(_ arguments: [String], action: (RelayCliStor
         }
 }
 
-private func runLineCommand(_ arguments: [String]) -> RelayCliResult {
+private func runLineCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
         if arguments.isEmpty {
             return withRelayCliStore { store in
                 RelayCliResult(stdout: try store.state().activeLine ?? "none", stderr: "", exitCode: 0)
@@ -481,6 +523,7 @@ private func runLineCommand(_ arguments: [String]) -> RelayCliResult {
 
             return withRelayCliStore { store in
                 let state = try store.setActiveLine(line)
+                wakeNotifier.post()
                 return RelayCliResult(stdout: "active line set to \(state.activeLine ?? line)", stderr: "", exitCode: 0)
             }
         } catch let error as RelayCliFlagError {
@@ -490,7 +533,7 @@ private func runLineCommand(_ arguments: [String]) -> RelayCliResult {
         }
 }
 
-private func runCombinerCommand(_ arguments: [String]) -> RelayCliResult {
+private func runCombinerCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
         if arguments.isEmpty {
             return withRelayCliStore { store in
                 RelayCliResult(stdout: try store.inactiveLineCombinerCommand(), stderr: "", exitCode: 0)
@@ -502,6 +545,7 @@ private func runCombinerCommand(_ arguments: [String]) -> RelayCliResult {
             let requested = flags["command"] ?? flags["tool"] ?? ""
             return withRelayCliStore { store in
                 let state = try store.setInactiveLineCombinerCommand(requested == "none" ? "" : requested)
+                wakeNotifier.post()
                 return RelayCliResult(stdout: "inactive line combiner set to \(state.inactiveLineCombiner)", stderr: "", exitCode: 0)
             }
         } catch let error as RelayCliFlagError {
@@ -511,15 +555,21 @@ private func runCombinerCommand(_ arguments: [String]) -> RelayCliResult {
         }
 }
 
-private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
+private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
         do {
             let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command"])
             return withRelayCliStore { store in
+                var changed = false
                 if let command = flags["combiner-command"] {
                     _ = try store.setInactiveLineCombinerCommand(command)
+                    changed = true
                 }
                 if let command = flags["speech-command"] {
                     try store.setSpeechCommand(command)
+                    changed = true
+                }
+                if changed {
+                    wakeNotifier.post()
                 }
                 return RelayCliResult(stdout: try store.settingsJSON(), stderr: "", exitCode: 0)
             }
@@ -530,7 +580,7 @@ private func runSettingsCommand(_ arguments: [String]) -> RelayCliResult {
     }
 }
 
-private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
+private func runFirstStartCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
     let action = arguments.first ?? "status"
 
     if action == "dev-reset-database" {
@@ -541,7 +591,8 @@ private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
         do {
             try resetRelayDatabaseForFirstStartDevelopment()
             return withRelayCliStore { store in
-                RelayCliResult(stdout: try store.firstStartSetupComplete() ? "fresh database recreated, first-start complete" : "fresh database recreated, first-start needs-setup", stderr: "", exitCode: 0)
+                wakeNotifier.post()
+                return RelayCliResult(stdout: try store.firstStartSetupComplete() ? "fresh database recreated, first-start complete" : "fresh database recreated, first-start needs-setup", stderr: "", exitCode: 0)
             }
         } catch let error as RelayCliStoreError {
             return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
@@ -560,14 +611,25 @@ private func runFirstStartCommand(_ arguments: [String]) -> RelayCliResult {
             return RelayCliResult(stdout: try store.firstStartSetupComplete() ? "complete" : "needs-setup", stderr: "", exitCode: 0)
         case "reset":
             try store.setFirstStartSetupComplete(false)
+            wakeNotifier.post()
             return RelayCliResult(stdout: "first-start setup reset to needs-setup", stderr: "", exitCode: 0)
         case "complete":
             try store.setFirstStartSetupComplete(true)
+            wakeNotifier.post()
             return RelayCliResult(stdout: "first-start setup marked complete", stderr: "", exitCode: 0)
         default:
             return RelayCliResult(stdout: "", stderr: "first-start action must be status, reset, or complete", exitCode: 1)
         }
     }
+}
+
+private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
+    guard arguments == ["wake"] else {
+        return RelayCliResult(stdout: "", stderr: "debug action must be wake", exitCode: 1)
+    }
+
+    wakeNotifier.post()
+    return RelayCliResult(stdout: "posted queue wake notification", stderr: "", exitCode: 0)
 }
 
 private func resetRelayDatabaseForFirstStartDevelopment() throws {

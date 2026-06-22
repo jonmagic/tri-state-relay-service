@@ -19,8 +19,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     private let model = MenuBarModel()
     private var statusItem: NSStatusItem!
-    private var timer: Timer?
-    private var playbackRefreshTimer: Timer?
+    private var safetyRefreshTimer: Timer?
+    private var queueWakeDebounceTimer: Timer?
     private var settingsWindowController: SettingsWindowController?
     private var commandPaletteWindowController: CommandPaletteWindowController?
     private var commandPaletteHotKey: EventHotKeyRef?
@@ -56,13 +56,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        refreshStatusItem()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.model.refresh()
-            self?.nativePlayback.playNext()
-            self?.refreshStatusItem()
-            self?.schedulePlaybackRefresh()
-        }
+        registerQueueChangedObserver()
+        refreshAndPlayIfEligible()
+        startSafetyRefreshTimer()
         registerGlobalHotKeys()
 #if !APP_STORE
         if model.needsFirstStartSetup() {
@@ -76,7 +72,9 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate()
+        safetyRefreshTimer?.invalidate()
+        queueWakeDebounceTimer?.invalidate()
+        unregisterQueueChangedObserver()
         unregisterGlobalHotKeys()
     }
 
@@ -91,21 +89,18 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.playNext()
         nativePlayback.playNext()
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func ready() {
         model.ready()
         nativePlayback.playNext()
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func live() {
         model.live()
         nativePlayback.playNext()
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func focus() {
@@ -137,7 +132,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.replayLast()
         nativePlayback.playNext()
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func markHandled() {
@@ -176,7 +170,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.replayLast(line: line)
         nativePlayback.playNext(line: line)
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func markLineHandled(_ sender: NSMenuItem) {
@@ -238,7 +231,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.playActiveLine()
         nativePlayback.playNext(line: line)
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func showSettingsWindow() {
@@ -278,7 +270,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.ready()
         nativePlayback.playNext()
         refreshStatusItem()
-        schedulePlaybackRefresh()
     }
 
     @objc private func quit() {
@@ -366,7 +357,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 self.model.ready()
                 self.nativePlayback.playNext()
                 self.refreshStatusItem()
-                self.schedulePlaybackRefresh()
             },
         ]
 
@@ -390,7 +380,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 self?.model.live()
                 self?.nativePlayback.playNext()
                 self?.refreshStatusItem()
-                self?.schedulePlaybackRefresh()
             })
         }
 
@@ -449,7 +438,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                         self.nativePlayback.replayDeliveredMessage(message.message)
                     }
                     self.refreshStatusItem()
-                    self.schedulePlaybackRefresh()
                 }
             }
         }
@@ -469,7 +457,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 self?.model.playActiveLine()
                 self?.nativePlayback.playNext(line: line.line)
                 self?.refreshStatusItem()
-                self?.schedulePlaybackRefresh()
             })
             commands.append(CommandPaletteCommand(title: "Clear Queue", subtitle: "Clear \(line.queued) queued relays", aliases: ["clear", "queue", line.line]) { [weak self] in
                 self?.model.clear(line: line.line)
@@ -489,7 +476,6 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                 self?.model.replayLast(line: line.line)
                 self?.nativePlayback.playNext(line: line.line)
                 self?.refreshStatusItem()
-                self?.schedulePlaybackRefresh()
             })
             commands.append(CommandPaletteCommand(title: "Acknowledge Last", subtitle: "Mark latest delivered relay acknowledged", aliases: ["acknowledge", "handled", line.line]) { [weak self] in
                 self?.model.markHandled(line: line.line)
@@ -608,21 +594,57 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func schedulePlaybackRefresh() {
-        playbackRefreshTimer?.invalidate()
-        playbackRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-            guard let self else {
-                timer.invalidate()
-                return
-            }
+    private func registerQueueChangedObserver() {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else {
+                    return
+                }
 
-            self.model.refresh()
-            self.refreshStatusItem()
+                let app = Unmanaged<TriStateRelayServiceApp>.fromOpaque(observer).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    app.scheduleQueueWakeRefresh()
+                }
+            },
+            relayQueueChangedDarwinNotification as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
 
-            if self.model.status.speaking == 0 && (self.model.status.mode != "live" || self.model.status.queued == 0) {
-                timer.invalidate()
-            }
+    private func unregisterQueueChangedObserver() {
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(relayQueueChangedDarwinNotification as CFString),
+            nil
+        )
+    }
+
+    private func scheduleQueueWakeRefresh() {
+        queueWakeDebounceTimer?.invalidate()
+        queueWakeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            self?.queueWakeDebounceTimer = nil
+            self?.refreshAndPlayIfEligible()
         }
+    }
+
+    private func startSafetyRefreshTimer() {
+        safetyRefreshTimer?.invalidate()
+        safetyRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.refreshAndPlayIfEligible()
+        }
+        safetyRefreshTimer?.tolerance = 15
+    }
+
+    private func refreshAndPlayIfEligible() {
+        model.refresh()
+        if model.status.mode == "ready" || model.status.mode == "live" {
+            nativePlayback.playNext()
+        }
+        refreshStatusItem()
     }
 
     private func registerGlobalHotKeys() {
@@ -2291,6 +2313,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
     private var currentProcess: Process?
+    private var inputCaptureRetryTimer: Timer?
     private let synthesizer = AVSpeechSynthesizer()
 
     var isPlaying: Bool {
@@ -2312,9 +2335,13 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         if inputCaptureSensor.isInputCaptureActive() {
             model.refresh()
+            if shouldRetryAfterInputCapture(line: line) {
+                scheduleInputCaptureRetry(line: line)
+            }
             onChange()
             return
         }
+        cancelInputCaptureRetry()
 
         guard let claim = model.claimNextForNativeSpeech(line: line) else {
             model.refresh()
@@ -2335,9 +2362,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         if inputCaptureSensor.isInputCaptureActive() {
             model.refresh()
+            scheduleInputCaptureRetry(line: line, id: id)
             onChange()
             return
         }
+        cancelInputCaptureRetry()
 
         guard let claim = model.claimQueuedMessageForNativeSpeech(line: line, id: id) else {
             model.refresh()
@@ -2348,6 +2377,44 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         currentId = claim.id
         onChange()
         speak(claim)
+    }
+
+    private func shouldRetryAfterInputCapture(line: String?) -> Bool {
+        if let line {
+            return model.status.queuedCount(for: line) > 0
+        }
+
+        return model.status.mode == "ready" || model.status.mode == "live"
+    }
+
+    private func scheduleInputCaptureRetry(line: String?) {
+        scheduleInputCaptureRetry {
+            $0.playNext(line: line)
+        }
+    }
+
+    private func scheduleInputCaptureRetry(line: String, id: Int) {
+        scheduleInputCaptureRetry {
+            $0.playQueuedMessage(line: line, id: id)
+        }
+    }
+
+    private func scheduleInputCaptureRetry(_ retry: @escaping (NativeSpeechPlayback) -> Void) {
+        inputCaptureRetryTimer?.invalidate()
+        inputCaptureRetryTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
+            guard let self else {
+                return
+            }
+
+            self.inputCaptureRetryTimer = nil
+            retry(self)
+        }
+        inputCaptureRetryTimer?.tolerance = 1
+    }
+
+    private func cancelInputCaptureRetry() {
+        inputCaptureRetryTimer?.invalidate()
+        inputCaptureRetryTimer = nil
     }
 
     func replayDeliveredMessage(_ text: String) {

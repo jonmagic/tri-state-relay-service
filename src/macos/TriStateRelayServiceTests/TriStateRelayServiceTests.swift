@@ -43,6 +43,24 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertFalse(source.contains("relayCliInstallPromptSuppressed"))
     }
 
+    func testAppUsesDarwinWakeInsteadOfShortIdlePolling() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("CFNotificationCenterAddObserver("))
+        XCTAssertTrue(source.contains("relayQueueChangedDarwinNotification as CFString"))
+        XCTAssertTrue(source.contains("queueWakeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15"))
+        XCTAssertTrue(source.contains("safetyRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60"))
+        XCTAssertTrue(source.contains("safetyRefreshTimer?.tolerance = 15"))
+        XCTAssertTrue(source.contains("refreshAndPlayIfEligible()"))
+        XCTAssertTrue(source.contains("if model.status.mode == \"ready\" || model.status.mode == \"live\""))
+        XCTAssertTrue(source.contains("inputCaptureRetryTimer = Timer.scheduledTimer(withTimeInterval: 3"))
+        XCTAssertTrue(source.contains("inputCaptureRetryTimer?.tolerance = 1"))
+        XCTAssertTrue(source.contains("shouldRetryAfterInputCapture(line: line)"))
+        XCTAssertFalse(source.contains("scheduledTimer(withTimeInterval: 2"))
+        XCTAssertFalse(source.contains("schedulePlaybackRefresh"))
+        XCTAssertFalse(source.contains("playbackRefreshTimer"))
+    }
+
     func testPrivilegedCliInstallUsesQuotedAppleScriptArguments() throws {
         let source = try triStateRelayServiceSource()
 
