@@ -1272,21 +1272,22 @@ private final class RelayCliStore {
         var sources: [[String: Any]] = []
         try query("""
             SELECT id, line, session, app, cwd, url
-            FROM relays AS source
-            WHERE (cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL)
-              AND id = (
-                SELECT id
-                FROM relays AS candidate
-                WHERE candidate.line = source.line
-                  AND (
-                    candidate.cwd IS NOT NULL
-                    OR candidate.url IS NOT NULL
-                    OR candidate.app IS NOT NULL
-                    OR candidate.session IS NOT NULL
-                  )
-                ORDER BY created_at DESC, id DESC
-                LIMIT 1
+            FROM (
+              SELECT
+                id,
+                line,
+                session,
+                app,
+                cwd,
+                url,
+                ROW_NUMBER() OVER (
+                  PARTITION BY line
+                  ORDER BY created_at DESC, id DESC
+                ) AS source_rank
+              FROM relays
+              WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL
             )
+            WHERE source_rank = 1
             ORDER BY line ASC
         """) { statement in
             var object: [String: Any] = [
@@ -1326,6 +1327,13 @@ private final class RelayCliStore {
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS relays_status_idx
+              ON relays(status);
+            CREATE INDEX IF NOT EXISTS relays_status_line_idx
+              ON relays(status, line);
+            CREATE INDEX IF NOT EXISTS relays_source_context_latest_idx
+              ON relays(line, created_at DESC, id DESC)
+              WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL;
         """)
 
         try execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")

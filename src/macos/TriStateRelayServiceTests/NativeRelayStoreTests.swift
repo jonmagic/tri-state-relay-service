@@ -32,6 +32,9 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'command_palette_shortcut'"), "control-option-command-space")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'first_start_setup_complete'"), "false")
         XCTAssertEqual(database.scalar("SELECT version FROM schema_migrations WHERE version = 1"), "1")
+        XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_idx'"), "relays_status_idx")
+        XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_line_idx'"), "relays_status_line_idx")
+        XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_source_context_latest_idx'"), "relays_source_context_latest_idx")
         XCTAssertEqual(database.scalar("PRAGMA journal_mode"), "wal")
     }
 
@@ -142,6 +145,25 @@ final class NativeRelayStoreTests: XCTestCase {
 
         XCTAssertEqual(messages.map(\.message), ["queued high", "queued low", "delivered newer", "delivered older"])
         XCTAssertEqual(messages.map(\.displayStatus), ["Queued", "Queued", "Delivered", "Delivered"])
+    }
+
+    func testLoadStatusUsesLatestSourceContextByLine() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "older", type: "update", priority: "normal", session: "session-1", app: "App One", cwd: nil, url: nil))
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "newer", type: "update", priority: "normal", session: "session-2", app: "App Two", cwd: "/tmp/newer", url: nil))
+
+        let source = try XCTUnwrap(store.loadStatus().lineSources["Brain"])
+        XCTAssertEqual(source.path, "/tmp/newer")
     }
 
     func testClaimQueuedMessageForNativeSpeechMarksExactQueuedMessage() throws {
