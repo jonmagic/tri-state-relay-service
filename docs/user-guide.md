@@ -210,6 +210,18 @@ Supported placeholders are inserted as single arguments, not shell-expanded:
 
 This makes cloud or local model wrappers possible later, including an ElevenLabs-backed CLI, without putting provider-specific API code into the app. The wrapper should read the text file, write an audio file, and exit nonzero if synthesis fails.
 
+### Speechify example
+
+TSRS includes a Speechify-compatible wrapper at `scripts/speechify-voice-command`. Store your API key in Settings > Advanced as `SPEECHIFY_API_KEY`; TSRS saves it in Keychain and injects it only into the BYO voice command process.
+
+Configure the wrapper with an absolute path:
+
+```sh
+relay settings --voice-command "/path/to/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george"
+```
+
+The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It never speaks directly.
+
 ## Advanced: local cleanup retention
 
 Settings includes an Advanced panel for local cleanup retention. The value is stored in minutes and defaults to `525600`, which is 365 days.

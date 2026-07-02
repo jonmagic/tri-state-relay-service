@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Generate a TSRS voice-command audio file with Speechify."
+    )
+    parser.add_argument("--text-file", required=True)
+    parser.add_argument("--output-file", required=True)
+    parser.add_argument("--voice-id", default="george")
+    parser.add_argument("--model", default="simba-english")
+    parser.add_argument("--audio-format", default="mp3")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("SPEECHIFY_API_KEY")
+    if not api_key:
+        print("SPEECHIFY_API_KEY is not set", file=sys.stderr)
+        return 2
+
+    with open(args.text_file, "r", encoding="utf-8") as file:
+        text = file.read()
+
+    payload = json.dumps(
+        {
+            "input": text,
+            "voice_id": args.voice_id,
+            "audio_format": args.audio_format,
+            "model": args.model,
+        }
+    ).encode("utf-8")
+
+    request = urllib.request.Request(
+        "https://api.speechify.ai/v1/audio/speech",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        print(f"Speechify request failed: HTTP {error.code} {detail}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"Speechify request failed: {error}", file=sys.stderr)
+        return 1
+
+    audio_data = data.get("audio_data")
+    if not audio_data:
+        print("Speechify response did not include audio_data", file=sys.stderr)
+        return 1
+
+    with open(args.output_file, "wb") as file:
+        file.write(base64.b64decode(audio_data))
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

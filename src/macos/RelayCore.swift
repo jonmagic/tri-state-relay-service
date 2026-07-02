@@ -965,6 +965,7 @@ private final class RelayCliStore {
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
             "voiceCommand": try voiceCommand(),
+            "voiceCommandLastError": try voiceCommandLastError() as Any,
             "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "activeLine": state.activeLine as Any,
             "counts": counts,
@@ -998,6 +999,7 @@ private final class RelayCliStore {
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
             "voiceCommand": try voiceCommand(),
+            "voiceCommandLastError": try voiceCommandLastError() as Any,
             "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "capabilities": directRelayCapabilities,
         ]
@@ -1051,6 +1053,12 @@ private final class RelayCliStore {
 
     func setVoiceCommand(_ command: String) throws {
         try setSetting(key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
+        try setSetting(key: "voice_command_last_error", value: "")
+    }
+
+    func voiceCommandLastError() throws -> String? {
+        let value = try rawSettings()["voice_command_last_error"] ?? ""
+        return value.isEmpty ? nil : value
     }
 
     func cleanupRetentionMinutes() throws -> Int {

@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Carbon.HIToolbox
 import CoreAudio
+import Security
 import ServiceManagement
 import SQLite3
 
@@ -1039,6 +1040,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cleanupRetentionField = NSTextField(string: "")
     private let cleanupRetentionStatusView = NSTextField(labelWithString: "")
     private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
+    private let voiceCommandErrorView = NSTextField(labelWithString: "")
+    private let voiceSecretNameField = NSTextField(string: "")
+    private let voiceSecretValueField = NSTextField(string: "")
+    private let voiceSecretSaveButton = NSButton(title: "Save secret", target: nil, action: nil)
+    private let voiceSecretStatusView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
@@ -1160,6 +1166,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         copyBundledCliPathButton.action = #selector(copyBundledRelayCliPath)
         cleanupRetentionSaveButton.target = self
         cleanupRetentionSaveButton.action = #selector(saveCleanupRetention(_:))
+#if !APP_STORE
+        voiceSecretSaveButton.target = self
+        voiceSecretSaveButton.action = #selector(saveVoiceSecret(_:))
+#endif
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -1277,6 +1287,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
         cleanupRetentionStatusView.stringValue = "Cleanup removes terminal relay rows and usage buckets older than this many minutes. Default: \(defaultCleanupRetentionMinutes)."
         cleanupRetentionStatusView.textColor = .secondaryLabelColor
+        if let error = settings.voiceCommandLastError {
+            voiceCommandErrorView.stringValue = "Last BYO voice command error: \(error)"
+            voiceCommandErrorView.textColor = .systemRed
+        } else {
+            voiceCommandErrorView.stringValue = "No BYO voice command errors recorded."
+            voiceCommandErrorView.textColor = .secondaryLabelColor
+        }
+        voiceSecretNameField.stringValue = settings.voiceSecretName ?? ""
+        voiceSecretValueField.stringValue = ""
+        voiceSecretStatusView.stringValue = settings.voiceSecretName.map { "Keychain secret configured for \($0)." } ?? "No BYO voice command secret configured."
+        voiceSecretStatusView.textColor = .secondaryLabelColor
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         reloadOpenAtLogin()
@@ -1322,6 +1343,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cleanupRetentionStatusView.font = NSFont.systemFont(ofSize: 12)
         cleanupRetentionStatusView.lineBreakMode = .byWordWrapping
         cleanupRetentionStatusView.maximumNumberOfLines = 0
+        voiceCommandErrorView.textColor = .secondaryLabelColor
+        voiceCommandErrorView.font = NSFont.systemFont(ofSize: 12)
+        voiceCommandErrorView.lineBreakMode = .byWordWrapping
+        voiceCommandErrorView.maximumNumberOfLines = 0
+        voiceSecretStatusView.textColor = .secondaryLabelColor
+        voiceSecretStatusView.font = NSFont.systemFont(ofSize: 12)
+        voiceSecretStatusView.lineBreakMode = .byWordWrapping
+        voiceSecretStatusView.maximumNumberOfLines = 0
     }
 
     private func updateSetupIntroVisibility() {
@@ -1530,6 +1559,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         onSave()
     }
 
+    @objc private func saveVoiceSecret(_ sender: Any?) {
+#if !APP_STORE
+        let name = voiceSecretNameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = voiceSecretValueField.stringValue
+
+        guard isSafeEnvironmentName(name) else {
+            voiceSecretStatusView.stringValue = "Use an environment variable name like SPEECHIFY_API_KEY."
+            voiceSecretStatusView.textColor = .systemRed
+            return
+        }
+
+        guard !value.isEmpty else {
+            voiceSecretStatusView.stringValue = "Paste the secret value before saving."
+            voiceSecretStatusView.textColor = .systemRed
+            return
+        }
+
+        do {
+            try model.saveVoiceSecret(name: name, value: value)
+            voiceSecretValueField.stringValue = ""
+            voiceSecretStatusView.stringValue = "Saved \(name) in Keychain."
+            voiceSecretStatusView.textColor = .secondaryLabelColor
+            model.completeFirstStartSetup()
+            updateSetupIntroVisibility()
+            onSave()
+        } catch {
+            voiceSecretStatusView.stringValue = "Could not save secret: \(error.localizedDescription)"
+            voiceSecretStatusView.textColor = .systemRed
+        }
+#endif
+    }
+
     private func voiceTabView() -> NSView {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
@@ -1548,7 +1609,31 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceRow.alignment = .centerY
         voiceRow.spacing = 8
 
-        let stack = NSStackView(views: [title, voiceLabel, voiceNote, voiceRow])
+        var views: [NSView] = [title, voiceLabel, voiceNote, voiceRow]
+#if !APP_STORE
+        let secretLabel = NSTextField(labelWithString: "BYO voice command secret")
+        secretLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let secretNote = NSTextField(labelWithString: "Store one environment variable in Keychain and inject it only into the BYO voice command process. For Speechify, use SPEECHIFY_API_KEY.")
+        secretNote.textColor = .secondaryLabelColor
+        secretNote.font = NSFont.systemFont(ofSize: 12)
+        secretNote.lineBreakMode = .byWordWrapping
+        secretNote.maximumNumberOfLines = 0
+
+        voiceSecretNameField.placeholderString = "SPEECHIFY_API_KEY"
+        voiceSecretValueField.placeholderString = "Paste API key"
+
+        let secretRow = NSStackView(views: [voiceSecretNameField, voiceSecretValueField, voiceSecretSaveButton])
+        secretRow.orientation = .horizontal
+        secretRow.alignment = .centerY
+        secretRow.spacing = 8
+
+        let voiceErrorLabel = NSTextField(labelWithString: "BYO voice command diagnostics")
+        voiceErrorLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        views.append(contentsOf: [secretLabel, secretNote, secretRow, voiceSecretStatusView, voiceErrorLabel, voiceCommandErrorView])
+#endif
+
+        let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1557,19 +1642,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
         voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
         voiceNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
+#if !APP_STORE
+        voiceSecretNameField.widthAnchor.constraint(equalToConstant: 170).isActive = true
+        voiceSecretValueField.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        voiceSecretSaveButton.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        secretNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        voiceSecretStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+#endif
         stack.setCustomSpacing(18, after: title)
         stack.setCustomSpacing(9, after: voiceNote)
+#if !APP_STORE
+        stack.setCustomSpacing(18, after: voiceRow)
+        stack.setCustomSpacing(9, after: secretNote)
+        stack.setCustomSpacing(18, after: voiceSecretStatusView)
+#endif
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 430))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
             stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
-        return container
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = container
+
+        return scrollView
     }
 
     private func advancedTabView() -> NSView {
@@ -1608,6 +1713,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cleanupRetentionStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         stack.setCustomSpacing(18, after: title)
         stack.setCustomSpacing(9, after: retentionNote)
+        stack.setCustomSpacing(18, after: cleanupRetentionStatusView)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
         container.addSubview(stack)
@@ -1616,9 +1722,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
             stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
-        return container
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = container
+
+        return scrollView
     }
 
     private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
@@ -2557,41 +2670,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        process.arguments = sayArguments(text: claim.text, option: option)
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        process.terminationHandler = { [weak self] process in
-            DispatchQueue.main.async {
-                guard let self else {
-                    return
-                }
-
-                if process.terminationStatus == 0 {
-                    self.model.markNativeSpeechHeard(id: claim.id)
-                } else {
-                    self.model.markNativeSpeechFailed(id: claim.id)
-                }
-
-                self.currentId = nil
-                self.currentProcess = nil
-                self.onChange()
-                if self.model.status.mode == "live" {
-                    self.playNext()
-                }
-            }
-        }
-
-        do {
-            currentProcess = process
-            try process.run()
-        } catch {
-            currentProcess = nil
-            model.markNativeSpeechFailed(id: claim.id)
-            currentId = nil
-            onChange()
-        }
+        speakWithSay(text: claim.text, option: option, claimId: claim.id, autoAdvance: true)
 #endif
     }
 
@@ -2610,19 +2689,37 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
+        speakWithSay(text: text, option: option, claimId: nil, autoAdvance: false)
+#endif
+    }
+
+#if !APP_STORE
+    private func speakWithSay(text: String, option: SpeechVoiceOption, claimId: Int?, autoAdvance: Bool) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
         process.arguments = sayArguments(text: text, option: option)
         process.standardOutput = Pipe()
         process.standardError = Pipe()
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
                 guard let self else {
                     return
                 }
 
+                if let claimId {
+                    if process.terminationStatus == 0 {
+                        self.model.markNativeSpeechHeard(id: claimId)
+                    } else {
+                        self.model.markNativeSpeechFailed(id: claimId)
+                    }
+                }
+
+                self.currentId = nil
                 self.currentProcess = nil
                 self.onChange()
+                if autoAdvance && self.model.status.mode == "live" {
+                    self.playNext()
+                }
             }
         }
 
@@ -2631,17 +2728,19 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             try process.run()
         } catch {
             currentProcess = nil
+            if let claimId {
+                model.markNativeSpeechFailed(id: claimId)
+            }
+            currentId = nil
             onChange()
         }
-#endif
     }
 
-#if !APP_STORE
     private func synthesizeVoiceCommand(text: String, option: SpeechVoiceOption, claimId: Int?, command: String) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tsrs-voice-\(UUID().uuidString)", isDirectory: true)
         let textURL = directory.appendingPathComponent("relay.txt")
-        let outputURL = directory.appendingPathComponent("relay.aiff")
+        let outputURL = directory.appendingPathComponent("relay.mp3")
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -2674,6 +2773,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             }
             process.standardOutput = Pipe()
             process.standardError = Pipe()
+            process.environment = voiceCommandEnvironment(secretName: model.loadSettings().voiceSecretName)
             process.terminationHandler = { [weak self] process in
                 DispatchQueue.main.async {
                     self?.handleVoiceCommandFinished(process: process, outputURL: outputURL, directory: directory, claimId: claimId)
@@ -2687,11 +2787,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             cleanupVoiceCommandDirectory(directory)
             currentProcess = nil
             currentAudioDirectory = nil
-            if let claimId {
-                model.markNativeSpeechFailed(id: claimId)
-                currentId = nil
-            }
-            onChange()
+            handleVoiceCommandFailure("voice command could not start: \(error.localizedDescription)", text: text, option: option, claimId: claimId)
         }
     }
 
@@ -2699,13 +2795,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         currentProcess = nil
 
         guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: outputURL.path) else {
+            let message = voiceCommandFailureMessage(process: process, outputURL: outputURL)
+            let fallbackText = claimTextForFallback(directory: directory)
             cleanupVoiceCommandDirectory(directory)
             currentAudioDirectory = nil
-            if let claimId {
-                model.markNativeSpeechFailed(id: claimId)
-                currentId = nil
-            }
-            onChange()
+            handleVoiceCommandFailure(message, text: fallbackText, option: speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier), claimId: claimId)
             return
         }
 
@@ -2727,16 +2821,66 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             player.delegate = self
             player.prepareToPlay()
             player.play()
+            model.recordVoiceCommandError(nil)
             onChange()
         } catch {
+            let message = "voice command output could not be played: \(error.localizedDescription)"
+            let fallbackText = claimTextForFallback(directory: directory)
             cleanupVoiceCommandDirectory(directory)
             currentAudioDirectory = nil
+            handleVoiceCommandFailure(message, text: fallbackText, option: speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier), claimId: claimId)
+        }
+    }
+
+    private func handleVoiceCommandFailure(_ message: String, text: String, option: SpeechVoiceOption, claimId: Int?) {
+        model.recordVoiceCommandError(redactedVoiceCommandError(message))
+        model.refresh()
+        if model.status.muted || inputCaptureSensor.isInputCaptureActive() {
             if let claimId {
-                model.markNativeSpeechFailed(id: claimId)
+                model.requeueNativeSpeech(id: claimId)
                 currentId = nil
             }
             onChange()
+            return
         }
+
+        speakWithSay(text: text, option: option, claimId: claimId, autoAdvance: claimId != nil)
+    }
+
+    private func voiceCommandFailureMessage(process: Process, outputURL: URL) -> String {
+        if process.terminationStatus != 0 {
+            let stderr = pipeText(process.standardError)
+            let detail = stderr.isEmpty ? "exit \(process.terminationStatus)" : "exit \(process.terminationStatus): \(stderr)"
+            return "voice command failed with \(detail)"
+        }
+
+        return "voice command did not write audio to \(outputURL.lastPathComponent)"
+    }
+
+    private func pipeText(_ value: Any?) -> String {
+        guard let pipe = value as? Pipe else {
+            return ""
+        }
+
+        return (String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func claimTextForFallback(directory: URL) -> String {
+        let textURL = directory.appendingPathComponent("relay.txt")
+        return (try? String(contentsOf: textURL, encoding: .utf8)) ?? ""
+    }
+
+    private func redactedVoiceCommandError(_ message: String) -> String {
+        guard
+            let secretName = model.loadSettings().voiceSecretName,
+            let secret = (try? voiceCommandSecret(name: secretName)) ?? nil,
+            !secret.isEmpty
+        else {
+            return message
+        }
+
+        return message.replacingOccurrences(of: secret, with: "[redacted]")
     }
 #endif
 
@@ -2850,6 +2994,92 @@ func voiceCommandArguments(_ arguments: [String], textFile: String, outputFile: 
             .replacingOccurrences(of: "<output-file>", with: outputFile)
             .replacingOccurrences(of: "<voice-id>", with: voiceID)
     }
+}
+
+private let voiceCommandSecretService = "Tri-State Relay Service Voice Command"
+
+func isSafeEnvironmentName(_ value: String) -> Bool {
+    let pattern = #"^[A-Z_][A-Z0-9_]{0,127}$"#
+    return value.range(of: pattern, options: .regularExpression) != nil
+}
+
+func voiceCommandEnvironment(secretName: String?) -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    guard
+        let secretName,
+        isSafeEnvironmentName(secretName),
+        let secret = try? voiceCommandSecret(name: secretName)
+    else {
+        return environment
+    }
+
+    environment[secretName] = secret
+    return environment
+}
+
+func setVoiceCommandSecret(name: String, value: String) throws {
+    guard isSafeEnvironmentName(name) else {
+        throw NSError(domain: "TSRSVoiceSecret", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid environment variable name"])
+    }
+
+    let data = Data(value.utf8)
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: voiceCommandSecretService,
+        kSecAttrAccount as String: name,
+    ]
+    let attributes: [String: Any] = [
+        kSecValueData as String: data,
+        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+    ]
+
+    let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    if updateStatus == errSecSuccess {
+        return
+    }
+
+    guard updateStatus == errSecItemNotFound else {
+        throw keychainError(updateStatus)
+    }
+
+    var createQuery = query
+    createQuery[kSecValueData as String] = data
+    createQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    let addStatus = SecItemAdd(createQuery as CFDictionary, nil)
+    guard addStatus == errSecSuccess else {
+        throw keychainError(addStatus)
+    }
+}
+
+func voiceCommandSecret(name: String) throws -> String? {
+    guard isSafeEnvironmentName(name) else {
+        return nil
+    }
+
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: voiceCommandSecretService,
+        kSecAttrAccount as String: name,
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+    if status == errSecItemNotFound {
+        return nil
+    }
+
+    guard status == errSecSuccess, let data = result as? Data else {
+        throw keychainError(status)
+    }
+
+    return String(data: data, encoding: .utf8)
+}
+
+private func keychainError(_ status: OSStatus) -> NSError {
+    let message = SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"
+    return NSError(domain: "TSRSVoiceSecret", code: Int(status), userInfo: [NSLocalizedDescriptionKey: message])
 }
 
 private func cleanupVoiceCommandDirectory(_ directory: URL?) {
@@ -3305,6 +3535,11 @@ final class MenuBarModel {
         refresh()
     }
 
+    func recordVoiceCommandError(_ message: String?) {
+        store.recordVoiceCommandError(message)
+        refresh()
+    }
+
     func loadSettings() -> SettingsSnapshot {
         store.loadSettings()
     }
@@ -3348,6 +3583,11 @@ final class MenuBarModel {
 
     func saveCleanupRetentionMinutes(_ minutes: Int) {
         store.saveCleanupRetentionMinutes(minutes)
+        refresh()
+    }
+
+    func saveVoiceSecret(name: String, value: String) throws {
+        try store.saveVoiceSecret(name: name, value: value)
         refresh()
     }
 
@@ -3814,6 +4054,8 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
+    let voiceCommandLastError: String?
+    let voiceSecretName: String?
     let cleanupRetentionMinutes: Int
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
@@ -3926,6 +4168,8 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
+                voiceCommandLastError: voiceCommandLastError(settings),
+                voiceSecretName: voiceSecretName(settings),
                 cleanupRetentionMinutes: cleanupRetentionMinutes(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
                 commandPaletteShortcut: commandPaletteShortcut(settings),
@@ -4031,6 +4275,13 @@ final class NativeRelayStore {
 
         write { database in
             setSetting(database, key: "cleanup_retention_minutes", value: String(minutes))
+        }
+    }
+
+    func saveVoiceSecret(name: String, value: String) throws {
+        try setVoiceCommandSecret(name: name, value: value)
+        write { database in
+            setSetting(database, key: "voice_secret_name", value: name)
         }
     }
 
@@ -4309,6 +4560,12 @@ final class NativeRelayStore {
             if requeueSpeaking(database, id: id) == nil {
                 NSLog("TSRS native store could not requeue missing speaking relay: \(id)")
             }
+        }
+    }
+
+    func recordVoiceCommandError(_ message: String?) {
+        write { database in
+            setSetting(database, key: "voice_command_last_error", value: message ?? "")
         }
     }
 
@@ -5015,6 +5272,16 @@ final class NativeRelayStore {
         return settings["voice_command"] ?? defaultVoiceCommand
     }
 
+    private func voiceCommandLastError(_ settings: [String: String]) -> String? {
+        let value = settings["voice_command_last_error"] ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    private func voiceSecretName(_ settings: [String: String]) -> String? {
+        let value = settings["voice_secret_name"] ?? ""
+        return value.isEmpty ? nil : value
+    }
+
     private func commandPaletteShortcut(_ settings: [String: String]) -> KeyboardShortcut {
         KeyboardShortcut(identifier: settings["command_palette_shortcut"])
     }
@@ -5086,7 +5353,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, voiceSecretName: nil, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

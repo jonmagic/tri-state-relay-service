@@ -155,6 +155,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertNotNil(object["inactiveLineCombinerCommand"] as? String)
         XCTAssertNotNil(object["speechCommand"] as? String)
         XCTAssertNotNil(object["voiceCommand"] as? String)
+        XCTAssertNil(object["voiceCommandLastError"] as? String)
 
         let counts = try XCTUnwrap(object["counts"] as? [String: Int])
         XCTAssertEqual(counts["queued"], 1)
@@ -190,6 +191,7 @@ final class RelayCliTests: XCTestCase {
         let command = "/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>"
         let updated = try jsonObject(runRelayCli(["settings", "--voice-command", command]).stdout)
         XCTAssertEqual(updated["voiceCommand"] as? String, command)
+        XCTAssertNil(updated["voiceCommandLastError"] as? String)
 
         let reread = try jsonObject(runRelayCli(["settings"]).stdout)
         XCTAssertEqual(reread["voiceCommand"] as? String, command)

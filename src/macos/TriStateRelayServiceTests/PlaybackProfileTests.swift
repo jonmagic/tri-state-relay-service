@@ -48,6 +48,32 @@ final class PlaybackProfileTests: XCTestCase {
         )
     }
 
+    func testVoiceCommandFailuresRecordDiagnosticsAndFallbackToSay() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("handleVoiceCommandFailure(message, text: fallbackText"))
+        XCTAssertTrue(source.contains("model.recordVoiceCommandError(redactedVoiceCommandError(message))"))
+        XCTAssertTrue(source.contains("redactedVoiceCommandError(message)"))
+        XCTAssertTrue(source.contains("model.status.muted || inputCaptureSensor.isInputCaptureActive()"))
+        XCTAssertTrue(source.contains("speakWithSay(text: text, option: option, claimId: claimId"))
+        XCTAssertTrue(source.contains("Last BYO voice command error:"))
+    }
+
+    func testVoiceCommandSecretNamesAreSafeEnvironmentNames() {
+        XCTAssertTrue(isSafeEnvironmentName("SPEECHIFY_API_KEY"))
+        XCTAssertTrue(isSafeEnvironmentName("_TSRS_SECRET_1"))
+        XCTAssertFalse(isSafeEnvironmentName("SpeechifyApiKey"))
+        XCTAssertFalse(isSafeEnvironmentName("SPEECHIFY-API-KEY"))
+        XCTAssertFalse(isSafeEnvironmentName("1SPEECHIFY_API_KEY"))
+    }
+
+    func testVoiceCommandSecretUiIsDirectProfileOnly() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("#if !APP_STORE\n        voiceSecretSaveButton.target = self"))
+        XCTAssertTrue(source.contains("#if !APP_STORE\n        let secretLabel = NSTextField(labelWithString: \"BYO voice command secret\")"))
+    }
+
     func testStaleVoiceCommandDirectoriesAreCleanedUp() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tsrs-cleanup-test-\(UUID().uuidString)", isDirectory: true)

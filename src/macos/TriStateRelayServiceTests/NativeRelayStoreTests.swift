@@ -18,6 +18,8 @@ final class NativeRelayStoreTests: XCTestCase {
         let settings = store.loadSettings()
         XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
         XCTAssertTrue(settings.voiceCommand.contains("Voice command."))
+        XCTAssertNil(settings.voiceCommandLastError)
+        XCTAssertNil(settings.voiceSecretName)
         XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
         XCTAssertFalse(settings.firstStartSetupComplete)
@@ -53,6 +55,27 @@ final class NativeRelayStoreTests: XCTestCase {
         defer {
             unsetenv("TSRS_DB_PATH")
             try? FileManager.default.removeItem(at: directory)
+        }
+
+        func testVoiceCommandErrorPersistsForDiagnostics() throws {
+            let directory = testArtifactDirectory()
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let databasePath = directory.appendingPathComponent("relay.db").path
+            setenv("TSRS_DB_PATH", databasePath, 1)
+            defer {
+                unsetenv("TSRS_DB_PATH")
+                try? FileManager.default.removeItem(at: directory)
+            }
+
+            let store = NativeRelayStore(profile: "direct")
+            store.recordVoiceCommandError("voice command failed with exit 42")
+
+            XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().voiceCommandLastError, "voice command failed with exit 42")
+
+            store.recordVoiceCommandError(nil)
+
+            XCTAssertNil(NativeRelayStore(profile: "direct").loadSettings().voiceCommandLastError)
         }
 
         let store = NativeRelayStore(profile: "direct")

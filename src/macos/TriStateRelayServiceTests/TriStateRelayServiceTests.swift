@@ -156,7 +156,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("NSStackView(views: [title, voiceLabel, voiceNote, voiceRow])"))
+        XCTAssertTrue(source.contains("var views: [NSView] = [title, voiceLabel, voiceNote, voiceRow]"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
     }
 
@@ -166,6 +166,14 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("let retentionLabel = NSTextField(labelWithString: \"Local cleanup retention\")"))
         XCTAssertTrue(source.contains("cleanupRetentionField.placeholderString = String(defaultCleanupRetentionMinutes)"))
         XCTAssertTrue(source.contains("@objc private func saveCleanupRetention"))
+    }
+
+    func testVoicePanelExposesByoVoiceSecretControls() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("Store one environment variable in Keychain"))
+        XCTAssertTrue(source.contains("SPEECHIFY_API_KEY"))
+        XCTAssertTrue(source.contains("@objc private func saveVoiceSecret"))
     }
 
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
