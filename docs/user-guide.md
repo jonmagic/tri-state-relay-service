@@ -200,4 +200,6 @@ The local queue lives on your Mac at:
 ~/Library/Application Support/Tri-State Relay Service/relay.db
 ```
 
+TSRS also keeps a local aggregate spoken-usage counter in that database. It records daily buckets by provider, model, voice, and line with relay counts and character counts, but it does not store another copy of message text. `relay status` includes a `spokenUsage` summary so you can estimate future text-to-speech costs without reading relay contents.
+
 You usually do not need to touch that file. It is listed here only so you know where your local queue data lives.
