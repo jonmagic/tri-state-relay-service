@@ -89,13 +89,14 @@ Good dogfood relays are short, intentionally authored status updates: start of a
 1. The CLI must never call `/usr/bin/say` or otherwise speak directly.
 2. Playback must stay app-owned.
 3. Direct builds may use Swift-launched `/usr/bin/say` for Siri/say voice fidelity.
-4. The legacy App Store-safe profile must use AVFoundation and avoid external speech commands.
-5. `relay-processor` must not be bundled into the app.
-6. Focus mode is the safe default.
-7. Ready mode releases one relay, then returns to Focus.
-8. Live mode plays new relays automatically by bounded line batches so a chatty line cannot starve other lines.
-9. Message validation must reject empty, oversized, and token-looking strings.
-10. Queue state and persistence rules should remain testable without launching the app UI or audio path.
+4. Direct builds may call a configured BYO voice command only to write an audio file; the command must not speak directly, and TSRS must play the file itself.
+5. The legacy App Store-safe profile must use AVFoundation and avoid external speech commands.
+6. `relay-processor` must not be bundled into the app.
+7. Focus mode is the safe default.
+8. Ready mode releases one relay, then returns to Focus.
+9. Live mode plays new relays automatically by bounded line batches so a chatty line cannot starve other lines.
+10. Message validation must reject empty, oversized, and token-looking strings.
+11. Queue state and persistence rules should remain testable without launching the app UI or audio path.
 
 ## Contribution posture
 

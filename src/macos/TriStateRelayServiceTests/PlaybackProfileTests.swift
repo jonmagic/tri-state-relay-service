@@ -6,7 +6,7 @@ final class PlaybackProfileTests: XCTestCase {
     func testSpeechPlaybackIsProfileGated() throws {
         let source = try triStateRelayServiceSource()
         XCTAssertTrue(source.contains("#if APP_STORE\n        let utterance = AVSpeechUtterance(string: claim.text)"))
-        XCTAssertTrue(source.contains("#else\n        let option = speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier)"))
+        XCTAssertTrue(source.contains("if commandIsEnabled(settings.voiceCommand)"))
         XCTAssertTrue(source.contains("process.executableURL = URL(fileURLWithPath: \"/usr/bin/say\")"))
     }
 
@@ -14,7 +14,7 @@ final class PlaybackProfileTests: XCTestCase {
         let source = try triStateRelayServiceSource()
 
         XCTAssertTrue(source.contains("button.image = model.status.statusImage(appearance: button.effectiveAppearance, playbackActive: nativePlayback.isPlaying)"))
-        XCTAssertTrue(source.contains("var isPlaying: Bool {\n        currentProcess != nil || synthesizer.isSpeaking\n    }"))
+        XCTAssertTrue(source.contains("currentProcess != nil || currentAudioPlayer != nil || synthesizer.isSpeaking"))
         XCTAssertTrue(source.contains("onChange()\n        speakReplay(text)"))
     }
 
@@ -34,6 +34,18 @@ final class PlaybackProfileTests: XCTestCase {
             XCTAssertEqual(sayArguments(text: "Relay ready", option: option), ["-v", option.name, "Relay ready"])
             XCTAssertFalse(option.name.isEmpty)
         }
+    }
+
+    func testVoiceCommandArgumentsExpandFileAndVoicePlaceholders() {
+        XCTAssertEqual(
+            voiceCommandArguments(
+                ["-v", "<voice-id>", "-f", "<text-file>", "-o", "<output-file>"],
+                textFile: "/tmp/relay.txt",
+                outputFile: "/tmp/relay.aiff",
+                voiceID: "Samantha"
+            ),
+            ["-v", "Samantha", "-f", "/tmp/relay.txt", "-o", "/tmp/relay.aiff"]
+        )
     }
 
     func testChangingVoiceSelectionDoesNotAutoPreview() throws {

@@ -2313,11 +2313,17 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
     private var currentProcess: Process?
+    private var currentAudioPlayer: AVAudioPlayer?
+    private var currentAudioDirectory: URL?
     private var inputCaptureRetryTimer: Timer?
     private let synthesizer = AVSpeechSynthesizer()
 
     var isPlaying: Bool {
-        currentProcess != nil || synthesizer.isSpeaking
+        isPlaybackBusy
+    }
+
+    private var isPlaybackBusy: Bool {
+        currentProcess != nil || currentAudioPlayer != nil || synthesizer.isSpeaking
     }
 
     init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
@@ -2329,7 +2335,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func playNext(line: String? = nil) {
-        guard !synthesizer.isSpeaking, currentProcess == nil else {
+        guard !isPlaybackBusy else {
             return
         }
 
@@ -2356,7 +2362,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func playQueuedMessage(line: String, id: Int) {
-        guard !synthesizer.isSpeaking, currentProcess == nil else {
+        guard !isPlaybackBusy else {
             return
         }
 
@@ -2419,7 +2425,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
     func replayDeliveredMessage(_ text: String) {
         model.refresh()
-        guard !model.status.muted, !synthesizer.isSpeaking, currentProcess == nil else {
+        guard !model.status.muted, !isPlaybackBusy else {
             model.refresh()
             onChange()
             return
@@ -2443,7 +2449,13 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         utterance.pitchMultiplier = 1
         synthesizer.speak(utterance)
 #else
-        let option = speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier)
+        let settings = model.loadSettings()
+        let option = speechVoiceOption(identifier: settings.speechVoiceIdentifier)
+        if commandIsEnabled(settings.voiceCommand) {
+            synthesizeVoiceCommand(text: claim.text, option: option, claimId: claim.id, command: settings.voiceCommand)
+            return
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
         process.arguments = sayArguments(text: claim.text, option: option)
@@ -2490,7 +2502,13 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         utterance.pitchMultiplier = 1
         synthesizer.speak(utterance)
 #else
-        let option = speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier)
+        let settings = model.loadSettings()
+        let option = speechVoiceOption(identifier: settings.speechVoiceIdentifier)
+        if commandIsEnabled(settings.voiceCommand) {
+            synthesizeVoiceCommand(text: text, option: option, claimId: nil, command: settings.voiceCommand)
+            return
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/say")
         process.arguments = sayArguments(text: text, option: option)
@@ -2517,6 +2535,110 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 #endif
     }
 
+#if !APP_STORE
+    private func synthesizeVoiceCommand(text: String, option: SpeechVoiceOption, claimId: Int?, command: String) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsrs-voice-\(UUID().uuidString)", isDirectory: true)
+        let textURL = directory.appendingPathComponent("relay.txt")
+        let outputURL = directory.appendingPathComponent("relay.aiff")
+
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try text.write(to: textURL, atomically: true, encoding: .utf8)
+            guard let enabledCommand = firstEnabledCommandLine(command) else {
+                throw VoiceCommandError.empty
+            }
+            let commandParts = try splitVoiceCommand(enabledCommand)
+            guard let executable = commandParts.first else {
+                throw VoiceCommandError.empty
+            }
+
+            let process = Process()
+            if executable.contains("/") {
+                process.executableURL = URL(fileURLWithPath: executable)
+                process.arguments = voiceCommandArguments(
+                    Array(commandParts.dropFirst()),
+                    textFile: textURL.path,
+                    outputFile: outputURL.path,
+                    voiceID: option.name
+                )
+            } else {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = [executable] + voiceCommandArguments(
+                    Array(commandParts.dropFirst()),
+                    textFile: textURL.path,
+                    outputFile: outputURL.path,
+                    voiceID: option.name
+                )
+            }
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+            process.terminationHandler = { [weak self] process in
+                DispatchQueue.main.async {
+                    self?.handleVoiceCommandFinished(process: process, outputURL: outputURL, directory: directory, claimId: claimId)
+                }
+            }
+
+            currentProcess = process
+            currentAudioDirectory = directory
+            try process.run()
+        } catch {
+            cleanupVoiceCommandDirectory(directory)
+            currentProcess = nil
+            currentAudioDirectory = nil
+            if let claimId {
+                model.markNativeSpeechFailed(id: claimId)
+                currentId = nil
+            }
+            onChange()
+        }
+    }
+
+    private func handleVoiceCommandFinished(process: Process, outputURL: URL, directory: URL, claimId: Int?) {
+        currentProcess = nil
+
+        guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: outputURL.path) else {
+            cleanupVoiceCommandDirectory(directory)
+            currentAudioDirectory = nil
+            if let claimId {
+                model.markNativeSpeechFailed(id: claimId)
+                currentId = nil
+            }
+            onChange()
+            return
+        }
+
+        model.refresh()
+        if model.status.muted || inputCaptureSensor.isInputCaptureActive() {
+            cleanupVoiceCommandDirectory(directory)
+            currentAudioDirectory = nil
+            if let claimId {
+                model.requeueNativeSpeech(id: claimId)
+                currentId = nil
+            }
+            onChange()
+            return
+        }
+
+        do {
+            let player = try AVAudioPlayer(contentsOf: outputURL)
+            currentAudioPlayer = player
+            player.delegate = self
+            player.prepareToPlay()
+            player.play()
+            onChange()
+        } catch {
+            cleanupVoiceCommandDirectory(directory)
+            currentAudioDirectory = nil
+            if let claimId {
+                model.markNativeSpeechFailed(id: claimId)
+                currentId = nil
+            }
+            onChange()
+        }
+    }
+#endif
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         guard let id = currentId else {
             onChange()
@@ -2542,6 +2664,101 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         onChange()
     }
 }
+
+#if !APP_STORE
+extension NativeSpeechPlayback: AVAudioPlayerDelegate {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let completedClaim = currentId != nil
+        if let id = currentId {
+            if flag {
+                model.markNativeSpeechHeard(id: id)
+            } else {
+                model.markNativeSpeechFailed(id: id)
+            }
+        }
+
+        currentId = nil
+        currentAudioPlayer = nil
+        cleanupVoiceCommandDirectory(currentAudioDirectory)
+        currentAudioDirectory = nil
+        onChange()
+        if completedClaim && model.status.mode == "live" {
+            playNext()
+        }
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        if let id = currentId {
+            model.markNativeSpeechFailed(id: id)
+        }
+        currentId = nil
+        currentAudioPlayer = nil
+        cleanupVoiceCommandDirectory(currentAudioDirectory)
+        currentAudioDirectory = nil
+        onChange()
+    }
+}
+
+private enum VoiceCommandError: Error {
+    case empty
+    case unterminatedQuote
+}
+
+func splitVoiceCommand(_ command: String) throws -> [String] {
+    var parts: [String] = []
+    var current = ""
+    var quote: Character?
+
+    for character in command {
+        if let activeQuote = quote {
+            if character == activeQuote {
+                quote = nil
+            } else {
+                current.append(character)
+            }
+            continue
+        }
+
+        if character == "\"" || character == "'" {
+            quote = character
+        } else if character.isWhitespace {
+            if !current.isEmpty {
+                parts.append(current)
+                current = ""
+            }
+        } else {
+            current.append(character)
+        }
+    }
+
+    if quote != nil {
+        throw VoiceCommandError.unterminatedQuote
+    }
+
+    if !current.isEmpty {
+        parts.append(current)
+    }
+
+    return parts
+}
+
+func voiceCommandArguments(_ arguments: [String], textFile: String, outputFile: String, voiceID: String) -> [String] {
+    arguments.map { argument in
+        argument
+            .replacingOccurrences(of: "<text-file>", with: textFile)
+            .replacingOccurrences(of: "<output-file>", with: outputFile)
+            .replacingOccurrences(of: "<voice-id>", with: voiceID)
+    }
+}
+
+private func cleanupVoiceCommandDirectory(_ directory: URL?) {
+    guard let directory else {
+        return
+    }
+
+    try? FileManager.default.removeItem(at: directory)
+}
+#endif
 
 protocol InputCaptureSensing {
     func isInputCaptureActive() -> Bool
@@ -2955,6 +3172,11 @@ final class MenuBarModel {
 
     func markNativeSpeechFailed(id: Int) {
         store.markNativeSpeechFailed(id: id)
+        refresh()
+    }
+
+    func requeueNativeSpeech(id: Int) {
+        store.requeueNativeSpeech(id: id)
         refresh()
     }
 
@@ -3456,6 +3678,7 @@ struct LineSource {
 
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
+    let voiceCommand: String
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
     let firstStartSetupComplete: Bool
@@ -3566,6 +3789,7 @@ final class NativeRelayStore {
             let settings = loadRawSettings(database)
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
+                voiceCommand: voiceCommand(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
                 commandPaletteShortcut: commandPaletteShortcut(settings),
                 firstStartSetupComplete: firstStartSetupComplete(settings)
@@ -3904,11 +4128,12 @@ final class NativeRelayStore {
             let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             let spoken = spokenText(relay, includeLine: includeLine)
             let settings = loadRawSettings(database)
+            let usesVoiceCommand = commandIsEnabled(voiceCommand(settings))
             recordSpokenUsage(
                 database,
                 line: relay.line,
-                provider: "apple",
-                model: profile == "app-store" ? "avfoundation" : "direct-say",
+                provider: usesVoiceCommand ? "voice-command" : "apple",
+                model: usesVoiceCommand ? "audio-file" : (profile == "app-store" ? "avfoundation" : "direct-say"),
                 voiceIdentifier: speechVoiceIdentifier(settings) ?? defaultSpeechVoiceIdentifier,
                 characterCount: spoken.count
             )
@@ -3920,6 +4145,14 @@ final class NativeRelayStore {
         write { database in
             if markStatus(database, id: id, status: "failed") == nil {
                 NSLog("TSRS native store could not mark missing relay failed: \(id)")
+            }
+        }
+    }
+
+    func requeueNativeSpeech(id: Int) {
+        write { database in
+            if requeueSpeaking(database, id: id) == nil {
+                NSLog("TSRS native store could not requeue missing speaking relay: \(id)")
             }
         }
     }
@@ -4034,6 +4267,7 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "inactive_line_combiner", value: "none")
         setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
+        setSettingIfMissing(database, key: "voice_command", value: defaultVoiceCommand)
         setSettingIfMissing(database, key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue(database))
         setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
@@ -4465,6 +4699,15 @@ final class NativeRelayStore {
         """, [status, nowString(), String(id)])
     }
 
+    private func requeueSpeaking(_ database: OpaquePointer, id: Int) -> NativeRelay? {
+        returningRelay(database, """
+            UPDATE relays
+            SET status = 'queued', updated_at = ?
+            WHERE id = ? AND status = 'speaking'
+            RETURNING id, line, message, type, priority, status, created_at, updated_at
+        """, [nowString(), String(id)])
+    }
+
     private func failStaleSpeaking(_ database: OpaquePointer) {
         let staleBefore = nowString(addingMilliseconds: -60_000)
         execute(database, """
@@ -4591,6 +4834,14 @@ final class NativeRelayStore {
         return settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
     }
 
+    private func voiceCommand(_ settings: [String: String]) -> String {
+        if profile == "app-store" {
+            return appStoreUnavailableCommand("voice command")
+        }
+
+        return settings["voice_command"] ?? defaultVoiceCommand
+    }
+
     private func commandPaletteShortcut(_ settings: [String: String]) -> KeyboardShortcut {
         KeyboardShortcut(identifier: settings["command_palette_shortcut"])
     }
@@ -4654,7 +4905,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

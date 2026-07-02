@@ -234,7 +234,7 @@ Commands:
                        Get or set active line.
   combiner [--command <command>]
                        Get or set inactive-line combiner command.
-  settings [--combiner-command <command>] [--speech-command <command>]
+  settings [--combiner-command <command>] [--speech-command <command>] [--voice-command <command>]
                        Print settings JSON.
   first-start [status|reset|complete]
                        Inspect or change only first-start setup completion.
@@ -561,7 +561,7 @@ private func runCombinerCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
 
 private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
         do {
-            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command"])
+            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command", "voice-command"])
             return withRelayCliStore { store in
                 var changed = false
                 if let command = flags["combiner-command"] {
@@ -570,6 +570,10 @@ private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
                 }
                 if let command = flags["speech-command"] {
                     try store.setSpeechCommand(command)
+                    changed = true
+                }
+                if let command = flags["voice-command"] {
+                    try store.setVoiceCommand(command == "none" ? "" : command)
                     changed = true
                 }
                 if changed {
@@ -952,6 +956,7 @@ private final class RelayCliStore {
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
+            "voiceCommand": try voiceCommand(),
             "activeLine": state.activeLine as Any,
             "counts": counts,
             "queueCount": counts["queued"] ?? 0,
@@ -983,6 +988,7 @@ private final class RelayCliStore {
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
+            "voiceCommand": try voiceCommand(),
             "capabilities": directRelayCapabilities,
         ]
         return try jsonString(object)
@@ -1027,6 +1033,14 @@ private final class RelayCliStore {
 
     func setSpeechCommand(_ command: String) throws {
         try setSetting(key: "speech_command", value: resetBlankCommand(command, fallback: defaultSpeechCommand))
+    }
+
+    func voiceCommand() throws -> String {
+        try rawSettings()["voice_command"] ?? defaultVoiceCommand
+    }
+
+    func setVoiceCommand(_ command: String) throws {
+        try setSetting(key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
     }
 
     func firstStartSetupComplete() throws -> Bool {
@@ -1499,6 +1513,7 @@ private final class RelayCliStore {
         try setSettingIfMissing(key: "inactive_line_combiner", value: "none")
         try setSettingIfMissing(key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         try setSettingIfMissing(key: "speech_command", value: defaultSpeechCommand)
+        try setSettingIfMissing(key: "voice_command", value: defaultVoiceCommand)
         try setSettingIfMissing(key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue())
     }
 
@@ -2177,6 +2192,15 @@ let defaultSpeechCommand = """
 # /usr/bin/say ships with macOS, so no extra install is required.
 # Placeholders are inserted as single argv values, not shell-expanded.
 /usr/bin/say <message>
+"""
+
+let defaultVoiceCommand = """
+# Voice command.
+# Optional direct-build command that writes audio for TSRS to play.
+# It must not speak directly. Leave this commented to use built-in /usr/bin/say playback.
+# Supported placeholders are inserted as single argv values: <text-file>, <output-file>, <voice-id>
+#
+# /usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
 """
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -154,6 +154,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(object["queueCount"] as? Int, 1)
         XCTAssertNotNil(object["inactiveLineCombinerCommand"] as? String)
         XCTAssertNotNil(object["speechCommand"] as? String)
+        XCTAssertNotNil(object["voiceCommand"] as? String)
 
         let counts = try XCTUnwrap(object["counts"] as? [String: Int])
         XCTAssertEqual(counts["queued"], 1)
@@ -181,6 +182,20 @@ final class RelayCliTests: XCTestCase {
 
         let reread = try jsonObject(runRelayCli(["settings"]).stdout)
         XCTAssertEqual(reread["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
+    }
+
+    func testSettingsPersistsVoiceCommand() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let command = "/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>"
+        let updated = try jsonObject(runRelayCli(["settings", "--voice-command", command]).stdout)
+        XCTAssertEqual(updated["voiceCommand"] as? String, command)
+
+        let reread = try jsonObject(runRelayCli(["settings"]).stdout)
+        XCTAssertEqual(reread["voiceCommand"] as? String, command)
+
+        let reset = try jsonObject(runRelayCli(["settings", "--voice-command", "none"]).stdout)
+        XCTAssertTrue((reset["voiceCommand"] as? String)?.contains("Voice command.") == true)
     }
 
     func testFirstStartCommandResetsOnlySetupCompletion() {

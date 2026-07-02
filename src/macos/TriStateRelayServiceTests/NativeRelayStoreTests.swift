@@ -17,6 +17,7 @@ final class NativeRelayStoreTests: XCTestCase {
         
         let settings = store.loadSettings()
         XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
+        XCTAssertTrue(settings.voiceCommand.contains("Voice command."))
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
         XCTAssertFalse(settings.firstStartSetupComplete)
         
@@ -30,6 +31,7 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'mode'"), "focus")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'muted'"), "false")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'command_palette_shortcut'"), "control-option-command-space")
+        XCTAssertTrue(database.scalar("SELECT value FROM settings WHERE key = 'voice_command'")?.contains("Voice command.") == true)
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'first_start_setup_complete'"), "false")
         XCTAssertEqual(database.scalar("SELECT version FROM schema_migrations WHERE version = 1"), "1")
         XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_idx'"), "relays_status_idx")

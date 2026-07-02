@@ -188,6 +188,28 @@ The command template receives the inactive-line updates as input and should retu
 
 Combiner output should follow the same rules as any other relay: no secrets, no raw logs, no code dumps, and no long explanations.
 
+## Advanced: BYO voice command
+
+Direct builds can use a configured voice command to generate an audio file for TSRS to play. This is modeled after `say -o`: the command must write audio to an output path and must not speak directly. TSRS still owns playback, mute/focus/live safety checks, and delivered-state marking.
+
+Inspect or set the command with:
+
+```sh
+relay settings
+relay settings --voice-command "/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>"
+relay settings --voice-command none
+```
+
+Supported placeholders are inserted as single arguments, not shell-expanded:
+
+| Placeholder | Meaning |
+| --- | --- |
+| `<text-file>` | UTF-8 file containing the relay text to synthesize |
+| `<output-file>` | Audio file path TSRS will play after the command exits |
+| `<voice-id>` | The selected TSRS voice name, such as a `say` voice |
+
+This makes cloud or local model wrappers possible later, including an ElevenLabs-backed CLI, without putting provider-specific API code into the app. The wrapper should read the text file, write an audio file, and exit nonzero if synthesis fails.
+
 ## If something does not work
 
 If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
