@@ -337,6 +337,9 @@ final class RelayCliTests: XCTestCase {
         let counts = try XCTUnwrap(status["counts"] as? [String: Int])
         XCTAssertEqual(counts["heard"], 1)
         XCTAssertEqual(counts["speaking"], 0)
+        let spokenUsage = try XCTUnwrap(status["spokenUsage"] as? [String: Any])
+        XCTAssertEqual(spokenUsage["relays"] as? Int, 1)
+        XCTAssertEqual(spokenUsage["characters"] as? Int, 18)
 
         let failed = runRelayCli(["app-mark-failed", "--id", String(id)])
         XCTAssertEqual(failed.stdout, "failed #\(id)")

@@ -35,6 +35,8 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_idx'"), "relays_status_idx")
         XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_line_idx'"), "relays_status_line_idx")
         XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_source_context_latest_idx'"), "relays_source_context_latest_idx")
+        XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'spoken_usage_daily'"), "spoken_usage_daily")
+        XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'spoken_usage_daily_day_idx'"), "spoken_usage_daily_day_idx")
         XCTAssertEqual(database.scalar("PRAGMA journal_mode"), "wal")
     }
 
@@ -145,6 +147,31 @@ final class NativeRelayStoreTests: XCTestCase {
 
         XCTAssertEqual(messages.map(\.message), ["queued high", "queued low", "delivered newer", "delivered older"])
         XCTAssertEqual(messages.map(\.displayStatus), ["Queued", "Queued", "Delivered", "Delivered"])
+    }
+
+    func testMarkNativeSpeechHeardRecordsAggregateSpokenUsage() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        let first = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "first", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+        let second = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "second", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+
+        XCTAssertEqual(store.claimQueuedMessageForNativeSpeech(line: "Brain", id: first.id)?.text, "Brain. first")
+        store.markNativeSpeechHeard(id: first.id)
+        XCTAssertEqual(store.claimQueuedMessageForNativeSpeech(line: "Brain", id: second.id)?.text, "second")
+        store.markNativeSpeechHeard(id: second.id)
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        XCTAssertEqual(database.scalar("SELECT relay_count FROM spoken_usage_daily WHERE line = 'Brain' AND provider = 'apple' AND model = 'direct-say'"), "2")
+        XCTAssertEqual(database.scalar("SELECT character_count FROM spoken_usage_daily WHERE line = 'Brain' AND provider = 'apple' AND model = 'direct-say'"), "18")
     }
 
     func testLoadStatusUsesLatestSourceContextByLine() throws {

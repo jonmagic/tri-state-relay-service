@@ -3825,9 +3825,10 @@ final class NativeRelayStore {
                 return nil
             }
 
+            let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             return NativeSpeechClaim(
                 id: relay.id,
-                text: spokenText(relay, includeLine: shouldPrefixSpokenLine(database, line: relay.line))
+                text: spokenText(relay, includeLine: includeLine)
             )
         }
     }
@@ -3850,9 +3851,10 @@ final class NativeRelayStore {
                 return nil
             }
 
+            let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             return NativeSpeechClaim(
                 id: relay.id,
-                text: spokenText(relay, includeLine: shouldPrefixSpokenLine(database, line: relay.line))
+                text: spokenText(relay, includeLine: includeLine)
             )
         }
     }
@@ -3899,6 +3901,17 @@ final class NativeRelayStore {
                 return
             }
 
+            let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
+            let spoken = spokenText(relay, includeLine: includeLine)
+            let settings = loadRawSettings(database)
+            recordSpokenUsage(
+                database,
+                line: relay.line,
+                provider: "apple",
+                model: profile == "app-store" ? "avfoundation" : "direct-say",
+                voiceIdentifier: speechVoiceIdentifier(settings) ?? defaultSpeechVoiceIdentifier,
+                characterCount: spoken.count
+            )
             recordSpokenLine(database, line: relay.line)
         }
     }
@@ -4000,6 +4013,19 @@ final class NativeRelayStore {
             CREATE INDEX IF NOT EXISTS relays_source_context_latest_idx
               ON relays(line, created_at DESC, id DESC)
               WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS spoken_usage_daily (
+              day TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              model TEXT NOT NULL,
+              voice_identifier TEXT NOT NULL,
+              line TEXT NOT NULL,
+              relay_count INTEGER NOT NULL DEFAULT 0,
+              character_count INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY(day, provider, model, voice_identifier, line)
+            );
+            CREATE INDEX IF NOT EXISTS spoken_usage_daily_day_idx
+              ON spoken_usage_daily(day);
         """)
 
         execute(database, "INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
@@ -4469,6 +4495,27 @@ final class NativeRelayStore {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         setSetting(database, key: "last_spoken_line", value: "{\"line\":\"\(escapedLine)\",\"spokenAt\":\"\(nowString())\"}")
+    }
+
+    private func recordSpokenUsage(
+        _ database: OpaquePointer,
+        line: String,
+        provider: String,
+        model: String,
+        voiceIdentifier: String,
+        characterCount: Int
+    ) {
+        let day = String(nowString().prefix(10))
+        execute(database, """
+            INSERT INTO spoken_usage_daily (
+              day, provider, model, voice_identifier, line, relay_count, character_count, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(day, provider, model, voice_identifier, line) DO UPDATE SET
+              relay_count = relay_count + 1,
+              character_count = character_count + excluded.character_count,
+              updated_at = excluded.updated_at
+        """, [day, provider, model, voiceIdentifier, line, String(characterCount), nowString()])
     }
 
     private func shouldPrefixSpokenLine(_ database: OpaquePointer, line: String) -> Bool {

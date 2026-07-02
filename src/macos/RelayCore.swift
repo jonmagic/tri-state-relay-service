@@ -190,6 +190,10 @@ func spokenRelayText(line: String, type: String, message: String, includeLine: B
     return "\(linePrefix)\(typePrefix)\(message)"
 }
 
+let defaultSpeechUsageProvider = "apple"
+let defaultSpeechUsageModel = "direct-say"
+let defaultSpeechUsageVoiceIdentifier = "default"
+
 struct RelayCliResult: Equatable {
     let stdout: String
     let stderr: String
@@ -700,6 +704,15 @@ private func runAppMarkStatusCommand(_ arguments: [String], status: String, reco
         return withRelayCliStore { store in
             let relay = try store.markStatus(id: id, status: status)
             if recordSpoken {
+                let includeLine = try store.shouldPrefixSpokenLine(relay.line)
+                let text = spokenRelayText(line: relay.line, type: relay.type, message: relay.message, includeLine: includeLine)
+                try store.recordSpokenUsage(
+                    line: relay.line,
+                    provider: defaultSpeechUsageProvider,
+                    model: defaultSpeechUsageModel,
+                    voiceIdentifier: defaultSpeechUsageVoiceIdentifier,
+                    characterCount: text.count
+                )
                 try store.recordSpokenLine(relay.line)
             }
             return RelayCliResult(stdout: "\(status) #\(relay.id)", stderr: "", exitCode: 0)
@@ -945,6 +958,7 @@ private final class RelayCliStore {
             "attentionCount": (counts["queued"] ?? 0) + (counts["heard"] ?? 0) + (counts["failed"] ?? 0),
             "overview": try queueOverview(),
             "lines": lines,
+            "spokenUsage": try spokenUsageSummary(),
             "capabilities": directRelayCapabilities,
         ]
 
@@ -1235,6 +1249,74 @@ private final class RelayCliStore {
         try setSetting(key: "last_spoken_line", value: payload)
     }
 
+    func recordSpokenUsage(line: String, provider: String, model: String, voiceIdentifier: String, characterCount: Int) throws {
+        let day = String(nowString().prefix(10))
+        try execute("""
+            INSERT INTO spoken_usage_daily (
+              day, provider, model, voice_identifier, line, relay_count, character_count, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(day, provider, model, voice_identifier, line) DO UPDATE SET
+              relay_count = relay_count + 1,
+              character_count = character_count + excluded.character_count,
+              updated_at = excluded.updated_at
+        """, [day, provider, model, voiceIdentifier, line, String(characterCount), nowString()])
+    }
+
+    func spokenUsageSummary(days: Int = 30) throws -> [String: Any] {
+        let since = String(nowString(from: Date().addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))).prefix(10))
+        var totalRelays = 0
+        var totalCharacters = 0
+        try query("""
+            SELECT COALESCE(SUM(relay_count), 0), COALESCE(SUM(character_count), 0)
+            FROM spoken_usage_daily
+            WHERE day >= ?
+        """, [since]) { statement in
+            totalRelays = Int(sqlite3_column_int(statement, 0))
+            totalCharacters = Int(sqlite3_column_int(statement, 1))
+        }
+
+        var byProvider: [[String: Any]] = []
+        try query("""
+            SELECT provider, model, SUM(relay_count), SUM(character_count)
+            FROM spoken_usage_daily
+            WHERE day >= ?
+            GROUP BY provider, model
+            ORDER BY SUM(character_count) DESC, provider ASC, model ASC
+        """, [since]) { statement in
+            byProvider.append([
+                "provider": columnString(statement, 0) ?? "",
+                "model": columnString(statement, 1) ?? "",
+                "relays": Int(sqlite3_column_int(statement, 2)),
+                "characters": Int(sqlite3_column_int(statement, 3)),
+            ])
+        }
+
+        var byLine: [[String: Any]] = []
+        try query("""
+            SELECT line, SUM(relay_count), SUM(character_count)
+            FROM spoken_usage_daily
+            WHERE day >= ?
+            GROUP BY line
+            ORDER BY SUM(character_count) DESC, line ASC
+            LIMIT 20
+        """, [since]) { statement in
+            byLine.append([
+                "line": columnString(statement, 0) ?? "",
+                "relays": Int(sqlite3_column_int(statement, 1)),
+                "characters": Int(sqlite3_column_int(statement, 2)),
+            ])
+        }
+
+        return [
+            "days": days,
+            "relays": totalRelays,
+            "characters": totalCharacters,
+            "byProvider": byProvider,
+            "byLine": byLine,
+        ]
+    }
+
     func shouldPrefixSpokenLine(_ line: String, timeoutSeconds: Double = 60) throws -> Bool {
         guard let last = try lastSpokenLine(), last.line == line else {
             return true
@@ -1396,6 +1478,19 @@ private final class RelayCliStore {
             CREATE INDEX IF NOT EXISTS relays_source_context_latest_idx
               ON relays(line, created_at DESC, id DESC)
               WHERE cwd IS NOT NULL OR url IS NOT NULL OR app IS NOT NULL OR session IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS spoken_usage_daily (
+              day TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              model TEXT NOT NULL,
+              voice_identifier TEXT NOT NULL,
+              line TEXT NOT NULL,
+              relay_count INTEGER NOT NULL DEFAULT 0,
+              character_count INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY(day, provider, model, voice_identifier, line)
+            );
+            CREATE INDEX IF NOT EXISTS spoken_usage_daily_day_idx
+              ON spoken_usage_daily(day);
         """)
 
         try execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
