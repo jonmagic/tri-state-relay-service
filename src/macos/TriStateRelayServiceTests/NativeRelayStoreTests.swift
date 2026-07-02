@@ -18,6 +18,7 @@ final class NativeRelayStoreTests: XCTestCase {
         let settings = store.loadSettings()
         XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
         XCTAssertTrue(settings.voiceCommand.contains("Voice command."))
+        XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
         XCTAssertFalse(settings.firstStartSetupComplete)
         
@@ -32,6 +33,7 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'muted'"), "false")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'command_palette_shortcut'"), "control-option-command-space")
         XCTAssertTrue(database.scalar("SELECT value FROM settings WHERE key = 'voice_command'")?.contains("Voice command.") == true)
+        XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'cleanup_retention_minutes'"), String(defaultCleanupRetentionMinutes))
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'first_start_setup_complete'"), "false")
         XCTAssertEqual(database.scalar("SELECT version FROM schema_migrations WHERE version = 1"), "1")
         XCTAssertEqual(database.scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'relays_status_idx'"), "relays_status_idx")
@@ -57,6 +59,32 @@ final class NativeRelayStoreTests: XCTestCase {
         store.saveCommandPaletteShortcut(KeyboardShortcut(identifier: "control-shift-command-y"))
 
         XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().commandPaletteShortcut.identifier, "control-shift-command-y")
+    }
+
+    func testStartupCleanupPrunesOldTerminalRowsAndUsageBuckets() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        store.saveCleanupRetentionMinutes(1)
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        database.execute("INSERT INTO relays (line, message, type, priority, status, created_at, updated_at) VALUES ('Brain', 'old expired', 'update', 'normal', 'expired', '2000-01-01T00:00:00.000Z', '2000-01-01T00:00:00.000Z')")
+        database.execute("INSERT INTO relays (line, message, type, priority, status, created_at, updated_at) VALUES ('Brain', 'still queued', 'update', 'normal', 'queued', '2000-01-01T00:00:00.000Z', '2000-01-01T00:00:00.000Z')")
+        database.execute("INSERT INTO spoken_usage_daily (day, provider, model, voice_identifier, line, relay_count, character_count, updated_at) VALUES ('2000-01-01', 'apple', 'direct-say', 'default', 'Brain', 1, 10, '2000-01-01T00:00:00.000Z')")
+
+        store.cleanupOnStartup()
+
+        XCTAssertEqual(database.scalar("SELECT COUNT(*) FROM relays WHERE status = 'expired'"), "0")
+        XCTAssertEqual(database.scalar("SELECT COUNT(*) FROM relays WHERE status = 'queued'"), "1")
+        XCTAssertEqual(database.scalar("SELECT COUNT(*) FROM spoken_usage_daily"), "0")
     }
 
     func testFirstStartSetupCompletionPersistsAndDoesNotRetrigger() throws {

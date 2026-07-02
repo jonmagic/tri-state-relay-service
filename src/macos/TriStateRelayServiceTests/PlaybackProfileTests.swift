@@ -48,6 +48,34 @@ final class PlaybackProfileTests: XCTestCase {
         )
     }
 
+    func testStaleVoiceCommandDirectoriesAreCleanedUp() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsrs-cleanup-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let stale = directory.appendingPathComponent("tsrs-voice-stale", isDirectory: true)
+        let fresh = directory.appendingPathComponent("tsrs-voice-fresh", isDirectory: true)
+        let unrelated = directory.appendingPathComponent("other-stale", isDirectory: true)
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+
+        let now = Date(timeIntervalSince1970: 10_000)
+        let old = now.addingTimeInterval(-120 * 60)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: stale.path)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: unrelated.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fresh.path)
+
+        removeStaleVoiceCommandDirectories(in: directory, now: now, staleMinutes: 60)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    }
+
     func testChangingVoiceSelectionDoesNotAutoPreview() throws {
         let source = try triStateRelayServiceSource()
         guard let selectVoiceRange = source.range(of: "@objc private func selectVoice") else {

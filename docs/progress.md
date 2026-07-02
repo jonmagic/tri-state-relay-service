@@ -33,6 +33,7 @@ Current state:
 25. The menu bar app registers one configurable global command-palette hotkey. The default is Control-Option-Command-Space, which opens the palette with Play Next selected. Right click opens the palette with an empty query.
 26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `/usr/local/bin/relay` without overwriting foreign binaries.
 27. The app records local daily spoken-usage buckets by provider, model, voice, and line, and `relay status` exposes aggregate relay and character counts without storing another copy of message text.
+28. Settings includes an Advanced panel for local cleanup retention in minutes. Startup cleanup prunes old terminal relay rows, old spoken-usage buckets, and stale BYO voice temp directories while leaving queued relays alone.
 
 Roadmap gaps from the latest feature review:
 

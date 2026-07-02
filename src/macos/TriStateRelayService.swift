@@ -57,6 +57,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         registerQueueChangedObserver()
+        model.cleanupOnStartup()
         refreshAndPlayIfEligible()
         startSafetyRefreshTimer()
         registerGlobalHotKeys()
@@ -1035,18 +1036,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
     private let openAtLoginCheckbox = NSButton(checkboxWithTitle: "Open Tri-State Relay Service at login", target: nil, action: nil)
     private let openAtLoginStatusView = NSTextField(labelWithString: "")
+    private let cleanupRetentionField = NSTextField(string: "")
+    private let cleanupRetentionStatusView = NSTextField(labelWithString: "")
+    private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
     private let cliSectionButton = NSButton(title: "Setup", target: nil, action: nil)
     private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
     private let secondarySectionButton = NSButton(title: settingsSecondarySectionTitle, target: nil, action: nil)
+    private let advancedSectionButton = NSButton(title: "Advanced", target: nil, action: nil)
     private let cliSectionRow = SidebarRowView()
     private let voiceSectionRow = SidebarRowView()
     private let secondarySectionRow = SidebarRowView()
+    private let advancedSectionRow = SidebarRowView()
     private let cliIconView = NSImageView(image: sidebarIcon(systemName: "terminal"))
     private let voiceIconView = NSImageView(image: sidebarIcon(systemName: "speaker.wave.2"))
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
+    private let advancedIconView = NSImageView(image: sidebarIcon(systemName: "gearshape"))
     private let versionLabel = NSTextField(labelWithString: "Version \(appVersion)")
     private let voiceOptions = availableSpeechVoiceOptions()
     private let keyboardNavigationFocusView = SettingsKeyboardFocusView(frame: .zero)
@@ -1070,6 +1077,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureSidebarRow(cliSectionRow, button: cliSectionButton, iconView: cliIconView, selected: true)
         configureSidebarRow(voiceSectionRow, button: voiceSectionButton, iconView: voiceIconView, selected: false)
         configureSidebarRow(secondarySectionRow, button: secondarySectionButton, iconView: secondaryIconView, selected: false)
+        configureSidebarRow(advancedSectionRow, button: advancedSectionButton, iconView: advancedIconView, selected: false)
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
         versionLabel.font = NSFont.systemFont(ofSize: 11)
         versionLabel.textColor = .tertiaryLabelColor
@@ -1083,6 +1091,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #else
         settingsTabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
 #endif
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Advanced"))
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 430))
         keyboardNavigationFocusView.translatesAutoresizingMaskIntoConstraints = false
@@ -1090,6 +1099,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sidebar.addSubview(cliSectionRow)
         sidebar.addSubview(voiceSectionRow)
         sidebar.addSubview(secondarySectionRow)
+        sidebar.addSubview(advancedSectionRow)
         sidebar.addSubview(versionLabel)
         content.addSubview(settingsTabView)
         content.addSubview(keyboardNavigationFocusView)
@@ -1124,12 +1134,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         settingsTabView.tabViewItem(at: 0).view = cliTabView()
         settingsTabView.tabViewItem(at: 1).label = "Voice"
         settingsTabView.tabViewItem(at: 1).view = voiceTabView()
+        settingsTabView.tabViewItem(at: 3).label = "Advanced"
+        settingsTabView.tabViewItem(at: 3).view = advancedTabView()
         cliSectionButton.target = self
         cliSectionButton.action = #selector(selectCliSection)
         voiceSectionButton.target = self
         voiceSectionButton.action = #selector(selectVoiceSection)
         secondarySectionButton.target = self
         secondarySectionButton.action = #selector(selectSecondarySection)
+        advancedSectionButton.target = self
+        advancedSectionButton.action = #selector(selectAdvancedSection)
         voicePopUpButton.target = self
         voicePopUpButton.action = #selector(selectVoice(_:))
         voicePreviewButton.target = self
@@ -1144,6 +1158,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         setupInstallCliButton.action = #selector(installRelayCliFromSetup)
         copyBundledCliPathButton.target = self
         copyBundledCliPathButton.action = #selector(copyBundledRelayCliPath)
+        cleanupRetentionSaveButton.target = self
+        cleanupRetentionSaveButton.action = #selector(saveCleanupRetention(_:))
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -1161,6 +1177,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             secondarySectionRow.trailingAnchor.constraint(equalTo: voiceSectionRow.trailingAnchor),
             secondarySectionRow.topAnchor.constraint(equalTo: voiceSectionRow.bottomAnchor, constant: 6),
             secondarySectionRow.heightAnchor.constraint(equalTo: voiceSectionRow.heightAnchor),
+            advancedSectionRow.leadingAnchor.constraint(equalTo: secondarySectionRow.leadingAnchor),
+            advancedSectionRow.trailingAnchor.constraint(equalTo: secondarySectionRow.trailingAnchor),
+            advancedSectionRow.topAnchor.constraint(equalTo: secondarySectionRow.bottomAnchor, constant: 6),
+            advancedSectionRow.heightAnchor.constraint(equalTo: secondarySectionRow.heightAnchor),
             versionLabel.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
             versionLabel.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
             versionLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16),
@@ -1203,6 +1223,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func selectSecondarySection() {
         settingsTabView.selectTabViewItem(at: 2)
         updateSidebarSelection(selectedIndex: 2)
+    }
+
+    @objc private func selectAdvancedSection() {
+        settingsTabView.selectTabViewItem(at: 3)
+        updateSidebarSelection(selectedIndex: 3)
     }
 
     private func selectAdjacentSection(_ offset: Int) {
@@ -1249,6 +1274,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func reload() {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
+        cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
+        cleanupRetentionStatusView.stringValue = "Cleanup removes terminal relay rows and usage buckets older than this many minutes. Default: \(defaultCleanupRetentionMinutes)."
+        cleanupRetentionStatusView.textColor = .secondaryLabelColor
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         reloadOpenAtLogin()
@@ -1290,6 +1318,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         openAtLoginStatusView.font = NSFont.systemFont(ofSize: 12)
         openAtLoginStatusView.lineBreakMode = .byWordWrapping
         openAtLoginStatusView.maximumNumberOfLines = 0
+        cleanupRetentionStatusView.textColor = .secondaryLabelColor
+        cleanupRetentionStatusView.font = NSFont.systemFont(ofSize: 12)
+        cleanupRetentionStatusView.lineBreakMode = .byWordWrapping
+        cleanupRetentionStatusView.maximumNumberOfLines = 0
     }
 
     private func updateSetupIntroVisibility() {
@@ -1482,6 +1514,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    @objc private func saveCleanupRetention(_ sender: Any?) {
+        let trimmed = cleanupRetentionField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let minutes = Int(trimmed), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+            cleanupRetentionStatusView.stringValue = "Enter a whole number from 1 to \(maxCleanupRetentionMinutes) minutes."
+            cleanupRetentionStatusView.textColor = .systemRed
+            return
+        }
+
+        model.saveCleanupRetentionMinutes(minutes)
+        model.completeFirstStartSetup()
+        cleanupRetentionStatusView.stringValue = "Saved retention: \(minutes) minutes."
+        cleanupRetentionStatusView.textColor = .secondaryLabelColor
+        updateSetupIntroVisibility()
+        onSave()
+    }
+
     private func voiceTabView() -> NSView {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
@@ -1513,6 +1561,55 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(9, after: voiceNote)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        return container
+    }
+
+    private func advancedTabView() -> NSView {
+        let title = NSTextField(labelWithString: "Advanced")
+        title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+
+        let retentionLabel = NSTextField(labelWithString: "Local cleanup retention")
+        retentionLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let retentionNote = NSTextField(labelWithString: "TSRS cleans up terminal relay rows and aggregate usage buckets older than this many minutes when the app starts. BYO voice temp audio directories are also swept on startup after a short fixed grace period.")
+        retentionNote.textColor = .secondaryLabelColor
+        retentionNote.font = NSFont.systemFont(ofSize: 12)
+        retentionNote.lineBreakMode = .byWordWrapping
+        retentionNote.maximumNumberOfLines = 0
+
+        cleanupRetentionField.placeholderString = String(defaultCleanupRetentionMinutes)
+        cleanupRetentionField.alignment = .right
+
+        let minutesLabel = NSTextField(labelWithString: "minutes")
+        minutesLabel.textColor = .secondaryLabelColor
+
+        let retentionRow = NSStackView(views: [cleanupRetentionField, minutesLabel, cleanupRetentionSaveButton])
+        retentionRow.orientation = .horizontal
+        retentionRow.alignment = .centerY
+        retentionRow.spacing = 8
+
+        let stack = NSStackView(views: [title, retentionLabel, retentionNote, retentionRow, cleanupRetentionStatusView])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        cleanupRetentionField.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        cleanupRetentionSaveButton.widthAnchor.constraint(equalToConstant: 130).isActive = true
+        retentionNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        cleanupRetentionStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        stack.setCustomSpacing(18, after: title)
+        stack.setCustomSpacing(9, after: retentionNote)
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -1581,15 +1678,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let cliSelected = selectedIndex == 0
         let voiceSelected = selectedIndex == 1
         let secondarySelected = selectedIndex == 2
+        let advancedSelected = selectedIndex == 3
         configureSidebarButton(cliSectionButton, selected: cliSelected)
         configureSidebarButton(voiceSectionButton, selected: voiceSelected)
         configureSidebarButton(secondarySectionButton, selected: secondarySelected)
+        configureSidebarButton(advancedSectionButton, selected: advancedSelected)
         cliIconView.contentTintColor = cliSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         voiceIconView.contentTintColor = voiceSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         secondaryIconView.contentTintColor = secondarySelected ? .selectedMenuItemTextColor : .secondaryLabelColor
+        advancedIconView.contentTintColor = advancedSelected ? .selectedMenuItemTextColor : .secondaryLabelColor
         cliSectionRow.selected = cliSelected
         voiceSectionRow.selected = voiceSelected
         secondarySectionRow.selected = secondarySelected
+        advancedSectionRow.selected = advancedSelected
     }
 }
 
@@ -2760,6 +2861,30 @@ private func cleanupVoiceCommandDirectory(_ directory: URL?) {
 }
 #endif
 
+func removeStaleVoiceCommandDirectories(
+    in temporaryDirectory: URL,
+    now: Date = Date(),
+    staleMinutes: Int = defaultVoiceTempCleanupMinutes
+) {
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+        at: temporaryDirectory,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+    ) else {
+        return
+    }
+
+    let cutoff = now.addingTimeInterval(TimeInterval(-staleMinutes * 60))
+    for entry in entries where entry.lastPathComponent.hasPrefix("tsrs-voice-") {
+        let values = try? entry.resourceValues(forKeys: [.contentModificationDateKey])
+        guard let modified = values?.contentModificationDate, modified <= cutoff else {
+            continue
+        }
+
+        try? FileManager.default.removeItem(at: entry)
+    }
+}
+
 protocol InputCaptureSensing {
     func isInputCaptureActive() -> Bool
 }
@@ -3184,6 +3309,11 @@ final class MenuBarModel {
         store.loadSettings()
     }
 
+    func cleanupOnStartup() {
+        store.cleanupOnStartup()
+        refresh()
+    }
+
     func recentMessages(line: String, limit: Int = 20) -> [LineMessage] {
         store.recentMessages(line: line, limit: limit)
     }
@@ -3213,6 +3343,11 @@ final class MenuBarModel {
 
     func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
         store.saveCommandPaletteShortcut(shortcut)
+        refresh()
+    }
+
+    func saveCleanupRetentionMinutes(_ minutes: Int) {
+        store.saveCleanupRetentionMinutes(minutes)
         refresh()
     }
 
@@ -3679,6 +3814,7 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
+    let cleanupRetentionMinutes: Int
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
     let firstStartSetupComplete: Bool
@@ -3790,6 +3926,7 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
+                cleanupRetentionMinutes: cleanupRetentionMinutes(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
                 commandPaletteShortcut: commandPaletteShortcut(settings),
                 firstStartSetupComplete: firstStartSetupComplete(settings)
@@ -3804,6 +3941,13 @@ final class NativeRelayStore {
     func completeFirstStartSetup() {
         write { database in
             setSetting(database, key: "first_start_setup_complete", value: "true")
+        }
+    }
+
+    func cleanupOnStartup() {
+        removeStaleVoiceCommandDirectories(in: FileManager.default.temporaryDirectory)
+        write { database in
+            pruneRetainedData(database)
         }
     }
 
@@ -3876,6 +4020,17 @@ final class NativeRelayStore {
     func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
         write { database in
             setSetting(database, key: "command_palette_shortcut", value: shortcut.identifier)
+        }
+    }
+
+    func saveCleanupRetentionMinutes(_ minutes: Int) {
+        guard (1...maxCleanupRetentionMinutes).contains(minutes) else {
+            NSLog("TSRS native store rejected invalid cleanup retention minutes: \(minutes)")
+            return
+        }
+
+        write { database in
+            setSetting(database, key: "cleanup_retention_minutes", value: String(minutes))
         }
     }
 
@@ -4268,6 +4423,7 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
         setSettingIfMissing(database, key: "voice_command", value: defaultVoiceCommand)
+        setSettingIfMissing(database, key: "cleanup_retention_minutes", value: String(defaultCleanupRetentionMinutes))
         setSettingIfMissing(database, key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue(database))
         setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
@@ -4733,6 +4889,23 @@ final class NativeRelayStore {
         """, [nowString(), staleBefore, staleBefore])
     }
 
+    private func pruneRetainedData(_ database: OpaquePointer) {
+        let settings = loadRawSettings(database)
+        let retentionMinutes = cleanupRetentionMinutes(settings)
+        let cutoff = nowString(addingMilliseconds: -TimeInterval(retentionMinutes * 60 * 1000))
+        let dayCutoff = String(cutoff.prefix(10))
+
+        execute(database, """
+            DELETE FROM relays
+            WHERE status IN ('expired', 'handled', 'skipped', 'failed')
+              AND updated_at <= ?
+        """, [cutoff])
+        execute(database, """
+            DELETE FROM spoken_usage_daily
+            WHERE day < ?
+        """, [dayCutoff])
+    }
+
     private func recordSpokenLine(_ database: OpaquePointer, line: String) {
         let escapedLine = line
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -4846,6 +5019,14 @@ final class NativeRelayStore {
         KeyboardShortcut(identifier: settings["command_palette_shortcut"])
     }
 
+    private func cleanupRetentionMinutes(_ settings: [String: String]) -> Int {
+        guard let value = settings["cleanup_retention_minutes"], let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+            return defaultCleanupRetentionMinutes
+        }
+
+        return minutes
+    }
+
     private func speechVoiceIdentifier(_ settings: [String: String]) -> String? {
         let identifier = settings["speech_voice_identifier"] ?? defaultSpeechVoiceIdentifier
 
@@ -4905,7 +5086,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

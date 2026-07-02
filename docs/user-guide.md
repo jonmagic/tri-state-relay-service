@@ -210,6 +210,12 @@ Supported placeholders are inserted as single arguments, not shell-expanded:
 
 This makes cloud or local model wrappers possible later, including an ElevenLabs-backed CLI, without putting provider-specific API code into the app. The wrapper should read the text file, write an audio file, and exit nonzero if synthesis fails.
 
+## Advanced: local cleanup retention
+
+Settings includes an Advanced panel for local cleanup retention. The value is stored in minutes and defaults to `525600`, which is 365 days.
+
+On app startup, TSRS removes old terminal relay rows and spoken-usage buckets older than the configured retention. It also sweeps stale `tsrs-voice-*` temporary audio directories from interrupted BYO voice command runs after a short fixed grace period. Current queued relays are not pruned by this retention cleanup.
+
 ## If something does not work
 
 If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.

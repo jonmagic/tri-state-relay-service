@@ -10,6 +10,9 @@ let relayCliVersion = "1.1.2"
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
 let relayQueueChangedDarwinNotification = "com.jonmagic.tristaterelayservice.queue-changed"
+let defaultCleanupRetentionMinutes = 365 * 24 * 60
+let maxCleanupRetentionMinutes = 10 * 365 * 24 * 60
+let defaultVoiceTempCleanupMinutes = 6 * 60
 
 struct RelayWakeNotifier {
     let post: () -> Void
@@ -235,6 +238,7 @@ Commands:
   combiner [--command <command>]
                        Get or set inactive-line combiner command.
   settings [--combiner-command <command>] [--speech-command <command>] [--voice-command <command>]
+           [--cleanup-retention-minutes <minutes>]
                        Print settings JSON.
   first-start [status|reset|complete]
                        Inspect or change only first-start setup completion.
@@ -561,7 +565,7 @@ private func runCombinerCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
 
 private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
         do {
-            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command", "voice-command"])
+            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command", "voice-command", "cleanup-retention-minutes"])
             return withRelayCliStore { store in
                 var changed = false
                 if let command = flags["combiner-command"] {
@@ -574,6 +578,10 @@ private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
                 }
                 if let command = flags["voice-command"] {
                     try store.setVoiceCommand(command == "none" ? "" : command)
+                    changed = true
+                }
+                if let minutes = flags["cleanup-retention-minutes"] {
+                    try store.setCleanupRetentionMinutes(minutes)
                     changed = true
                 }
                 if changed {
@@ -957,6 +965,7 @@ private final class RelayCliStore {
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
             "voiceCommand": try voiceCommand(),
+            "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "activeLine": state.activeLine as Any,
             "counts": counts,
             "queueCount": counts["queued"] ?? 0,
@@ -989,6 +998,7 @@ private final class RelayCliStore {
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
             "voiceCommand": try voiceCommand(),
+            "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "capabilities": directRelayCapabilities,
         ]
         return try jsonString(object)
@@ -1043,6 +1053,18 @@ private final class RelayCliStore {
         try setSetting(key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
     }
 
+    func cleanupRetentionMinutes() throws -> Int {
+        cleanupRetentionMinutes(from: try rawSettings())
+    }
+
+    func setCleanupRetentionMinutes(_ value: String) throws {
+        guard let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+            throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
+        }
+
+        try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
+    }
+
     func firstStartSetupComplete() throws -> Bool {
         try rawSettings()["first_start_setup_complete"] == "true"
     }
@@ -1070,6 +1092,22 @@ private final class RelayCliStore {
             DELETE FROM relays
             WHERE status = 'heard' AND (? IS NULL OR line = ?)
         """, [line, line])
+    }
+
+    func pruneRetainedData() throws -> Int {
+        let minutes = try cleanupRetentionMinutes()
+        let cutoff = nowString(from: Date().addingTimeInterval(TimeInterval(-minutes * 60)))
+        let dayCutoff = String(cutoff.prefix(10))
+        let relaysDeleted = try changes("""
+            DELETE FROM relays
+            WHERE status IN ('expired', 'handled', 'skipped', 'failed')
+              AND updated_at <= ?
+        """, [cutoff])
+        let usageDeleted = try changes("""
+            DELETE FROM spoken_usage_daily
+            WHERE day < ?
+        """, [dayCutoff])
+        return relaysDeleted + usageDeleted
     }
 
     func skipNextQueued(line: String?) throws -> RelayCliStoredRelay? {
@@ -1514,6 +1552,7 @@ private final class RelayCliStore {
         try setSettingIfMissing(key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         try setSettingIfMissing(key: "speech_command", value: defaultSpeechCommand)
         try setSettingIfMissing(key: "voice_command", value: defaultVoiceCommand)
+        try setSettingIfMissing(key: "cleanup_retention_minutes", value: String(defaultCleanupRetentionMinutes))
         try setSettingIfMissing(key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue())
     }
 
@@ -1525,6 +1564,14 @@ private final class RelayCliStore {
             }
         }
         return settings
+    }
+
+    private func cleanupRetentionMinutes(from settings: [String: String]) -> Int {
+        guard let value = settings["cleanup_retention_minutes"], let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+            return defaultCleanupRetentionMinutes
+        }
+
+        return minutes
     }
 
     private func defaultFirstStartSetupCompleteValue() throws -> String {

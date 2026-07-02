@@ -94,6 +94,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
         XCTAssertTrue(source.contains("cliSectionRow.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 32)"))
         XCTAssertTrue(source.contains("settingsTabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 32)"))
+        XCTAssertTrue(source.contains("private let advancedSectionButton = NSButton(title: \"Advanced\""))
+        XCTAssertTrue(source.contains("settingsTabView.tabViewItem(at: 3).view = advancedTabView()"))
     }
 
     func testSettingsSidebarShowsSubtleVersion() throws {
@@ -156,6 +158,14 @@ final class TriStateRelayServiceTests: XCTestCase {
 
         XCTAssertTrue(source.contains("NSStackView(views: [title, voiceLabel, voiceNote, voiceRow])"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
+    }
+
+    func testAdvancedPanelExposesCleanupRetentionMinutes() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("let retentionLabel = NSTextField(labelWithString: \"Local cleanup retention\")"))
+        XCTAssertTrue(source.contains("cleanupRetentionField.placeholderString = String(defaultCleanupRetentionMinutes)"))
+        XCTAssertTrue(source.contains("@objc private func saveCleanupRetention"))
     }
 
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
