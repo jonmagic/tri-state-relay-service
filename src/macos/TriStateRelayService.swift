@@ -1250,6 +1250,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         voiceCommandTextView.string = settings.voiceCommand
+        resetVoiceCommandTextViewScroll()
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
         cleanupRetentionStatusView.stringValue = "Cleanup removes terminal relay rows and usage buckets older than this many minutes. Default: \(defaultCleanupRetentionMinutes)."
         cleanupRetentionStatusView.textColor = .secondaryLabelColor
@@ -1384,6 +1385,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private static func textViewScrollView(_ textView: NSTextView) -> NSScrollView {
+        configuredTextViewScrollView(textView, wrapsLines: false)
+    }
+
+    private static func configuredTextViewScrollView(_ textView: NSTextView, wrapsLines: Bool) -> NSScrollView {
         textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -1391,15 +1396,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = true
+        textView.isHorizontallyResizable = !wrapsLines
         textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = wrapsLines
+            ? NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+            : NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = wrapsLines
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
+        scrollView.hasHorizontalScroller = !wrapsLines
         scrollView.borderType = .bezelBorder
         scrollView.documentView = textView
 
@@ -1546,7 +1553,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandNote.lineBreakMode = .byWordWrapping
         commandNote.maximumNumberOfLines = 0
 
-        let commandScrollView = Self.textViewScrollView(voiceCommandTextView)
+        let commandScrollView = Self.configuredTextViewScrollView(voiceCommandTextView, wrapsLines: true)
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -1598,6 +1605,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         ])
 
         return scrollContainer
+    }
+
+    private func resetVoiceCommandTextViewScroll() {
+        voiceCommandTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        voiceCommandTextView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        if let scrollView = voiceCommandTextView.enclosingScrollView {
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     private func advancedTabView() -> NSView {
