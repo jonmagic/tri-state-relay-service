@@ -1010,6 +1010,17 @@ final class SettingsKeyboardFocusView: NSView {
     }
 }
 
+final class PasteFriendlySecureTextField: NSSecureTextField {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "v" {
+            currentEditor()?.paste(nil)
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 struct GlobalHotKeyRegistrationPlan: Equatable {
     let id: UInt32
     let keyCode: UInt32
@@ -1042,7 +1053,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
     private let voiceCommandErrorView = NSTextField(labelWithString: "")
     private let voiceSecretNameField = NSTextField(string: "")
-    private let voiceSecretValueField = NSTextField(string: "")
+    private let voiceSecretValueField = PasteFriendlySecureTextField(string: "")
     private let voiceSecretSaveButton = NSButton(title: "Save secret", target: nil, action: nil)
     private let voiceSecretStatusView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette

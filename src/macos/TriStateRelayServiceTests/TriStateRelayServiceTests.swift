@@ -174,6 +174,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("Store one environment variable in Keychain"))
         XCTAssertTrue(source.contains("SPEECHIFY_API_KEY"))
         XCTAssertTrue(source.contains("@objc private func saveVoiceSecret"))
+        XCTAssertTrue(source.contains("final class PasteFriendlySecureTextField: NSSecureTextField"))
+        XCTAssertTrue(source.contains("currentEditor()?.paste(nil)"))
     }
 
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
