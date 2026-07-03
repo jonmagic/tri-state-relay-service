@@ -1033,6 +1033,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let voiceCommandTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
+    private let voiceCommandStatusView = NSTextField(labelWithString: "")
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
     private let openAtLoginCheckbox = NSButton(checkboxWithTitle: "Open Tri-State Relay Service at login", target: nil, action: nil)
@@ -1296,12 +1297,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func saveCommandTemplatesIfNeeded() {
 #if !APP_STORE
-        model.saveSettings(
-            inactiveLineCombinerCommand: combinerTextView.string,
-            voiceIdentifier: selectedVoiceIdentifier(),
-            commandPaletteShortcut: currentShortcut
-        )
-        model.saveVoiceCommand(voiceCommandTextView.string)
+        do {
+            try model.saveVoiceCommand(voiceCommandTextView.string)
+            voiceCommandStatusView.stringValue = "Saved voice command."
+            voiceCommandStatusView.textColor = .secondaryLabelColor
+        } catch {
+            voiceCommandStatusView.stringValue = error.localizedDescription
+            voiceCommandStatusView.textColor = .systemRed
+            return
+        }
+        model.saveSettings(inactiveLineCombinerCommand: combinerTextView.string, voiceIdentifier: selectedVoiceIdentifier(), commandPaletteShortcut: currentShortcut)
         model.completeFirstStartSetup()
         updateSetupIntroVisibility()
         onSave()
@@ -1337,6 +1342,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandErrorView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandErrorView.lineBreakMode = .byWordWrapping
         voiceCommandErrorView.maximumNumberOfLines = 0
+        voiceCommandStatusView.textColor = .secondaryLabelColor
+        voiceCommandStatusView.font = NSFont.systemFont(ofSize: 12)
+        voiceCommandStatusView.lineBreakMode = .byWordWrapping
+        voiceCommandStatusView.maximumNumberOfLines = 0
     }
 
     private func updateSetupIntroVisibility() {
@@ -1555,26 +1564,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
 
-        let voiceLabel = NSTextField(labelWithString: "Speech voice")
-        voiceLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-
-        let voiceNote = NSTextField(labelWithString: "Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample.")
-        voiceNote.textColor = .secondaryLabelColor
-        voiceNote.font = NSFont.systemFont(ofSize: 12)
-        voiceNote.lineBreakMode = .byWordWrapping
-        voiceNote.maximumNumberOfLines = 0
-
-        let voiceRow = NSStackView(views: [voicePopUpButton, voicePreviewButton])
-        voiceRow.orientation = .horizontal
-        voiceRow.alignment = .centerY
-        voiceRow.spacing = 8
-
-        var views: [NSView] = [title, voiceLabel, voiceNote, voiceRow]
+        var views: [NSView] = [title]
 #if !APP_STORE
         let commandLabel = NSTextField(labelWithString: "Voice command")
         commandLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
-        let commandNote = NSTextField(labelWithString: "Optional command that writes audio for TSRS to play. Leave the Speechify example commented to use built-in Siri/say.")
+        let commandNote = NSTextField(labelWithString: "Exactly one uncommented command must write an audio file for TSRS to play. Comment out `say` and uncomment the Speechify example only when you want cloud voice playback.")
         commandNote.textColor = .secondaryLabelColor
         commandNote.font = NSFont.systemFont(ofSize: 12)
         commandNote.lineBreakMode = .byWordWrapping
@@ -1584,8 +1579,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [commandLabel, commandNote, commandScrollView, diagnosticsLabel, voiceCommandErrorView])
+        views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, voiceCommandErrorView])
 #endif
+        let voiceLabel = NSTextField(labelWithString: "Built-in say voice")
+        voiceLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let voiceNote = NSTextField(labelWithString: "Used by the default `say` command and as fallback if a custom command fails.")
+        voiceNote.textColor = .secondaryLabelColor
+        voiceNote.font = NSFont.systemFont(ofSize: 12)
+        voiceNote.lineBreakMode = .byWordWrapping
+        voiceNote.maximumNumberOfLines = 0
+
+        let voiceRow = NSStackView(views: [voicePopUpButton, voicePreviewButton])
+        voiceRow.orientation = .horizontal
+        voiceRow.alignment = .centerY
+        voiceRow.spacing = 8
+        views.append(contentsOf: [voiceLabel, voiceNote, voiceRow])
 
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1599,18 +1608,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #if !APP_STORE
         commandNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         commandScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
+        commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        voiceCommandStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
 #endif
         stack.setCustomSpacing(18, after: title)
-        stack.setCustomSpacing(9, after: voiceNote)
 #if !APP_STORE
-        stack.setCustomSpacing(18, after: voiceRow)
         stack.setCustomSpacing(9, after: commandNote)
-        stack.setCustomSpacing(18, after: commandScrollView)
+        stack.setCustomSpacing(18, after: voiceCommandStatusView)
+        stack.setCustomSpacing(18, after: voiceCommandErrorView)
 #endif
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 430))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 560))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -3453,8 +3462,8 @@ final class MenuBarModel {
         refresh()
     }
 
-    func saveVoiceCommand(_ command: String) {
-        store.saveVoiceCommand(command)
+    func saveVoiceCommand(_ command: String) throws {
+        try store.saveVoiceCommand(command)
         refresh()
     }
 
@@ -4153,9 +4162,14 @@ final class NativeRelayStore {
         }
     }
 
-    func saveVoiceCommand(_ command: String) {
+    func saveVoiceCommand(_ command: String) throws {
+        let normalized = resetBlankCommand(command, fallback: defaultVoiceCommand)
+        guard enabledCommandLineCount(normalized) == 1 else {
+            throw NSError(domain: "TSRSVoiceCommand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Voice command must have exactly one uncommented command."])
+        }
+
         write { database in
-            setSetting(database, key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
+            setSetting(database, key: "voice_command", value: normalized)
             setSetting(database, key: "voice_command_last_error", value: "")
         }
     }
@@ -4559,6 +4573,7 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue(database))
         setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
+        migrateLegacyVoiceCommandSetting(database)
     }
 
     private func loadRawSettings(_ database: OpaquePointer) -> [String: String] {
@@ -4790,6 +4805,16 @@ final class NativeRelayStore {
         if migrated != defaultInactiveLineCombinerCommand {
             setSetting(database, key: "inactive_line_combiner_command", value: migrated)
         }
+    }
+
+    private func migrateLegacyVoiceCommandSetting(_ database: OpaquePointer) {
+        let settings = loadRawSettings(database)
+
+        guard settings["voice_command"] == legacyCommentedVoiceCommand else {
+            return
+        }
+
+        setSetting(database, key: "voice_command", value: defaultVoiceCommand)
     }
 
     private func queuedCount(_ database: OpaquePointer, line: String) -> Int {

@@ -174,7 +174,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("private let voiceCommandTextView = NSTextView()"))
         XCTAssertTrue(source.contains("voiceCommandTextView.string = settings.voiceCommand"))
         XCTAssertTrue(source.contains("let commandLabel = NSTextField(labelWithString: \"Voice command\")"))
-        XCTAssertTrue(source.contains("Optional command that writes audio for TSRS to play. Leave the Speechify example commented"))
+        XCTAssertTrue(source.contains("Exactly one uncommented command must write an audio file for TSRS to play."))
+        XCTAssertTrue(source.contains("commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260)"))
     }
 
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {

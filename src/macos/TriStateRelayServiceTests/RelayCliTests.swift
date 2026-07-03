@@ -200,6 +200,15 @@ final class RelayCliTests: XCTestCase {
         XCTAssertTrue((reset["voiceCommand"] as? String)?.contains("Voice command.") == true)
     }
 
+    func testSettingsRejectsMultipleEnabledVoiceCommands() {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let result = runRelayCli(["settings", "--voice-command", "/usr/bin/say -f <text-file> -o <output-file>\n/usr/bin/false"])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("voice command must have exactly one uncommented command"))
+    }
+
     func testFirstStartCommandResetsOnlySetupCompletion() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 

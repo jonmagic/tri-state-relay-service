@@ -1052,7 +1052,11 @@ private final class RelayCliStore {
     }
 
     func setVoiceCommand(_ command: String) throws {
-        try setSetting(key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
+        let normalized = resetBlankCommand(command, fallback: defaultVoiceCommand)
+        guard enabledCommandLineCount(normalized) == 1 else {
+            throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
+        }
+        try setSetting(key: "voice_command", value: normalized)
         try setSetting(key: "voice_command_last_error", value: "")
     }
 
@@ -1560,8 +1564,15 @@ private final class RelayCliStore {
         try setSettingIfMissing(key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         try setSettingIfMissing(key: "speech_command", value: defaultSpeechCommand)
         try setSettingIfMissing(key: "voice_command", value: defaultVoiceCommand)
+        try migrateLegacyVoiceCommandSetting()
         try setSettingIfMissing(key: "cleanup_retention_minutes", value: String(defaultCleanupRetentionMinutes))
         try setSettingIfMissing(key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue())
+    }
+
+    private func migrateLegacyVoiceCommandSetting() throws {
+        if try rawSettings()["voice_command"] == legacyCommentedVoiceCommand {
+            try setSetting(key: "voice_command", value: defaultVoiceCommand)
+        }
     }
 
     private func rawSettings() throws -> [String: String] {
@@ -1896,6 +1907,17 @@ private func filesAreEqual(_ left: String, _ right: String) -> Bool {
         return false
     }
 
+    func enabledCommandLineCount(_ command: String?) -> Int {
+        guard let command else {
+            return 0
+        }
+
+        return command.components(separatedBy: .newlines).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && !trimmed.hasPrefix("#")
+        }.count
+    }
+
     return leftData == rightData
 }
 
@@ -1989,6 +2011,17 @@ func commandIsEnabled(_ command: String?) -> Bool {
     }
 
     return false
+}
+
+func enabledCommandLineCount(_ command: String?) -> Int {
+    guard let command else {
+        return 0
+    }
+
+    return command.components(separatedBy: .newlines).filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.hasPrefix("#")
+    }.count
 }
 
 func resetBlankCommand(_ command: String, fallback: String) -> String {
@@ -2261,6 +2294,15 @@ let defaultVoiceCommand = """
 #    security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
 # 2. Uncomment this command:
 # /Users/jonmagic/code/jonmagic/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY
+"""
+
+let legacyCommentedVoiceCommand = """
+# Voice command.
+# Optional direct-build command that writes audio for TSRS to play.
+# It must not speak directly. Leave this commented to use built-in /usr/bin/say playback.
+# Supported placeholders are inserted as single argv values: <text-file>, <output-file>, <voice-id>
+#
+# /usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
 """
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
