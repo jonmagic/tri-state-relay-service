@@ -90,7 +90,7 @@ Good dogfood relays are short, intentionally authored status updates: start of a
 2. Playback must stay app-owned.
 3. Direct builds may use Swift-launched `/usr/bin/say` for Siri/say voice fidelity.
 4. Direct builds may call a configured BYO voice command only to write an audio file; the command must not speak directly, and TSRS must play the file itself.
-5. BYO voice command secrets must be stored in Keychain and injected as environment variables only into the voice command process.
+5. BYO voice command secrets must not be stored in TSRS settings; commands or wrapper scripts should retrieve secrets from Keychain or another local secret store.
 6. The legacy App Store-safe profile must use AVFoundation and avoid external speech commands.
 7. `relay-processor` must not be bundled into the app.
 8. Focus mode is the safe default.

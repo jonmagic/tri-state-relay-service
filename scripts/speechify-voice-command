@@ -3,9 +3,30 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+
+
+def keychain_password(service):
+    if not service:
+        return None
+
+    try:
+        result = subprocess.run(
+            ["/usr/bin/security", "find-generic-password", "-a", os.environ.get("USER", ""), "-s", service, "-w"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    return result.stdout.strip()
 
 
 def main() -> int:
@@ -17,11 +38,12 @@ def main() -> int:
     parser.add_argument("--voice-id", default="george")
     parser.add_argument("--model", default="simba-english")
     parser.add_argument("--audio-format", default="mp3")
+    parser.add_argument("--keychain-service")
     args = parser.parse_args()
 
-    api_key = os.environ.get("SPEECHIFY_API_KEY")
+    api_key = os.environ.get("SPEECHIFY_API_KEY") or keychain_password(args.keychain_service)
     if not api_key:
-        print("SPEECHIFY_API_KEY is not set", file=sys.stderr)
+        print("SPEECHIFY_API_KEY is not set and --keychain-service did not return a secret", file=sys.stderr)
         return 2
 
     with open(args.text_file, "r", encoding="utf-8") as file:

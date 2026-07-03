@@ -197,8 +197,9 @@ Inspect or set the command with:
 ```sh
 relay settings
 relay settings --voice-command "/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>"
-relay settings --voice-command none
 ```
+
+You can also edit the command in Settings > Voice. The default template uses `/usr/bin/say`; the Speechify example stays commented until you choose to enable it.
 
 Supported placeholders are inserted as single arguments, not shell-expanded:
 
@@ -212,12 +213,16 @@ This makes cloud or local model wrappers possible later, including an ElevenLabs
 
 ### Speechify example
 
-TSRS includes a Speechify-compatible wrapper at `scripts/speechify-voice-command`. Store your API key in Settings > Advanced as `SPEECHIFY_API_KEY`; TSRS saves it in Keychain and injects it only into the BYO voice command process.
+TSRS includes a Speechify-compatible wrapper at `scripts/speechify-voice-command`. Store your API key in Keychain yourself:
+
+```sh
+security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
+```
 
 Configure the wrapper with an absolute path:
 
 ```sh
-relay settings --voice-command "/path/to/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george"
+relay settings --voice-command "/path/to/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY"
 ```
 
 The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It never speaks directly.

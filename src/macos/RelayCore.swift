@@ -2251,11 +2251,16 @@ let defaultSpeechCommand = """
 
 let defaultVoiceCommand = """
 # Voice command.
-# Optional direct-build command that writes audio for TSRS to play.
-# It must not speak directly. Leave this commented to use built-in /usr/bin/say playback.
+# Direct-build command that writes audio for TSRS to play.
+# It must not speak directly. The default uses macOS say and keeps playback local.
 # Supported placeholders are inserted as single argv values: <text-file>, <output-file>, <voice-id>
+/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
 #
-# /usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
+# Speechify example:
+# 1. Store your API key in Keychain:
+#    security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
+# 2. Uncomment this command:
+# /Users/jonmagic/code/jonmagic/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY
 """
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

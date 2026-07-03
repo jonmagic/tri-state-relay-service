@@ -168,17 +168,13 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("@objc private func saveCleanupRetention"))
     }
 
-    func testVoicePanelExposesByoVoiceSecretControls() throws {
+    func testVoicePanelExposesVoiceCommandTemplate() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("Store one environment variable in Keychain"))
-        XCTAssertTrue(source.contains("SPEECHIFY_API_KEY"))
-        XCTAssertTrue(source.contains("@objc private func saveVoiceSecret"))
-        XCTAssertTrue(source.contains("let providerLabel = NSTextField(labelWithString: \"Voice provider\")"))
-        XCTAssertTrue(source.contains("Built-in Siri/say"))
-        XCTAssertTrue(source.contains("Speechify"))
-        XCTAssertTrue(source.contains("final class PasteFriendlySecureTextField: NSSecureTextField"))
-        XCTAssertTrue(source.contains("currentEditor()?.paste(nil)"))
+        XCTAssertTrue(source.contains("private let voiceCommandTextView = NSTextView()"))
+        XCTAssertTrue(source.contains("voiceCommandTextView.string = settings.voiceCommand"))
+        XCTAssertTrue(source.contains("let commandLabel = NSTextField(labelWithString: \"Voice command\")"))
+        XCTAssertTrue(source.contains("Optional command that writes audio for TSRS to play. Leave the Speechify example commented"))
     }
 
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {

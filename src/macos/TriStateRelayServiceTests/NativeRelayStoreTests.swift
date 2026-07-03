@@ -19,7 +19,6 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
         XCTAssertTrue(settings.voiceCommand.contains("Voice command."))
         XCTAssertNil(settings.voiceCommandLastError)
-        XCTAssertNil(settings.voiceSecretName)
         XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
         XCTAssertFalse(settings.firstStartSetupComplete)
