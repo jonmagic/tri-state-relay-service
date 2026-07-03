@@ -1052,7 +1052,7 @@ private final class RelayCliStore {
     }
 
     func setVoiceCommand(_ command: String) throws {
-        let normalized = resetBlankCommand(command, fallback: defaultVoiceCommand)
+        let normalized = command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         guard enabledCommandLineCount(normalized) == 1 else {
             throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
         }
@@ -1570,7 +1570,7 @@ private final class RelayCliStore {
     }
 
     private func migrateLegacyVoiceCommandSetting() throws {
-        if try rawSettings()["voice_command"] == legacyCommentedVoiceCommand {
+        if shouldMigrateVoiceCommand(try rawSettings()["voice_command"]) {
             try setSetting(key: "voice_command", value: defaultVoiceCommand)
         }
     }
@@ -2285,15 +2285,18 @@ let defaultSpeechCommand = """
 let defaultVoiceCommand = """
 # Voice command.
 # Direct-build command that writes audio for TSRS to play.
-# It must not speak directly. The default uses macOS say and keeps playback local.
-# Supported placeholders are inserted as single argv values: <text-file>, <output-file>, <voice-id>
-/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
+# It must not speak directly. Exactly one command should be uncommented.
+# Supported placeholders are inserted as single argv values: <text-file>, <output-file>, <voice-id>, <app-bin>
+/usr/bin/say -f <text-file> -o <output-file>
 #
-# Speechify example:
+# Optional say example with a specific voice:
+# /usr/bin/say -v Samantha -f <text-file> -o <output-file>
+#
+# Speechify example using the bundled speechify helper:
 # 1. Store your API key in Keychain:
 #    security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
 # 2. Uncomment this command:
-# /Users/jonmagic/code/jonmagic/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY
+# <app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY
 """
 
 let legacyCommentedVoiceCommand = """
@@ -2304,5 +2307,15 @@ let legacyCommentedVoiceCommand = """
 #
 # /usr/bin/say -v <voice-id> -f <text-file> -o <output-file>
 """
+
+func shouldMigrateVoiceCommand(_ command: String?) -> Bool {
+    guard let command else {
+        return false
+    }
+
+    return command == legacyCommentedVoiceCommand
+        || command.contains("/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>")
+        || command.contains("scripts/speechify-voice-command")
+}
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

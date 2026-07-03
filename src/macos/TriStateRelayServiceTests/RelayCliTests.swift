@@ -188,7 +188,7 @@ final class RelayCliTests: XCTestCase {
     func testSettingsPersistsVoiceCommand() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
-        let command = "/usr/bin/say -v <voice-id> -f <text-file> -o <output-file>"
+        let command = "/usr/bin/say -f <text-file> -o <output-file>"
         let updated = try jsonObject(runRelayCli(["settings", "--voice-command", command]).stdout)
         XCTAssertEqual(updated["voiceCommand"] as? String, command)
         XCTAssertNil(updated["voiceCommandLastError"] as? String)

@@ -39,12 +39,13 @@ final class PlaybackProfileTests: XCTestCase {
     func testVoiceCommandArgumentsExpandFileAndVoicePlaceholders() {
         XCTAssertEqual(
             voiceCommandArguments(
-                ["-v", "<voice-id>", "-f", "<text-file>", "-o", "<output-file>"],
+                ["<app-bin>/speechify", "-v", "<voice-id>", "-f", "<text-file>", "-o", "<output-file>"],
                 textFile: "/tmp/relay.txt",
                 outputFile: "/tmp/relay.aiff",
-                voiceID: "Samantha"
+                voiceID: "Samantha",
+                appBin: "/Applications/TSRS.app/Contents/MacOS"
             ),
-            ["-v", "Samantha", "-f", "/tmp/relay.txt", "-o", "/tmp/relay.aiff"]
+            ["/Applications/TSRS.app/Contents/MacOS/speechify", "-v", "Samantha", "-f", "/tmp/relay.txt", "-o", "/tmp/relay.aiff"]
         )
     }
 

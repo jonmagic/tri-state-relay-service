@@ -1031,8 +1031,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let copyBundledCliPathButton = NSButton(title: "Copy bundled CLI path", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voiceCommandTextView = NSTextView()
-    private let voicePopUpButton = NSPopUpButton()
-    private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let voiceCommandStatusView = NSTextField(labelWithString: "")
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
@@ -1043,7 +1041,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
     private let voiceCommandErrorView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
-    private let voicePreviewSynthesizer = AVSpeechSynthesizer()
     private let settingsTabView = NSTabView()
     private let cliSectionButton = NSButton(title: "Setup", target: nil, action: nil)
     private let voiceSectionButton = NSButton(title: "Voice", target: nil, action: nil)
@@ -1058,7 +1055,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let secondaryIconView = NSImageView(image: sidebarIcon(systemName: secondarySidebarIconName))
     private let advancedIconView = NSImageView(image: sidebarIcon(systemName: "gearshape"))
     private let versionLabel = NSTextField(labelWithString: "Version \(appVersion)")
-    private let voiceOptions = availableSpeechVoiceOptions()
     private let keyboardNavigationFocusView = SettingsKeyboardFocusView(frame: .zero)
 
     init(
@@ -1147,10 +1143,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         secondarySectionButton.action = #selector(selectSecondarySection)
         advancedSectionButton.target = self
         advancedSectionButton.action = #selector(selectAdvancedSection)
-        voicePopUpButton.target = self
-        voicePopUpButton.action = #selector(selectVoice(_:))
-        voicePreviewButton.target = self
-        voicePreviewButton.action = #selector(previewSelectedVoice(_:))
         setupShortcutRecorderButton.onShortcut = { [weak self] result in
             self?.recordShortcut(result)
         }
@@ -1242,13 +1234,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(keyboardNavigationFocusView)
     }
 
-    @objc private func selectVoice(_ sender: Any?) {
-        model.saveVoiceSetting(voiceIdentifier: selectedVoiceIdentifier())
-        model.completeFirstStartSetup()
-        updateSetupIntroVisibility()
-        onSave()
-    }
-
     @objc private func installRelayCliFromSetup() {
         onInstallRelayCli()
         reloadCliStatus()
@@ -1259,19 +1244,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         model.copyRelayCliBundledPath()
         reloadCliStatus()
 #endif
-    }
-
-    @objc private func previewSelectedVoice(_ sender: Any?) {
-        voicePreviewSynthesizer.stopSpeaking(at: .immediate)
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else {
-                return
-            }
-
-            let option = self.selectedVoiceOption()
-            speakPreview("Tri-state relay service, you changed the voice to \(option.name).", option: option, synthesizer: self.voicePreviewSynthesizer)
-        }
     }
 
     private func reload() {
@@ -1288,7 +1260,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceCommandErrorView.stringValue = "No BYO voice command errors recorded."
             voiceCommandErrorView.textColor = .secondaryLabelColor
         }
-        reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         reloadOpenAtLogin()
         updateSetupIntroVisibility()
@@ -1306,7 +1277,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceCommandStatusView.textColor = .systemRed
             return
         }
-        model.saveSettings(inactiveLineCombinerCommand: combinerTextView.string, voiceIdentifier: selectedVoiceIdentifier(), commandPaletteShortcut: currentShortcut)
+        model.saveSettings(inactiveLineCombinerCommand: combinerTextView.string, voiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: currentShortcut)
         model.completeFirstStartSetup()
         updateSetupIntroVisibility()
         onSave()
@@ -1581,30 +1552,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, voiceCommandErrorView])
 #endif
-        let voiceLabel = NSTextField(labelWithString: "Built-in say voice")
-        voiceLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-
-        let voiceNote = NSTextField(labelWithString: "Used by the default `say` command and as fallback if a custom command fails.")
-        voiceNote.textColor = .secondaryLabelColor
-        voiceNote.font = NSFont.systemFont(ofSize: 12)
-        voiceNote.lineBreakMode = .byWordWrapping
-        voiceNote.maximumNumberOfLines = 0
-
-        let voiceRow = NSStackView(views: [voicePopUpButton, voicePreviewButton])
-        voiceRow.orientation = .horizontal
-        voiceRow.alignment = .centerY
-        voiceRow.spacing = 8
-        views.append(contentsOf: [voiceLabel, voiceNote, voiceRow])
-
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        voicePopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
-        voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
-        voiceNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
 #if !APP_STORE
         commandNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         commandScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -1739,31 +1692,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             setupShortcutStatusView.isHidden = false
             setupShortcutStatusView.textColor = .systemRed
         }
-    }
-
-    private func reloadVoiceMenu(selectedIdentifier: String?) {
-        voicePopUpButton.removeAllItems()
-
-        for option in voiceOptions {
-            voicePopUpButton.addItem(withTitle: option.title)
-            voicePopUpButton.lastItem?.representedObject = option.identifier
-        }
-
-        if
-            let selectedIdentifier,
-            let item = voicePopUpButton.itemArray.first(where: { $0.representedObject as? String == selectedIdentifier }) {
-            voicePopUpButton.select(item)
-        } else {
-            voicePopUpButton.selectItem(at: 0)
-        }
-    }
-
-    private func selectedVoiceIdentifier() -> String {
-        voicePopUpButton.selectedItem?.representedObject as? String ?? defaultSpeechVoiceIdentifier
-    }
-
-    private func selectedVoiceOption() -> SpeechVoiceOption {
-        voiceOptions.first { $0.identifier == selectedVoiceIdentifier() } ?? defaultSpeechVoiceOption
     }
 
     private func updateSidebarSelection(selectedIndex: Int) {
@@ -2643,7 +2571,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.speak(utterance)
 #else
         let settings = model.loadSettings()
-        let option = speechVoiceOption(identifier: settings.speechVoiceIdentifier)
+        let option = defaultSpeechVoiceOption
         if commandIsEnabled(settings.voiceCommand) {
             synthesizeVoiceCommand(text: claim.text, option: option, claimId: claim.id, command: settings.voiceCommand)
             return
@@ -2662,7 +2590,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.speak(utterance)
 #else
         let settings = model.loadSettings()
-        let option = speechVoiceOption(identifier: settings.speechVoiceIdentifier)
+        let option = defaultSpeechVoiceOption
         if commandIsEnabled(settings.voiceCommand) {
             synthesizeVoiceCommand(text: text, option: option, claimId: nil, command: settings.voiceCommand)
             return
@@ -2728,27 +2656,25 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
                 throw VoiceCommandError.empty
             }
             let commandParts = try splitVoiceCommand(enabledCommand)
-            guard let executable = commandParts.first else {
+            let expandedParts = voiceCommandArguments(
+                commandParts,
+                textFile: textURL.path,
+                outputFile: outputURL.path,
+                voiceID: option.name,
+                appBin: appBinPath()
+            )
+            guard let executable = expandedParts.first else {
                 throw VoiceCommandError.empty
             }
+            let arguments = Array(expandedParts.dropFirst())
 
             let process = Process()
             if executable.contains("/") {
                 process.executableURL = URL(fileURLWithPath: executable)
-                process.arguments = voiceCommandArguments(
-                    Array(commandParts.dropFirst()),
-                    textFile: textURL.path,
-                    outputFile: outputURL.path,
-                    voiceID: option.name
-                )
+                process.arguments = arguments
             } else {
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = [executable] + voiceCommandArguments(
-                    Array(commandParts.dropFirst()),
-                    textFile: textURL.path,
-                    outputFile: outputURL.path,
-                    voiceID: option.name
-                )
+                process.arguments = [executable] + arguments
             }
             process.standardOutput = Pipe()
             process.standardError = Pipe()
@@ -2959,13 +2885,18 @@ func splitVoiceCommand(_ command: String) throws -> [String] {
     return parts
 }
 
-func voiceCommandArguments(_ arguments: [String], textFile: String, outputFile: String, voiceID: String) -> [String] {
+func voiceCommandArguments(_ arguments: [String], textFile: String, outputFile: String, voiceID: String, appBin: String = "") -> [String] {
     arguments.map { argument in
         argument
             .replacingOccurrences(of: "<text-file>", with: textFile)
             .replacingOccurrences(of: "<output-file>", with: outputFile)
             .replacingOccurrences(of: "<voice-id>", with: voiceID)
+            .replacingOccurrences(of: "<app-bin>", with: appBin)
     }
+}
+
+private func appBinPath() -> String {
+    Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS").path
 }
 
 private func cleanupVoiceCommandDirectory(_ directory: URL?) {
@@ -4163,7 +4094,7 @@ final class NativeRelayStore {
     }
 
     func saveVoiceCommand(_ command: String) throws {
-        let normalized = resetBlankCommand(command, fallback: defaultVoiceCommand)
+        let normalized = command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         guard enabledCommandLineCount(normalized) == 1 else {
             throw NSError(domain: "TSRSVoiceCommand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Voice command must have exactly one uncommented command."])
         }
@@ -4810,7 +4741,7 @@ final class NativeRelayStore {
     private func migrateLegacyVoiceCommandSetting(_ database: OpaquePointer) {
         let settings = loadRawSettings(database)
 
-        guard settings["voice_command"] == legacyCommentedVoiceCommand else {
+        guard shouldMigrateVoiceCommand(settings["voice_command"]) else {
             return
         }
 
