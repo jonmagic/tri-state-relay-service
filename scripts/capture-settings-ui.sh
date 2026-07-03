@@ -48,7 +48,56 @@ APPLESCRIPT
   :
 else
   settings_window_id=""
-  echo "Accessibility permission is not available; capturing full-screen Settings screenshots instead of cropped window screenshots." >&2
+  echo "Cropped Settings window capture is not available; capturing full-screen screenshots instead." >&2
+fi
+
+interaction_report="$artifact_root/interaction-smoke.txt"
+if osascript >"$interaction_report" 2>&1 <<'APPLESCRIPT'
+tell application "System Events"
+  if UI elements enabled is false then
+    error "Accessibility permission is required for Settings interaction smoke checks."
+  end if
+
+  tell process "Tri-State Relay Service"
+    set frontmost to true
+    set settingsWindow to window "Tri-State Relay Service Settings"
+    click (first button of settingsWindow whose title is "Setup")
+    delay 0.2
+    set contentGroup to group 1 of settingsWindow
+    click (first button of contentGroup whose title is "Copy bundled CLI path")
+    if not (exists (first button of contentGroup whose title contains "Command")) then
+      error "Missing shortcut recorder button."
+    end if
+    if not (exists checkbox "Open Tri-State Relay Service at login" of contentGroup) then
+      error "Missing Open at Login checkbox."
+    end if
+
+    click (first button of settingsWindow whose title is "Voice")
+    delay 0.2
+    set contentGroup to group 1 of settingsWindow
+    set focused of scroll area 1 of contentGroup to true
+
+    click (first button of settingsWindow whose title is "Combiner")
+    delay 0.2
+    set contentGroup to group 1 of settingsWindow
+    set focused of scroll area 1 of contentGroup to true
+
+    click (first button of settingsWindow whose title is "Advanced")
+    delay 0.2
+    set contentGroup to group 1 of settingsWindow
+    set focused of scroll area 1 of contentGroup to true
+  end tell
+end tell
+
+return "verified safe Settings interactions: setup copy button press, setup shortcut/open-at-login discovery, voice command scroll focus, combiner command scroll focus, advanced retention scroll focus"
+APPLESCRIPT
+then
+  echo "verified Settings interactions in ${interaction_report}"
+else
+  echo "Accessibility permission is not available; skipped Settings interaction smoke checks. See ${interaction_report}." >&2
+  if [[ "${TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS:-0}" == "1" ]]; then
+    exit 1
+  fi
 fi
 
 capture_panel() {
