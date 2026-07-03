@@ -1674,7 +1674,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.borderType = .noBorder
         scrollView.documentView = container
 
-        return scrollView
+        let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
+        scrollContainer.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
+        ])
+
+        return scrollContainer
     }
 
     private func advancedTabView() -> NSView {
@@ -1731,7 +1740,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.borderType = .noBorder
         scrollView.documentView = container
 
-        return scrollView
+        let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
+        scrollContainer.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
+        ])
+
+        return scrollContainer
     }
 
     private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
