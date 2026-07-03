@@ -107,6 +107,60 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("versionLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16)"))
     }
 
+    func testSettingsControlsExposeStableAccessibilityIdentifiers() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("window.setAccessibilityIdentifier(\"tsrs.settings.window\")"))
+        XCTAssertTrue(source.contains("settingsTabView.setAccessibilityIdentifier(\"tsrs.settings.tabs\")"))
+        XCTAssertTrue(source.contains("configureAccessibility(cliSectionButton, identifier: \"tsrs.settings.sidebar.setup.button\""))
+        XCTAssertTrue(source.contains("configureAccessibility(voiceSectionButton, identifier: \"tsrs.settings.sidebar.voice.button\""))
+        XCTAssertTrue(source.contains("configureAccessibility(secondarySectionButton, identifier: \"tsrs.settings.sidebar.secondary.button\""))
+        XCTAssertTrue(source.contains("configureAccessibility(advancedSectionButton, identifier: \"tsrs.settings.sidebar.advanced.button\""))
+        XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.setup.panel\")"))
+        XCTAssertTrue(source.contains("scrollContainer.setAccessibilityIdentifier(\"tsrs.settings.voice.panel\")"))
+        XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.combiner.panel\")"))
+        XCTAssertTrue(source.contains("scrollContainer.setAccessibilityIdentifier(\"tsrs.settings.advanced.panel\")"))
+        XCTAssertTrue(source.contains("configureAccessibility(cliStatusView, identifier: \"tsrs.settings.setup.cli-status\""))
+        XCTAssertTrue(source.contains("configureAccessibility(voiceCommandErrorView, identifier: \"tsrs.settings.voice.command-error\""))
+        XCTAssertTrue(source.contains("configureAccessibility(cleanupRetentionStatusView, identifier: \"tsrs.settings.advanced.cleanup-retention-status\""))
+    }
+
+    func testDebugOpenSettingsNotificationIsScopedToSettingsWindow() throws {
+        let appSource = try triStateRelayServiceSource()
+        let coreSource = try relayCoreSource()
+
+        XCTAssertTrue(coreSource.contains("let relayDebugOpenSettingsDarwinNotification = \"com.jonmagic.tristaterelayservice.debug.open-settings\""))
+        XCTAssertTrue(coreSource.contains("let relayDebugOpenSettingsPanels = [\"setup\", \"voice\", \"secondary\", \"advanced\"]"))
+        XCTAssertTrue(coreSource.contains("postRelayDebugOpenSettingsNotification()"))
+        XCTAssertTrue(coreSource.contains("relayDebugOpenSettingsNotificationName(panel: panel)"))
+        XCTAssertTrue(appSource.contains("registerDebugOpenSettingsObserver()"))
+        XCTAssertTrue(appSource.contains("app.showSettingsPanel(panel)"))
+        XCTAssertTrue(appSource.contains("func selectPanel(named panel: String?)"))
+        XCTAssertFalse(appSource.contains("relayDebugOpenSettingsDarwinNotification as CFString,\n            nil,\n            .deliverImmediately\n        )\n    }\n\n    private func scheduleQueueWakeRefresh"))
+    }
+
+    func testSettingsScreenshotCaptureWorkflowUsesAccessibilityIdentifiersAndNoPlaybackDebugAction() throws {
+        let script = try repositoryFileSource("scripts/capture-settings-ui.sh")
+        let docs = try repositoryFileSource("docs/development.md")
+        let gitignore = try repositoryFileSource(".gitignore")
+        let focusRange = try XCTUnwrap(script.range(of: "\"$relay_cli\" focus >/dev/null"))
+        let restartRange = try XCTUnwrap(script.range(of: "scripts/restart-macos-app.sh"))
+
+        XCTAssertTrue(script.contains("debug open-settings"))
+        XCTAssertTrue(script.contains("debug open-settings --panel \"$panel\""))
+        XCTAssertLessThan(script.distance(from: script.startIndex, to: focusRange.lowerBound), script.distance(from: script.startIndex, to: restartRange.lowerBound))
+        XCTAssertTrue(script.contains("capturing full-screen Settings screenshots"))
+        XCTAssertTrue(script.contains("screencapture -x -l"))
+        XCTAssertTrue(script.contains("screencapture -x \"$artifact_root/${name}.png\""))
+        XCTAssertFalse(script.contains("/usr/bin/say"))
+        XCTAssertFalse(script.contains("relay\" live"))
+        XCTAssertFalse(script.contains("relay\" ready"))
+        XCTAssertTrue(docs.contains("scripts/capture-settings-ui.sh"))
+        XCTAssertTrue(docs.contains("Accessibility permission"))
+        XCTAssertTrue(docs.contains(".artifacts/settings-ui/"))
+        XCTAssertTrue(gitignore.contains(".artifacts/"))
+    }
+
     func testStatusMenuOrderKeepsCoreActionsSimple() throws {
         let source = try triStateRelayServiceSource()
         guard
@@ -148,7 +202,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoicePanelUsesConciseUserFacingHelperText() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("Choose the voice TSRS uses when it speaks a relay. Use Preview to hear a sample."))
+        XCTAssertTrue(source.contains("Exactly one uncommented command must write an audio file for TSRS to play."))
         XCTAssertFalse(source.contains("Direct builds use the app-owned /usr/bin/say path"))
         XCTAssertFalse(source.contains("Natural installed voices are listed first when available."))
     }
@@ -156,7 +210,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("var views: [NSView] = [title, voiceLabel, voiceNote, voiceRow]"))
+        XCTAssertTrue(source.contains("views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, voiceCommandErrorView])"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
     }
 
@@ -266,6 +320,27 @@ func triStateRelayServiceSource() throws -> String {
         .appendingPathComponent("TriStateRelayService.swift")
 
     return try String(contentsOf: sourceURL, encoding: .utf8)
+}
+
+func relayCoreSource() throws -> String {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let sourceURL = testFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("RelayCore.swift")
+
+    return try String(contentsOf: sourceURL, encoding: .utf8)
+}
+
+func repositoryFileSource(_ relativePath: String) throws -> String {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let repositoryRoot = testFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+
+    return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
 }
 
 private func isolatedTriStateDatabasePath() -> String {

@@ -65,6 +65,20 @@ scripts/restart-macos-app.sh
 
 The restart helper should report a running PID from `dist/macos/Tri-State Relay Service.app`.
 
+## Settings UI screenshots
+
+Settings exposes stable accessibility identifiers for the window, sidebar buttons, panel containers, editable fields, buttons, status text, and error text so agents can verify navigation and capture rendered evidence instead of relying only on Swift source inspection.
+
+Capture the rebuilt direct app's Settings panels with:
+
+```sh
+scripts/capture-settings-ui.sh
+```
+
+The script builds the direct profile unless `TSRS_SETTINGS_UI_SKIP_BUILD=1` is set, forces Focus mode with the rebuilt bundled CLI before restart, restarts the rebuilt app through `scripts/restart-macos-app.sh`, opens Settings through `relay debug open-settings --panel <panel>`, and writes one screenshot per current panel to `.artifacts/settings-ui/<timestamp>/`. Override the destination with `TSRS_SETTINGS_UI_ARTIFACT_DIR=/path/to/output`.
+
+This workflow is optional local GUI automation. Normal TSRS usage does not require Accessibility, Input Monitoring, or Screen Recording permission. When Accessibility permission is available, the script uses System Events to crop captures to the Settings window. Without Accessibility permission, it still opens and navigates Settings through the app-owned debug action and captures the full screen. Screen Recording permission may be needed for captures on some systems. The debug opener only shows Settings and selects a Settings panel; it does not enqueue, claim, preview, speak, toggle Live, or change Mute/Focus.
+
 For repository safety checks, run:
 
 ```sh

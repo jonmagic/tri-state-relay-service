@@ -10,6 +10,8 @@ let relayCliVersion = "1.1.2"
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
 let relayQueueChangedDarwinNotification = "com.jonmagic.tristaterelayservice.queue-changed"
+let relayDebugOpenSettingsDarwinNotification = "com.jonmagic.tristaterelayservice.debug.open-settings"
+let relayDebugOpenSettingsPanels = ["setup", "voice", "secondary", "advanced"]
 let defaultCleanupRetentionMinutes = 365 * 24 * 60
 let maxCleanupRetentionMinutes = 10 * 365 * 24 * 60
 let defaultVoiceTempCleanupMinutes = 6 * 60
@@ -32,6 +34,37 @@ func postRelayQueueChangedNotification() {
         nil,
         true
     )
+}
+
+func postRelayDebugOpenSettingsNotification() {
+    postRelayDebugOpenSettingsNotification(panel: nil)
+}
+
+func postRelayDebugOpenSettingsNotification(panel: String?) {
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(relayDebugOpenSettingsNotificationName(panel: panel) as CFString),
+        nil,
+        nil,
+        true
+    )
+}
+
+func relayDebugOpenSettingsNotificationName(panel: String?) -> String {
+    guard let panel, relayDebugOpenSettingsPanels.contains(panel) else {
+        return relayDebugOpenSettingsDarwinNotification
+    }
+
+    return "\(relayDebugOpenSettingsDarwinNotification).\(panel)"
+}
+
+func relayDebugOpenSettingsPanelName(notificationName: String) -> String? {
+    guard notificationName.hasPrefix("\(relayDebugOpenSettingsDarwinNotification).") else {
+        return nil
+    }
+
+    let panel = String(notificationName.dropFirst(relayDebugOpenSettingsDarwinNotification.count + 1))
+    return relayDebugOpenSettingsPanels.contains(panel) ? panel : nil
 }
 
 struct NewRelayInput {
@@ -252,6 +285,8 @@ Commands:
   app-mark-failed --id <id>
                        Mark a relay failed.
   debug wake            Post the app wake notification without changing queue data.
+  debug open-settings [--panel setup|voice|secondary|advanced]
+                       Ask the app to open Settings without changing playback state.
   normalize --line <line> --message <message> [--type <type>] [--priority <priority>]
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and normalize a relay without writing to the queue.
@@ -640,12 +675,36 @@ private func runFirstStartCommand(_ arguments: [String], wakeNotifier: RelayWake
 }
 
 private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
-    guard arguments == ["wake"] else {
-        return RelayCliResult(stdout: "", stderr: "debug action must be wake", exitCode: 1)
+    guard let action = arguments.first else {
+        return RelayCliResult(stdout: "", stderr: "debug action must be wake or open-settings", exitCode: 1)
     }
 
-    wakeNotifier.post()
-    return RelayCliResult(stdout: "posted queue wake notification", stderr: "", exitCode: 0)
+    if action == "wake" {
+        guard arguments.count == 1 else {
+            return RelayCliResult(stdout: "", stderr: "debug wake does not accept arguments", exitCode: 1)
+        }
+        wakeNotifier.post()
+        return RelayCliResult(stdout: "posted queue wake notification", stderr: "", exitCode: 0)
+    }
+
+    if action == "open-settings" {
+        do {
+            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["panel"])
+            let panel = flags["panel"]
+            if let panel, !relayDebugOpenSettingsPanels.contains(panel) {
+                return RelayCliResult(stdout: "", stderr: "settings panel must be setup, voice, secondary, or advanced", exitCode: 1)
+            }
+            postRelayDebugOpenSettingsNotification(panel: panel)
+            let suffix = panel.map { " for \($0)" } ?? ""
+            return RelayCliResult(stdout: "posted settings open notification\(suffix)", stderr: "", exitCode: 0)
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+    }
+
+    return RelayCliResult(stdout: "", stderr: "debug action must be wake or open-settings", exitCode: 1)
 }
 
 private func resetRelayDatabaseForFirstStartDevelopment() throws {

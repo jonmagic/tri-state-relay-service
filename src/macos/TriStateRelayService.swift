@@ -57,6 +57,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         registerQueueChangedObserver()
+        registerDebugOpenSettingsObserver()
         model.cleanupOnStartup()
         refreshAndPlayIfEligible()
         startSafetyRefreshTimer()
@@ -76,6 +77,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         safetyRefreshTimer?.invalidate()
         queueWakeDebounceTimer?.invalidate()
         unregisterQueueChangedObserver()
+        unregisterDebugOpenSettingsObserver()
         unregisterGlobalHotKeys()
     }
 
@@ -257,6 +259,11 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         settingsWindowController?.showWindow(nil)
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         refreshStatusItem()
+    }
+
+    private func showSettingsPanel(_ panel: String?) {
+        showSettingsWindow()
+        settingsWindowController?.selectPanel(named: panel)
     }
 
 #if !APP_STORE
@@ -622,6 +629,67 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
             CFNotificationName(relayQueueChangedDarwinNotification as CFString),
             nil
         )
+    }
+
+    private func registerDebugOpenSettingsObserver() {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, name, _, _ in
+                guard let observer else {
+                    return
+                }
+
+                let app = Unmanaged<TriStateRelayServiceApp>.fromOpaque(observer).takeUnretainedValue()
+                let notificationName = name.map { $0.rawValue as String } ?? relayDebugOpenSettingsDarwinNotification
+                let panel = relayDebugOpenSettingsPanelName(notificationName: notificationName)
+                DispatchQueue.main.async {
+                    app.showSettingsPanel(panel)
+                }
+            },
+            relayDebugOpenSettingsDarwinNotification as CFString,
+            nil,
+            .deliverImmediately
+        )
+
+        for panel in relayDebugOpenSettingsPanels {
+            CFNotificationCenterAddObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque(),
+                { _, observer, name, _, _ in
+                    guard let observer else {
+                        return
+                    }
+
+                    let app = Unmanaged<TriStateRelayServiceApp>.fromOpaque(observer).takeUnretainedValue()
+                    let notificationName = name.map { $0.rawValue as String } ?? relayDebugOpenSettingsDarwinNotification
+                    let panel = relayDebugOpenSettingsPanelName(notificationName: notificationName)
+                    DispatchQueue.main.async {
+                        app.showSettingsPanel(panel)
+                    }
+                },
+                relayDebugOpenSettingsNotificationName(panel: panel) as CFString,
+                nil,
+                .deliverImmediately
+            )
+        }
+    }
+
+    private func unregisterDebugOpenSettingsObserver() {
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(relayDebugOpenSettingsDarwinNotification as CFString),
+            nil
+        )
+        for panel in relayDebugOpenSettingsPanels {
+            CFNotificationCenterRemoveObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque(),
+                CFNotificationName(relayDebugOpenSettingsNotificationName(panel: panel) as CFString),
+                nil
+            )
+        }
     }
 
     private func scheduleQueueWakeRefresh() {
@@ -1115,6 +1183,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.minSize = NSSize(width: 560, height: 400)
         window.contentView = content
         window.center()
+        window.setAccessibilityIdentifier("tsrs.settings.window")
+        window.setAccessibilityLabel("Tri-State Relay Service Settings")
 
         super.init(window: window)
         window.delegate = self
@@ -1155,6 +1225,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         copyBundledCliPathButton.action = #selector(copyBundledRelayCliPath)
         cleanupRetentionSaveButton.target = self
         cleanupRetentionSaveButton.action = #selector(saveCleanupRetention(_:))
+        configureAccessibility()
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -1223,6 +1294,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func selectAdvancedSection() {
         settingsTabView.selectTabViewItem(at: 3)
         updateSidebarSelection(selectedIndex: 3)
+    }
+
+    func selectPanel(named panel: String?) {
+        switch panel {
+        case "setup":
+            selectCliSection()
+        case "voice":
+            selectVoiceSection()
+        case "secondary":
+            selectSecondarySection()
+        case "advanced":
+            selectAdvancedSection()
+        default:
+            break
+        }
     }
 
     private func selectAdjacentSection(_ offset: Int) {
@@ -1320,6 +1406,42 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandStatusView.maximumNumberOfLines = 0
     }
 
+    private func configureAccessibility() {
+        settingsTabView.setAccessibilityIdentifier("tsrs.settings.tabs")
+        settingsTabView.setAccessibilityLabel("Settings panels")
+        keyboardNavigationFocusView.setAccessibilityIdentifier("tsrs.settings.keyboard-focus")
+        versionLabel.setAccessibilityIdentifier("tsrs.settings.version")
+        versionLabel.setAccessibilityLabel("TSRS version")
+        configureAccessibility(cliSectionRow, identifier: "tsrs.settings.sidebar.setup.row", label: "Setup sidebar section")
+        configureAccessibility(cliSectionButton, identifier: "tsrs.settings.sidebar.setup.button", label: "Setup")
+        configureAccessibility(voiceSectionRow, identifier: "tsrs.settings.sidebar.voice.row", label: "Voice sidebar section")
+        configureAccessibility(voiceSectionButton, identifier: "tsrs.settings.sidebar.voice.button", label: "Voice")
+        configureAccessibility(secondarySectionRow, identifier: "tsrs.settings.sidebar.secondary.row", label: "\(settingsSecondarySectionTitle) sidebar section")
+        configureAccessibility(secondarySectionButton, identifier: "tsrs.settings.sidebar.secondary.button", label: settingsSecondarySectionTitle)
+        configureAccessibility(advancedSectionRow, identifier: "tsrs.settings.sidebar.advanced.row", label: "Advanced sidebar section")
+        configureAccessibility(advancedSectionButton, identifier: "tsrs.settings.sidebar.advanced.button", label: "Advanced")
+        configureAccessibility(setupIntroView, identifier: "tsrs.settings.setup.intro", label: "Setup introduction")
+        configureAccessibility(cliStatusView, identifier: "tsrs.settings.setup.cli-status", label: "CLI install status")
+        configureAccessibility(setupInstallCliButton, identifier: "tsrs.settings.setup.install-cli", label: "Install relay CLI")
+        configureAccessibility(copyBundledCliPathButton, identifier: "tsrs.settings.setup.copy-bundled-cli-path", label: "Copy bundled CLI path")
+        configureAccessibility(setupShortcutRecorderButton, identifier: "tsrs.settings.setup.shortcut-recorder", label: "Command palette shortcut recorder")
+        configureAccessibility(setupShortcutStatusView, identifier: "tsrs.settings.setup.shortcut-status", label: "Command palette shortcut status")
+        configureAccessibility(openAtLoginCheckbox, identifier: "tsrs.settings.setup.open-at-login", label: "Open Tri-State Relay Service at login")
+        configureAccessibility(openAtLoginStatusView, identifier: "tsrs.settings.setup.open-at-login-status", label: "Open at Login status")
+        configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
+        configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
+        configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
+        configureAccessibility(combinerTextView, identifier: "tsrs.settings.combiner.command", label: "Inactive-line combiner command")
+        configureAccessibility(cleanupRetentionField, identifier: "tsrs.settings.advanced.cleanup-retention-minutes", label: "Cleanup retention minutes")
+        configureAccessibility(cleanupRetentionSaveButton, identifier: "tsrs.settings.advanced.save-retention", label: "Save cleanup retention")
+        configureAccessibility(cleanupRetentionStatusView, identifier: "tsrs.settings.advanced.cleanup-retention-status", label: "Cleanup retention status")
+    }
+
+    private func configureAccessibility(_ element: NSView, identifier: String, label: String) {
+        element.setAccessibilityIdentifier(identifier)
+        element.setAccessibilityLabel(label)
+    }
+
     private func updateSetupIntroVisibility() {
         setupIntroView.isHidden = true
     }
@@ -1366,6 +1488,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(9, after: combinerNote)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
+        container.setAccessibilityIdentifier("tsrs.settings.combiner.panel")
+        container.setAccessibilityLabel("Inactive Combiner settings panel")
+        scrollView.setAccessibilityIdentifier("tsrs.settings.combiner.command-scroll")
+        scrollView.setAccessibilityLabel("Inactive-line combiner command editor")
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -1419,6 +1545,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         textField.lineBreakMode = .byWordWrapping
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 704, height: 384))
+        container.setAccessibilityIdentifier("tsrs.settings.app-store-profile.panel")
+        container.setAccessibilityLabel("App Store Profile settings panel")
         container.addSubview(textField)
 
         let item = NSTabViewItem(identifier: label)
@@ -1497,6 +1625,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(18, after: shortcutSection)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 270))
+        container.setAccessibilityIdentifier("tsrs.settings.setup.panel")
+        container.setAccessibilityLabel("Setup settings panel")
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1596,6 +1726,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.documentView = container
 
         let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
+        scrollContainer.setAccessibilityIdentifier("tsrs.settings.voice.panel")
+        scrollContainer.setAccessibilityLabel("Voice settings panel")
+        scrollView.setAccessibilityIdentifier("tsrs.settings.voice.panel-scroll")
+        scrollView.setAccessibilityLabel("Voice settings scroll area")
         scrollContainer.addSubview(scrollView)
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
@@ -1671,6 +1805,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.documentView = container
 
         let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
+        scrollContainer.setAccessibilityIdentifier("tsrs.settings.advanced.panel")
+        scrollContainer.setAccessibilityLabel("Advanced settings panel")
+        scrollView.setAccessibilityIdentifier("tsrs.settings.advanced.panel-scroll")
+        scrollView.setAccessibilityLabel("Advanced settings scroll area")
         scrollContainer.addSubview(scrollView)
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),

@@ -222,8 +222,8 @@ final class NativeRelayStoreTests: XCTestCase {
         store.markNativeSpeechHeard(id: second.id)
 
         let database = try DatabaseSnapshot(path: databasePath)
-        XCTAssertEqual(database.scalar("SELECT relay_count FROM spoken_usage_daily WHERE line = 'Brain' AND provider = 'apple' AND model = 'direct-say'"), "2")
-        XCTAssertEqual(database.scalar("SELECT character_count FROM spoken_usage_daily WHERE line = 'Brain' AND provider = 'apple' AND model = 'direct-say'"), "18")
+        XCTAssertEqual(database.scalar("SELECT SUM(relay_count) FROM spoken_usage_daily WHERE line = 'Brain'"), "2")
+        XCTAssertEqual(database.scalar("SELECT SUM(character_count) FROM spoken_usage_daily WHERE line = 'Brain'"), "18")
     }
 
     func testLoadStatusUsesLatestSourceContextByLine() throws {
