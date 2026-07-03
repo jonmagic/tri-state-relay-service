@@ -1044,6 +1044,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let combinerTextView = NSTextView()
     private let voicePopUpButton = NSPopUpButton()
     private let voicePreviewButton = NSButton(title: "Preview", target: nil, action: nil)
+    private let voiceProviderPopUpButton = NSPopUpButton()
+    private let voiceProviderStatusView = NSTextField(labelWithString: "")
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
     private let openAtLoginCheckbox = NSButton(checkboxWithTitle: "Open Tri-State Relay Service at login", target: nil, action: nil)
@@ -1165,6 +1167,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePopUpButton.action = #selector(selectVoice(_:))
         voicePreviewButton.target = self
         voicePreviewButton.action = #selector(previewSelectedVoice(_:))
+        voiceProviderPopUpButton.target = self
+        voiceProviderPopUpButton.action = #selector(selectVoiceProvider(_:))
         setupShortcutRecorderButton.onShortcut = { [weak self] result in
             self?.recordShortcut(result)
         }
@@ -1309,6 +1313,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceSecretValueField.stringValue = ""
         voiceSecretStatusView.stringValue = settings.voiceSecretName.map { "Keychain secret configured for \($0)." } ?? "No BYO voice command secret configured."
         voiceSecretStatusView.textColor = .secondaryLabelColor
+        reloadVoiceProvider(selectedSettings: settings)
         reloadVoiceMenu(selectedIdentifier: settings.speechVoiceIdentifier)
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         reloadOpenAtLogin()
@@ -1362,6 +1367,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceSecretStatusView.font = NSFont.systemFont(ofSize: 12)
         voiceSecretStatusView.lineBreakMode = .byWordWrapping
         voiceSecretStatusView.maximumNumberOfLines = 0
+        voiceProviderStatusView.textColor = .secondaryLabelColor
+        voiceProviderStatusView.font = NSFont.systemFont(ofSize: 12)
+        voiceProviderStatusView.lineBreakMode = .byWordWrapping
+        voiceProviderStatusView.maximumNumberOfLines = 0
     }
 
     private func updateSetupIntroVisibility() {
@@ -1602,6 +1611,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #endif
     }
 
+    @objc private func selectVoiceProvider(_ sender: Any?) {
+#if !APP_STORE
+        let selected = voiceProviderPopUpButton.selectedItem?.representedObject as? String ?? "built-in"
+        if selected == "speechify" {
+            model.saveVoiceCommand(speechifyVoiceCommandTemplate())
+            voiceProviderStatusView.stringValue = "Speechify enabled. Save SPEECHIFY_API_KEY below if you have not already."
+        } else {
+            model.saveVoiceCommand("")
+            voiceProviderStatusView.stringValue = "Built-in Siri/say enabled."
+        }
+        voiceProviderStatusView.textColor = .secondaryLabelColor
+        model.completeFirstStartSetup()
+        updateSetupIntroVisibility()
+        onSave()
+#endif
+    }
+
     private func voiceTabView() -> NSView {
         let title = NSTextField(labelWithString: "Voice")
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
@@ -1622,6 +1648,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         var views: [NSView] = [title, voiceLabel, voiceNote, voiceRow]
 #if !APP_STORE
+        let providerLabel = NSTextField(labelWithString: "Voice provider")
+        providerLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let providerNote = NSTextField(labelWithString: "Use built-in Siri/say by default. Enable Speechify only when you want cloud voice playback.")
+        providerNote.textColor = .secondaryLabelColor
+        providerNote.font = NSFont.systemFont(ofSize: 12)
+        providerNote.lineBreakMode = .byWordWrapping
+        providerNote.maximumNumberOfLines = 0
+
         let secretLabel = NSTextField(labelWithString: "BYO voice command secret")
         secretLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
@@ -1641,7 +1676,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let voiceErrorLabel = NSTextField(labelWithString: "BYO voice command diagnostics")
         voiceErrorLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [secretLabel, secretNote, secretRow, voiceSecretStatusView, voiceErrorLabel, voiceCommandErrorView])
+        views.append(contentsOf: [providerLabel, providerNote, voiceProviderPopUpButton, voiceProviderStatusView, secretLabel, secretNote, secretRow, voiceSecretStatusView, voiceErrorLabel, voiceCommandErrorView])
 #endif
 
         let stack = NSStackView(views: views)
@@ -1654,6 +1689,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voicePreviewButton.widthAnchor.constraint(equalToConstant: 88).isActive = true
         voiceNote.widthAnchor.constraint(lessThanOrEqualToConstant: 460).isActive = true
 #if !APP_STORE
+        voiceProviderPopUpButton.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        providerNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        voiceProviderStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceSecretNameField.widthAnchor.constraint(equalToConstant: 170).isActive = true
         voiceSecretValueField.widthAnchor.constraint(equalToConstant: 220).isActive = true
         voiceSecretSaveButton.widthAnchor.constraint(equalToConstant: 110).isActive = true
@@ -1665,6 +1703,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(9, after: voiceNote)
 #if !APP_STORE
         stack.setCustomSpacing(18, after: voiceRow)
+        stack.setCustomSpacing(9, after: providerNote)
+        stack.setCustomSpacing(18, after: voiceProviderStatusView)
         stack.setCustomSpacing(9, after: secretNote)
         stack.setCustomSpacing(18, after: voiceSecretStatusView)
 #endif
@@ -1806,6 +1846,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         } else {
             voicePopUpButton.selectItem(at: 0)
         }
+    }
+
+    private func reloadVoiceProvider(selectedSettings settings: SettingsSnapshot) {
+#if !APP_STORE
+        voiceProviderPopUpButton.removeAllItems()
+        voiceProviderPopUpButton.addItem(withTitle: "Built-in Siri/say")
+        voiceProviderPopUpButton.lastItem?.representedObject = "built-in"
+        voiceProviderPopUpButton.addItem(withTitle: "Speechify")
+        voiceProviderPopUpButton.lastItem?.representedObject = "speechify"
+
+        if commandIsEnabled(settings.voiceCommand) {
+            voiceProviderPopUpButton.selectItem(withTitle: "Speechify")
+            voiceProviderStatusView.stringValue = "Speechify enabled."
+        } else {
+            voiceProviderPopUpButton.selectItem(withTitle: "Built-in Siri/say")
+            voiceProviderStatusView.stringValue = "Built-in Siri/say enabled."
+        }
+#endif
     }
 
     private func selectedVoiceIdentifier() -> String {
@@ -3605,6 +3663,11 @@ final class MenuBarModel {
         refresh()
     }
 
+    func saveVoiceCommand(_ command: String) {
+        store.saveVoiceCommand(command)
+        refresh()
+    }
+
     func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
         store.saveCommandPaletteShortcut(shortcut)
         refresh()
@@ -4311,6 +4374,13 @@ final class NativeRelayStore {
         try setVoiceCommandSecret(name: name, value: value)
         write { database in
             setSetting(database, key: "voice_secret_name", value: name)
+        }
+    }
+
+    func saveVoiceCommand(_ command: String) {
+        write { database in
+            setSetting(database, key: "voice_command", value: resetBlankCommand(command, fallback: defaultVoiceCommand))
+            setSetting(database, key: "voice_command_last_error", value: "")
         }
     }
 
@@ -5383,6 +5453,10 @@ private func defaultStatus() -> QueueStatus {
 
 private func defaultSettings() -> SettingsSnapshot {
     SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, voiceSecretName: nil, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+}
+
+private func speechifyVoiceCommandTemplate() -> String {
+    "/Users/jonmagic/code/jonmagic/tri-state-relay-service/scripts/speechify-voice-command --text-file <text-file> --output-file <output-file> --voice-id george"
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
