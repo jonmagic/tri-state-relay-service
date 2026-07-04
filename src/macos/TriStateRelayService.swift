@@ -1091,7 +1091,37 @@ final class SettingsWindow: NSWindow {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "q" {
+        guard event.modifierFlags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        if let responder = firstResponder as? NSTextView {
+            switch key {
+            case "a":
+                responder.selectAll(nil)
+                return true
+            case "x":
+                responder.cut(nil)
+                return true
+            case "c":
+                responder.copy(nil)
+                return true
+            case "v":
+                responder.paste(nil)
+                return true
+            case "z":
+                if event.modifierFlags.contains(.shift) {
+                    responder.undoManager?.redo()
+                } else {
+                    responder.undoManager?.undo()
+                }
+                return true
+            default:
+                break
+            }
+        }
+
+        if key == "q" {
             onQuit?()
             return true
         }
@@ -1644,6 +1674,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static func configuredTextViewScrollView(_ textView: NSTextView, wrapsLines: Bool) -> NSScrollView {
         textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.isRichText = false
+        textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.minSize = NSSize(width: 0, height: 0)

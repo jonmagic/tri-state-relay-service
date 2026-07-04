@@ -255,6 +255,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("resetVoiceCommandTextViewScroll()"))
     }
 
+    func testSettingsWindowKeepsEditingShortcutsForTextViews() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("case \"v\":\n                responder.paste(nil)"))
+        XCTAssertTrue(source.contains("case \"x\":\n                responder.cut(nil)"))
+        XCTAssertTrue(source.contains("case \"c\":\n                responder.copy(nil)"))
+        XCTAssertTrue(source.contains("textView.allowsUndo = true"))
+    }
+
     func testCommandPaletteRendersWindowAroundSelectedCommand() throws {
         let source = try triStateRelayServiceSource()
 
