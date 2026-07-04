@@ -138,16 +138,16 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(wakes.count, 3)
 
         XCTAssertEqual(runRelayCli(["debug", "open-settings"], wakeNotifier: wakes.notifier).stdout, "posted settings open notification")
-        XCTAssertEqual(wakes.count, 3)
+        XCTAssertEqual(wakes.count, 4)
 
         XCTAssertEqual(runRelayCli(["debug", "open-settings", "--panel", "voice"], wakeNotifier: wakes.notifier).stdout, "posted settings open notification for voice")
-        XCTAssertEqual(wakes.count, 3)
+        XCTAssertEqual(wakes.count, 5)
 
         XCTAssertEqual(runRelayCli(["debug", "open-settings", "--panel", "bogus"], wakeNotifier: wakes.notifier).stderr, "settings panel must be setup, voice, secondary, or advanced")
-        XCTAssertEqual(wakes.count, 3)
+        XCTAssertEqual(wakes.count, 5)
 
         XCTAssertEqual(runRelayCli(["clear-delivered"], wakeNotifier: wakes.notifier).stdout, "cleared 0 delivered relays")
-        XCTAssertEqual(wakes.count, 3)
+        XCTAssertEqual(wakes.count, 5)
     }
 
     func testStatusReportsJsonForQueue() throws {

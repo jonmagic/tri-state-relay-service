@@ -529,6 +529,9 @@ Commands:
   debug wake            Post the app wake notification without changing queue data.
   debug open-settings [--panel setup|voice|secondary|advanced]
                        Ask the app to open Settings without changing playback state.
+  debug settings-roundtrip --voice-command <command> --combiner-command <command>
+            --cleanup-retention-minutes <minutes>
+                       Ask the app to edit Settings controls for UI smoke tests.
   normalize --line <line> --message <message> [--type <type>] [--priority <priority>]
             [--session <id>] [--app <name>] [--cwd <path>] [--url <url>]
                        Validate and normalize a relay without writing to the queue.
@@ -950,7 +953,7 @@ private func runFirstStartCommand(_ arguments: [String], wakeNotifier: RelayWake
 
 private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
     guard let action = arguments.first else {
-        return RelayCliResult(stdout: "", stderr: "debug action must be wake or open-settings", exitCode: 1)
+        return RelayCliResult(stdout: "", stderr: "debug action must be wake, open-settings, or settings-roundtrip", exitCode: 1)
     }
 
     if action == "wake" {
@@ -968,6 +971,14 @@ private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotif
             if let panel, !relayDebugOpenSettingsPanels.contains(panel) {
                 return RelayCliResult(stdout: "", stderr: "settings panel must be setup, voice, secondary, or advanced", exitCode: 1)
             }
+            let result = withRelayCliStore { store in
+                try store.setDebugOpenSettingsPanel(panel ?? "__default__")
+                return RelayCliResult(stdout: "", stderr: "", exitCode: 0)
+            }
+            if result.exitCode != 0 {
+                return result
+            }
+            wakeNotifier.post()
             postRelayDebugOpenSettingsNotification(panel: panel)
             let suffix = panel.map { " for \($0)" } ?? ""
             return RelayCliResult(stdout: "posted settings open notification\(suffix)", stderr: "", exitCode: 0)
@@ -978,7 +989,33 @@ private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotif
         }
     }
 
-    return RelayCliResult(stdout: "", stderr: "debug action must be wake or open-settings", exitCode: 1)
+    if action == "settings-roundtrip" {
+        do {
+            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["voice-command", "combiner-command", "cleanup-retention-minutes"])
+            guard let voiceCommand = flags["voice-command"], let combinerCommand = flags["combiner-command"], let retentionMinutes = flags["cleanup-retention-minutes"] else {
+                return RelayCliResult(stdout: "", stderr: "settings-roundtrip requires --voice-command, --combiner-command, and --cleanup-retention-minutes", exitCode: 1)
+            }
+            guard Int(retentionMinutes) != nil else {
+                return RelayCliResult(stdout: "", stderr: "cleanup-retention-minutes must be an integer", exitCode: 1)
+            }
+            let result = withRelayCliStore { store in
+                try store.setDebugSettingsRoundtrip(voiceCommand: voiceCommand, combinerCommand: combinerCommand, cleanupRetentionMinutes: retentionMinutes)
+                return RelayCliResult(stdout: "", stderr: "", exitCode: 0)
+            }
+            if result.exitCode != 0 {
+                return result
+            }
+            wakeNotifier.post()
+            postRelayDebugOpenSettingsNotification(panel: "voice")
+            return RelayCliResult(stdout: "posted settings roundtrip request", stderr: "", exitCode: 0)
+        } catch let error as RelayCliFlagError {
+            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+        } catch {
+            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+        }
+    }
+
+    return RelayCliResult(stdout: "", stderr: "debug action must be wake, open-settings, or settings-roundtrip", exitCode: 1)
 }
 
 private func resetRelayDatabaseForFirstStartDevelopment() throws {
@@ -1366,6 +1403,16 @@ private final class RelayCliStore {
         }
         try setSetting(key: "active_line", value: normalized)
         return try state()
+    }
+
+    func setDebugOpenSettingsPanel(_ panel: String) throws {
+        try setSetting(key: "debug_open_settings_panel", value: panel)
+    }
+
+    func setDebugSettingsRoundtrip(voiceCommand: String, combinerCommand: String, cleanupRetentionMinutes: String) throws {
+        try setSetting(key: "debug_settings_roundtrip_voice_command", value: voiceCommand)
+        try setSetting(key: "debug_settings_roundtrip_combiner_command", value: combinerCommand)
+        try setSetting(key: "debug_settings_roundtrip_cleanup_retention_minutes", value: cleanupRetentionMinutes)
     }
 
     func inactiveLineCombinerCommand() throws -> String {

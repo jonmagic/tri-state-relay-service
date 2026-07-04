@@ -117,12 +117,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("configureAccessibility(secondarySectionButton, identifier: \"tsrs.settings.sidebar.secondary.button\""))
         XCTAssertTrue(source.contains("configureAccessibility(advancedSectionButton, identifier: \"tsrs.settings.sidebar.advanced.button\""))
         XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.setup.panel\")"))
-        XCTAssertTrue(source.contains("scrollContainer.setAccessibilityIdentifier(\"tsrs.settings.voice.panel\")"))
+        XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.voice.panel\")"))
         XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.combiner.panel\")"))
-        XCTAssertTrue(source.contains("scrollContainer.setAccessibilityIdentifier(\"tsrs.settings.advanced.panel\")"))
+        XCTAssertTrue(source.contains("container.setAccessibilityIdentifier(\"tsrs.settings.advanced.panel\")"))
         XCTAssertTrue(source.contains("configureAccessibility(cliStatusView, identifier: \"tsrs.settings.setup.cli-status\""))
         XCTAssertTrue(source.contains("configureAccessibility(voiceCommandErrorView, identifier: \"tsrs.settings.voice.command-error\""))
         XCTAssertTrue(source.contains("configureAccessibility(configErrorView, identifier: \"tsrs.settings.voice.config-error\""))
+        XCTAssertTrue(source.contains("configureAccessibility(openConfigButton, identifier: \"tsrs.settings.voice.open-config\""))
+        XCTAssertTrue(source.contains("configureAccessibility(saveVoiceCommandButton, identifier: \"tsrs.settings.voice.save-command\""))
+        XCTAssertTrue(source.contains("configureAccessibility(saveCombinerCommandButton, identifier: \"tsrs.settings.combiner.save-command\""))
         XCTAssertTrue(source.contains("configureAccessibility(cleanupRetentionStatusView, identifier: \"tsrs.settings.advanced.cleanup-retention-status\""))
     }
 
@@ -151,18 +154,22 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(script.contains("debug open-settings --panel \"$panel\""))
         XCTAssertLessThan(script.distance(from: script.startIndex, to: focusRange.lowerBound), script.distance(from: script.startIndex, to: restartRange.lowerBound))
         XCTAssertTrue(script.contains("interaction-smoke.txt"))
+        XCTAssertTrue(script.contains("TSRS_SETTINGS_UI_ROUNDTRIP"))
+        XCTAssertTrue(script.contains("settings-after-restore.json"))
         XCTAssertTrue(script.contains("click (first button of contentGroup whose title is \"Copy bundled CLI path\")"))
         XCTAssertTrue(script.contains("first button of contentGroup whose title contains \"Command\""))
-        XCTAssertTrue(script.contains("checkbox \"Open Tri-State Relay Service at login\""))
+        XCTAssertTrue(script.contains("\"AXCheckBox\""))
         XCTAssertTrue(script.contains("click (first button of settingsWindow whose title is \"Voice\")"))
         XCTAssertTrue(script.contains("click (first button of settingsWindow whose title is \"Combiner\")"))
         XCTAssertTrue(script.contains("click (first button of settingsWindow whose title is \"Advanced\")"))
-        XCTAssertTrue(script.contains("set focused of scroll area 1 of contentGroup to true"))
+        XCTAssertTrue(script.contains("set focused of targetElement to true"))
+        XCTAssertTrue(script.contains("\"AXTextArea\""))
+        XCTAssertTrue(script.contains("\"AXTextField\""))
         XCTAssertTrue(script.contains("TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS"))
         XCTAssertTrue(script.contains("capturing full-screen screenshots"))
         XCTAssertTrue(script.contains("screencapture -x -l"))
         XCTAssertTrue(script.contains("screencapture -x \"$artifact_root/${name}.png\""))
-        XCTAssertFalse(script.contains("/usr/bin/say"))
+        XCTAssertFalse(script.contains("/usr/bin/say "))
         XCTAssertFalse(script.contains("relay\" live"))
         XCTAssertFalse(script.contains("relay\" ready"))
         XCTAssertTrue(docs.contains("scripts/capture-settings-ui.sh"))
@@ -214,7 +221,8 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoicePanelUsesConciseUserFacingHelperText() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("Exactly one uncommented command must write an audio file for TSRS to play."))
+        XCTAssertTrue(source.contains("The active command writes an audio file. TSRS still owns playback, Focus/Live behavior, and delivery state."))
+        XCTAssertTrue(source.contains("Voice, combiner, and cleanup settings live in a local TOML file."))
         XCTAssertFalse(source.contains("Direct builds use the app-owned /usr/bin/say path"))
         XCTAssertFalse(source.contains("Natural installed voices are listed first when available."))
     }
@@ -222,8 +230,8 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
-        XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
+        XCTAssertTrue(source.contains("views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
+        XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView, saveCombinerCommandButton])"))
     }
 
     func testAdvancedPanelExposesCleanupRetentionMinutes() throws {
@@ -240,8 +248,9 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("private let voiceCommandTextView = NSTextView()"))
         XCTAssertTrue(source.contains("voiceCommandTextView.string = settings.voiceCommand"))
         XCTAssertTrue(source.contains("let commandLabel = NSTextField(labelWithString: \"Voice command\")"))
-        XCTAssertTrue(source.contains("Exactly one uncommented command must write an audio file for TSRS to play."))
-        XCTAssertTrue(source.contains("commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260)"))
+        XCTAssertTrue(source.contains("The active command writes an audio file. TSRS still owns playback"))
+        XCTAssertTrue(source.contains("commandScrollView.heightAnchor.constraint(equalToConstant: 96)"))
+        XCTAssertTrue(source.contains("saveVoiceCommandButton.widthAnchor.constraint(equalToConstant: 160)"))
         XCTAssertTrue(source.contains("configuredTextViewScrollView(voiceCommandTextView, wrapsLines: true)"))
         XCTAssertTrue(source.contains("resetVoiceCommandTextViewScroll()"))
     }

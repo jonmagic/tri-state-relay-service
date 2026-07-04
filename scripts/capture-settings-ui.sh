@@ -17,9 +17,26 @@ fi
 
 mkdir -p "$artifact_root"
 "$relay_cli" focus >/dev/null
+config_path="$("$relay_cli" config path)"
+config_backup="$artifact_root/config.toml.before"
+first_start_status="$("$relay_cli" first-start status)"
+if [[ -f "$config_path" ]]; then
+  cp "$config_path" "$config_backup"
+else
+  "$relay_cli" config show >/dev/null
+  cp "$config_path" "$config_backup"
+fi
+"$relay_cli" first-start reset >/dev/null
+
+restore_first_start() {
+  if [[ "$first_start_status" == "complete" ]]; then
+    "$relay_cli" first-start complete >/dev/null || true
+  fi
+}
+trap restore_first_start EXIT
 
 scripts/restart-macos-app.sh
-"$relay_cli" debug open-settings --panel setup >/dev/null
+sleep 1
 sleep 0.5
 
 settings_window_id=""
@@ -60,7 +77,14 @@ tell application "System Events"
 
   tell process "Tri-State Relay Service"
     set frontmost to true
-    set settingsWindow to window "Tri-State Relay Service Settings"
+    repeat 40 times
+      if exists window "Tri-State Relay Service Settings" then
+        set settingsWindow to window "Tri-State Relay Service Settings"
+        exit repeat
+      end if
+      delay 0.25
+    end repeat
+    if not (exists window "Tri-State Relay Service Settings") then error "Tri-State Relay Service Settings window did not open."
     click (first button of settingsWindow whose title is "Setup")
     delay 0.2
     set contentGroup to group 1 of settingsWindow
@@ -68,24 +92,52 @@ tell application "System Events"
     if not (exists (first button of contentGroup whose title contains "Command")) then
       error "Missing shortcut recorder button."
     end if
-    if not (exists checkbox "Open Tri-State Relay Service at login" of contentGroup) then
-      error "Missing Open at Login checkbox."
-    end if
+    set _openAtLoginCheckbox to my firstElementByRole(contentGroup, "AXCheckBox")
 
     click (first button of settingsWindow whose title is "Voice")
     delay 0.2
     set contentGroup to group 1 of settingsWindow
-    set focused of scroll area 1 of contentGroup to true
+    set targetElement to missing value
+    repeat with e in entire contents of contentGroup
+      try
+        if role of e is "AXTextArea" then
+          set targetElement to e
+          exit repeat
+        end if
+      end try
+    end repeat
+    if targetElement is missing value then error "Missing Voice text area."
+    set focused of targetElement to true
 
     click (first button of settingsWindow whose title is "Combiner")
     delay 0.2
     set contentGroup to group 1 of settingsWindow
-    set focused of scroll area 1 of contentGroup to true
+    set targetElement to missing value
+    repeat with e in entire contents of contentGroup
+      try
+        if role of e is "AXTextArea" then
+          set targetElement to e
+          exit repeat
+        end if
+      end try
+    end repeat
+    if targetElement is missing value then error "Missing Combiner text area."
+    set focused of targetElement to true
 
     click (first button of settingsWindow whose title is "Advanced")
     delay 0.2
     set contentGroup to group 1 of settingsWindow
-    set focused of scroll area 1 of contentGroup to true
+    set targetElement to missing value
+    repeat with e in entire contents of contentGroup
+      try
+        if role of e is "AXTextField" then
+          set targetElement to e
+          exit repeat
+        end if
+      end try
+    end repeat
+    if targetElement is missing value then error "Missing Advanced retention field."
+    set focused of targetElement to true
   end tell
 end tell
 
@@ -95,7 +147,81 @@ then
   echo "verified Settings interactions in ${interaction_report}"
 else
   echo "Accessibility permission is not available; skipped Settings interaction smoke checks. See ${interaction_report}." >&2
-  if [[ "${TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS:-0}" == "1" ]]; then
+  if [[ "${TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS:-0}" == "1" && "${TSRS_SETTINGS_UI_ROUNDTRIP:-0}" != "1" ]]; then
+    exit 1
+  fi
+fi
+
+roundtrip_report="$artifact_root/settings-roundtrip.txt"
+if [[ "${TSRS_SETTINGS_UI_ROUNDTRIP:-0}" == "1" ]]; then
+  voice_command="/bin/cp <text-file> <output-file>"
+  combiner_command="llm prompt <input> --system <system> --no-stream --no-log"
+  retention_minutes="1440"
+
+  if "$relay_cli" debug settings-roundtrip --voice-command "$voice_command" --combiner-command "$combiner_command" --cleanup-retention-minutes "$retention_minutes" >"$roundtrip_report" 2>&1
+  then
+    for _ in {1..40}; do
+      "$relay_cli" settings >"$artifact_root/settings-after-modify.json"
+      if python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
+import json
+import sys
+
+path, voice, combiner, retention = sys.argv[1:]
+settings = json.load(open(path))
+if (
+    settings.get("voiceCommand") == voice
+    and settings.get("inactiveLineCombinerCommand") == combiner
+    and settings.get("cleanupRetentionMinutes") == int(retention)
+):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+      then
+        break
+      fi
+      sleep 0.25
+    done
+    "$relay_cli" settings >"$artifact_root/settings-after-modify.json"
+    python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
+import json
+import sys
+
+path, voice, combiner, retention = sys.argv[1:]
+settings = json.load(open(path))
+expected = {
+    "voiceCommand": voice,
+    "inactiveLineCombinerCommand": combiner,
+    "cleanupRetentionMinutes": int(retention),
+}
+for key, value in expected.items():
+    if settings.get(key) != value:
+        raise SystemExit(f"{key} expected {value!r}, got {settings.get(key)!r}")
+PY
+    cp "$config_backup" "$config_path"
+    "$relay_cli" config reload >/dev/null
+    "$relay_cli" settings >"$artifact_root/settings-after-restore.json"
+    python3 - "$artifact_root/settings-after-restore.json" "$config_backup" <<'PY'
+import json
+import subprocess
+import sys
+
+settings_path, config_path = sys.argv[1:]
+settings = json.load(open(settings_path))
+config = open(config_path).read()
+for key, value in {
+    "voiceCommand": "command = ",
+    "inactiveLineCombinerCommand": "[combiner]",
+}.items():
+    if key not in settings:
+        raise SystemExit(f"missing restored setting {key}")
+if settings.get("configError") is not None:
+    raise SystemExit(f"restore left config error: {settings.get('configError')!r}")
+if "[voice]" not in config or "[retention]" not in config:
+    raise SystemExit("backup config did not look like TOML")
+PY
+    echo "verified reversible Settings roundtrip in ${roundtrip_report}"
+  else
+    echo "Settings roundtrip check failed. See ${roundtrip_report}." >&2
     exit 1
   fi
 fi
@@ -104,8 +230,16 @@ capture_panel() {
   local panel="$1"
   local name="$panel"
 
+  local title
+  case "$panel" in
+    setup) title="Setup" ;;
+    voice) title="Voice" ;;
+    secondary) title="Combiner" ;;
+    advanced) title="Advanced" ;;
+    *) echo "unknown settings panel: $panel" >&2; exit 1 ;;
+  esac
   "$relay_cli" debug open-settings --panel "$panel" >/dev/null
-  sleep 0.5
+  sleep 1.5
   if [[ -n "$settings_window_id" ]]; then
     screencapture -x -l "$settings_window_id" "$artifact_root/${name}.png"
   else

@@ -21,6 +21,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var safetyRefreshTimer: Timer?
     private var queueWakeDebounceTimer: Timer?
+    private var debugOpenSettingsTimer: Timer?
     private var settingsWindowController: SettingsWindowController?
     private var commandPaletteWindowController: CommandPaletteWindowController?
     private var commandPaletteHotKey: EventHotKeyRef?
@@ -61,6 +62,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         model.cleanupOnStartup()
         refreshAndPlayIfEligible()
         startSafetyRefreshTimer()
+        startDebugOpenSettingsTimer()
         registerGlobalHotKeys()
 #if !APP_STORE
         if model.needsFirstStartSetup() {
@@ -76,6 +78,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         safetyRefreshTimer?.invalidate()
         queueWakeDebounceTimer?.invalidate()
+        debugOpenSettingsTimer?.invalidate()
         unregisterQueueChangedObserver()
         unregisterDebugOpenSettingsObserver()
         unregisterGlobalHotKeys()
@@ -264,6 +267,12 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     private func showSettingsPanel(_ panel: String?) {
         showSettingsWindow()
         settingsWindowController?.selectPanel(named: panel)
+    }
+
+    private func performDebugSettingsRoundtrip(_ request: DebugSettingsRoundtripRequest) {
+        showSettingsWindow()
+        settingsWindowController?.performDebugSettingsRoundtrip(request)
+        refreshStatusItem()
     }
 
 #if !APP_STORE
@@ -708,8 +717,28 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
         safetyRefreshTimer?.tolerance = 15
     }
 
+    private func startDebugOpenSettingsTimer() {
+        debugOpenSettingsTimer?.invalidate()
+        debugOpenSettingsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else {
+                return
+            }
+            if let request = self.model.consumeDebugSettingsRoundtrip() {
+                self.performDebugSettingsRoundtrip(request)
+                return
+            }
+            if let panel = self.model.consumeDebugOpenSettingsPanel() {
+                self.showSettingsPanel(panel)
+            }
+        }
+        debugOpenSettingsTimer?.tolerance = 0.3
+    }
+
     private func refreshAndPlayIfEligible() {
         model.refresh()
+        if let panel = model.consumeDebugOpenSettingsPanel() {
+            showSettingsPanel(panel)
+        }
         if model.status.mode == "ready" || model.status.mode == "live" {
             nativePlayback.playNext()
         }
@@ -1088,6 +1117,12 @@ struct GlobalHotKeyRegistrationPlan: Equatable {
     }
 }
 
+final class FlippedSettingsView: NSView {
+    override var isFlipped: Bool {
+        true
+    }
+}
+
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: MenuBarModel
     private let onInstallRelayCli: () -> Void
@@ -1100,6 +1135,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let combinerTextView = NSTextView()
     private let voiceCommandTextView = NSTextView()
     private let voiceCommandStatusView = NSTextField(labelWithString: "")
+    private let saveVoiceCommandButton = NSButton(title: "Save voice command", target: nil, action: nil)
+    private let saveCombinerCommandButton = NSButton(title: "Save combiner", target: nil, action: nil)
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
     private let openAtLoginCheckbox = NSButton(checkboxWithTitle: "Open Tri-State Relay Service at login", target: nil, action: nil)
@@ -1109,6 +1146,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
     private let voiceCommandErrorView = NSTextField(labelWithString: "")
     private let configErrorView = NSTextField(labelWithString: "")
+    private let configPathView = NSTextField(labelWithString: "")
+    private let openConfigButton = NSButton(title: "Open config", target: nil, action: nil)
+    private let revealConfigButton = NSButton(title: "Reveal in Finder", target: nil, action: nil)
+    private let validateConfigButton = NSButton(title: "Validate", target: nil, action: nil)
+    private let reloadConfigButton = NSButton(title: "Reload", target: nil, action: nil)
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let settingsTabView = NSTabView()
     private let cliSectionButton = NSButton(title: "Setup", target: nil, action: nil)
@@ -1157,11 +1199,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #if APP_STORE
         settingsTabView.addTabViewItem(Self.readOnlyTabItem(label: "App Store Profile", message: "External combiner command templates are unavailable in the App Store-safe profile. Relay playback uses Apple speech APIs."))
 #else
-        settingsTabView.addTabViewItem(Self.tabItem(label: "Inactive Combiner", textView: combinerTextView))
+        settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Inactive Combiner"))
 #endif
         settingsTabView.addTabViewItem(NSTabViewItem(identifier: "Advanced"))
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 430))
+        let content = FlippedSettingsView(frame: NSRect(x: 0, y: 0, width: 820, height: 580))
         keyboardNavigationFocusView.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(sidebar)
         sidebar.addSubview(cliSectionRow)
@@ -1173,7 +1215,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         content.addSubview(keyboardNavigationFocusView)
 
         let window = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 580),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -1181,7 +1223,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.title = "Tri-State Relay Service Settings"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.minSize = NSSize(width: 560, height: 400)
+        window.minSize = NSSize(width: 760, height: 520)
         window.contentView = content
         window.center()
         window.setAccessibilityIdentifier("tsrs.settings.window")
@@ -1204,6 +1246,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         settingsTabView.tabViewItem(at: 0).view = cliTabView()
         settingsTabView.tabViewItem(at: 1).label = "Voice"
         settingsTabView.tabViewItem(at: 1).view = voiceTabView()
+        settingsTabView.tabViewItem(at: 2).view = combinerTabView(label: "Inactive Combiner", textView: combinerTextView)
         settingsTabView.tabViewItem(at: 3).label = "Advanced"
         settingsTabView.tabViewItem(at: 3).view = advancedTabView()
         cliSectionButton.target = self
@@ -1226,6 +1269,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         copyBundledCliPathButton.action = #selector(copyBundledRelayCliPath)
         cleanupRetentionSaveButton.target = self
         cleanupRetentionSaveButton.action = #selector(saveCleanupRetention(_:))
+        saveVoiceCommandButton.target = self
+        saveVoiceCommandButton.action = #selector(saveCommandTemplates)
+        saveCombinerCommandButton.target = self
+        saveCombinerCommandButton.action = #selector(saveCommandTemplates)
+        openConfigButton.target = self
+        openConfigButton.action = #selector(openConfigFile)
+        revealConfigButton.target = self
+        revealConfigButton.action = #selector(revealConfigFile)
+        validateConfigButton.target = self
+        validateConfigButton.action = #selector(validateConfigFile)
+        reloadConfigButton.target = self
+        reloadConfigButton.action = #selector(reloadConfigFile)
         configureAccessibility()
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -1312,6 +1367,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    func performDebugSettingsRoundtrip(_ request: DebugSettingsRoundtripRequest) {
+#if !APP_STORE
+        selectVoiceSection()
+        voiceCommandTextView.string = request.voiceCommand
+        selectSecondarySection()
+        combinerTextView.string = request.combinerCommand
+        saveCommandTemplates()
+        selectAdvancedSection()
+        cleanupRetentionField.stringValue = request.cleanupRetentionMinutes
+        saveCleanupRetention(nil)
+#endif
+    }
+
     private func selectAdjacentSection(_ offset: Int) {
         let currentIndex = settingsTabView.indexOfTabViewItem(settingsTabView.selectedTabViewItem ?? settingsTabView.tabViewItem(at: 0))
         let maxIndex = settingsTabView.numberOfTabViewItems - 1
@@ -1333,12 +1401,45 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #endif
     }
 
+    @objc private func openConfigFile() {
+#if !APP_STORE
+        model.openConfigFile()
+        reload()
+#endif
+    }
+
+    @objc private func revealConfigFile() {
+#if !APP_STORE
+        model.revealConfigFile()
+        reload()
+#endif
+    }
+
+    @objc private func validateConfigFile() {
+#if !APP_STORE
+        let result = model.validateConfigFile()
+        voiceCommandStatusView.stringValue = result.status == 0 ? "Config is valid." : "Config validation failed: \(result.stderr.isEmpty ? result.stdout : result.stderr)"
+        voiceCommandStatusView.textColor = result.status == 0 ? .secondaryLabelColor : .systemRed
+        reload()
+#endif
+    }
+
+    @objc private func reloadConfigFile() {
+#if !APP_STORE
+        let result = model.reloadConfigFile()
+        voiceCommandStatusView.stringValue = result.status == 0 ? "Config reloaded." : "Config reload failed: \(result.stderr.isEmpty ? result.stdout : result.stderr)"
+        voiceCommandStatusView.textColor = result.status == 0 ? .secondaryLabelColor : .systemRed
+        reload()
+#endif
+    }
+
     private func reload() {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         voiceCommandTextView.string = settings.voiceCommand
         resetVoiceCommandTextViewScroll()
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
+        configPathView.stringValue = settings.configPath
         cleanupRetentionStatusView.stringValue = "Cleanup removes terminal relay rows and usage buckets older than this many minutes. Default: \(defaultCleanupRetentionMinutes)."
         cleanupRetentionStatusView.textColor = .secondaryLabelColor
         if let error = settings.voiceCommandLastError {
@@ -1362,6 +1463,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func saveCommandTemplatesIfNeeded() {
+        saveCommandTemplates()
+    }
+
+    @objc private func saveCommandTemplates() {
 #if !APP_STORE
         do {
             try model.saveVoiceCommand(voiceCommandTextView.string)
@@ -1416,6 +1521,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandStatusView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandStatusView.lineBreakMode = .byWordWrapping
         voiceCommandStatusView.maximumNumberOfLines = 0
+        configPathView.textColor = .secondaryLabelColor
+        configPathView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        configPathView.lineBreakMode = .byTruncatingMiddle
+        configPathView.maximumNumberOfLines = 1
     }
 
     private func configureAccessibility() {
@@ -1441,10 +1550,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureAccessibility(openAtLoginCheckbox, identifier: "tsrs.settings.setup.open-at-login", label: "Open Tri-State Relay Service at login")
         configureAccessibility(openAtLoginStatusView, identifier: "tsrs.settings.setup.open-at-login-status", label: "Open at Login status")
         configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
+        configureAccessibility(saveVoiceCommandButton, identifier: "tsrs.settings.voice.save-command", label: "Save voice command")
         configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
         configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
         configureAccessibility(configErrorView, identifier: "tsrs.settings.voice.config-error", label: "Config error status")
+        configureAccessibility(configPathView, identifier: "tsrs.settings.voice.config-path", label: "Config file path")
+        configureAccessibility(openConfigButton, identifier: "tsrs.settings.voice.open-config", label: "Open config")
+        configureAccessibility(revealConfigButton, identifier: "tsrs.settings.voice.reveal-config", label: "Reveal config in Finder")
+        configureAccessibility(validateConfigButton, identifier: "tsrs.settings.voice.validate-config", label: "Validate config")
+        configureAccessibility(reloadConfigButton, identifier: "tsrs.settings.voice.reload-config", label: "Reload config")
         configureAccessibility(combinerTextView, identifier: "tsrs.settings.combiner.command", label: "Inactive-line combiner command")
+        configureAccessibility(saveCombinerCommandButton, identifier: "tsrs.settings.combiner.save-command", label: "Save inactive-line combiner command")
         configureAccessibility(cleanupRetentionField, identifier: "tsrs.settings.advanced.cleanup-retention-minutes", label: "Cleanup retention minutes")
         configureAccessibility(cleanupRetentionSaveButton, identifier: "tsrs.settings.advanced.save-retention", label: "Save cleanup retention")
         configureAccessibility(cleanupRetentionStatusView, identifier: "tsrs.settings.advanced.cleanup-retention-status", label: "Cleanup retention status")
@@ -1477,8 +1593,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             : "Leave this off if you prefer to start TSRS manually."
     }
 
-    private static func tabItem(label: String, textView: NSTextView) -> NSTabViewItem {
-        let scrollView = textViewScrollView(textView)
+    private func combinerTabView(label: String, textView: NSTextView) -> NSView {
+        let scrollView = Self.textViewScrollView(textView)
 
         let title = NSTextField(labelWithString: label)
         title.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
@@ -1492,7 +1608,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         combinerNote.lineBreakMode = .byWordWrapping
         combinerNote.maximumNumberOfLines = 0
 
-        let stack = NSStackView(views: [title, combinerLabel, combinerNote, scrollView])
+        let stack = NSStackView(views: [title, combinerLabel, combinerNote, scrollView, saveCombinerCommandButton])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1500,7 +1616,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(18, after: title)
         stack.setCustomSpacing(9, after: combinerNote)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
+        let container = FlippedSettingsView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
         container.setAccessibilityIdentifier("tsrs.settings.combiner.panel")
         container.setAccessibilityLabel("Inactive Combiner settings panel")
         scrollView.setAccessibilityIdentifier("tsrs.settings.combiner.command-scroll")
@@ -1514,13 +1630,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             combinerNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
             scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            scrollView.heightAnchor.constraint(equalToConstant: 130),
+            saveCombinerCommandButton.widthAnchor.constraint(equalToConstant: 130),
         ])
 
-        let item = NSTabViewItem(identifier: label)
-        item.label = label
-        item.view = container
-        return item
+        return container
     }
 
     private static func textViewScrollView(_ textView: NSTextView) -> NSScrollView {
@@ -1687,10 +1801,30 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         var views: [NSView] = [title]
 #if !APP_STORE
+        let configLabel = NSTextField(labelWithString: "Advanced config")
+        configLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        let configNote = NSTextField(labelWithString: "Voice, combiner, and cleanup settings live in a local TOML file. Edit it directly when you want command-level customization.")
+        configNote.textColor = .secondaryLabelColor
+        configNote.font = NSFont.systemFont(ofSize: 12)
+        configNote.lineBreakMode = .byWordWrapping
+        configNote.maximumNumberOfLines = 0
+
+        let configButtonRow = NSStackView(views: [openConfigButton, revealConfigButton, validateConfigButton, reloadConfigButton])
+        configButtonRow.orientation = .horizontal
+        configButtonRow.alignment = .centerY
+        configButtonRow.spacing = 8
+
+        let configSection = NSStackView(views: [configLabel, configNote, configPathView, configButtonRow])
+        configSection.orientation = .vertical
+        configSection.alignment = .leading
+        configSection.spacing = 7
+        configSection.translatesAutoresizingMaskIntoConstraints = false
+
         let commandLabel = NSTextField(labelWithString: "Voice command")
         commandLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
-        let commandNote = NSTextField(labelWithString: "Exactly one uncommented command must write an audio file for TSRS to play. Comment out `say` and uncomment the Speechify example only when you want cloud voice playback.")
+        let commandNote = NSTextField(labelWithString: "The active command writes an audio file. TSRS still owns playback, Focus/Live behavior, and delivery state.")
         commandNote.textColor = .secondaryLabelColor
         commandNote.font = NSFont.systemFont(ofSize: 12)
         commandNote.lineBreakMode = .byWordWrapping
@@ -1700,7 +1834,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
+        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
 #endif
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1709,22 +1843,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
 
 #if !APP_STORE
+        configNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        configPathView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         commandNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         commandScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        commandScrollView.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        saveVoiceCommandButton.widthAnchor.constraint(equalToConstant: 160).isActive = true
         voiceCommandStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         configErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
 #endif
         stack.setCustomSpacing(18, after: title)
 #if !APP_STORE
+        stack.setCustomSpacing(18, after: configSection)
         stack.setCustomSpacing(9, after: commandNote)
-        stack.setCustomSpacing(18, after: voiceCommandStatusView)
+        stack.setCustomSpacing(14, after: voiceCommandStatusView)
         stack.setCustomSpacing(8, after: configErrorView)
         stack.setCustomSpacing(18, after: voiceCommandErrorView)
 #endif
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 560))
+        let container = FlippedSettingsView(frame: NSRect(x: 0, y: 0, width: 560, height: 440))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -1734,26 +1872,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.documentView = container
-
-        let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
-        scrollContainer.setAccessibilityIdentifier("tsrs.settings.voice.panel")
-        scrollContainer.setAccessibilityLabel("Voice settings panel")
-        scrollView.setAccessibilityIdentifier("tsrs.settings.voice.panel-scroll")
-        scrollView.setAccessibilityLabel("Voice settings scroll area")
-        scrollContainer.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
-        ])
-
-        return scrollContainer
+        container.setAccessibilityIdentifier("tsrs.settings.voice.panel")
+        container.setAccessibilityLabel("Voice settings panel")
+        return container
     }
 
     private func resetVoiceCommandTextViewScroll() {
@@ -1813,26 +1934,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.documentView = container
-
-        let scrollContainer = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
-        scrollContainer.setAccessibilityIdentifier("tsrs.settings.advanced.panel")
-        scrollContainer.setAccessibilityLabel("Advanced settings panel")
-        scrollView.setAccessibilityIdentifier("tsrs.settings.advanced.panel-scroll")
-        scrollView.setAccessibilityLabel("Advanced settings scroll area")
-        scrollContainer.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
-        ])
-
-        return scrollContainer
+        container.setAccessibilityIdentifier("tsrs.settings.advanced.panel")
+        container.setAccessibilityLabel("Advanced settings panel")
+        return container
     }
 
     private func reloadShortcutRecorder(selectedShortcut: KeyboardShortcut) {
@@ -3530,6 +3634,14 @@ final class MenuBarModel {
         store.loadSettings()
     }
 
+    func consumeDebugOpenSettingsPanel() -> String? {
+        store.consumeDebugOpenSettingsPanel()
+    }
+
+    func consumeDebugSettingsRoundtrip() -> DebugSettingsRoundtripRequest? {
+        store.consumeDebugSettingsRoundtrip()
+    }
+
     func cleanupOnStartup() {
         store.cleanupOnStartup()
         refresh()
@@ -3576,6 +3688,32 @@ final class MenuBarModel {
         store.saveCleanupRetentionMinutes(minutes)
         refresh()
     }
+
+#if !APP_STORE
+    func openConfigFile() {
+        store.ensureConfigFile()
+        NSWorkspace.shared.open(URL(fileURLWithPath: relayConfigPath()))
+        refresh()
+    }
+
+    func revealConfigFile() {
+        store.ensureConfigFile()
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: relayConfigPath())])
+        refresh()
+    }
+
+    func validateConfigFile() -> RelayCliCommandResult {
+        let result = runBundledRelay(arguments: ["config", "validate"])
+        refresh()
+        return result
+    }
+
+    func reloadConfigFile() -> RelayCliCommandResult {
+        let result = runBundledRelay(arguments: ["config", "reload"])
+        refresh()
+        return result
+    }
+#endif
 
     func openAtLoginEnabled() -> Bool {
         SMAppService.mainApp.status == .enabled
@@ -4042,10 +4180,17 @@ struct SettingsSnapshot {
     let voiceCommand: String
     let voiceCommandLastError: String?
     let configError: String?
+    let configPath: String
     let cleanupRetentionMinutes: Int
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
     let firstStartSetupComplete: Bool
+}
+
+struct DebugSettingsRoundtripRequest {
+    let voiceCommand: String
+    let combinerCommand: String
+    let cleanupRetentionMinutes: String
 }
 
 #if !APP_STORE
@@ -4156,6 +4301,7 @@ final class NativeRelayStore {
                 voiceCommand: voiceCommand(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
                 configError: configError(settings),
+                configPath: relayConfigPath(),
                 cleanupRetentionMinutes: cleanupRetentionMinutes(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
                 commandPaletteShortcut: commandPaletteShortcut(settings),
@@ -4308,6 +4454,55 @@ final class NativeRelayStore {
 
         if let writeError {
             throw writeError
+        }
+    }
+
+    func consumeDebugOpenSettingsPanel() -> String? {
+        writeResult { database in
+            let settings = loadRawSettings(database)
+            guard let value = settings["debug_open_settings_panel"], !value.isEmpty else {
+                return nil
+            }
+
+            let panel = value == "__default__" ? "setup" : value
+            setSetting(database, key: "debug_open_settings_panel", value: "")
+            return panel
+        }
+    }
+
+    func consumeDebugSettingsRoundtrip() -> DebugSettingsRoundtripRequest? {
+        writeResult { database in
+            let settings = loadRawSettings(database)
+            guard
+                let voiceCommand = settings["debug_settings_roundtrip_voice_command"],
+                let combinerCommand = settings["debug_settings_roundtrip_combiner_command"],
+                let cleanupRetentionMinutes = settings["debug_settings_roundtrip_cleanup_retention_minutes"],
+                !voiceCommand.isEmpty,
+                !combinerCommand.isEmpty,
+                !cleanupRetentionMinutes.isEmpty
+            else {
+                return nil
+            }
+
+            setSetting(database, key: "debug_settings_roundtrip_voice_command", value: "")
+            setSetting(database, key: "debug_settings_roundtrip_combiner_command", value: "")
+            setSetting(database, key: "debug_settings_roundtrip_cleanup_retention_minutes", value: "")
+            return DebugSettingsRoundtripRequest(
+                voiceCommand: voiceCommand,
+                combinerCommand: combinerCommand,
+                cleanupRetentionMinutes: cleanupRetentionMinutes
+            )
+        }
+    }
+
+    func ensureConfigFile() {
+        write { database in
+            do {
+                _ = try RelayConfig.loadOrCreate(settings: loadRawSettings(database))
+                clearConfigError(database)
+            } catch {
+                setConfigError(database, relayConfigErrorMessage(error))
+            }
         }
     }
 
@@ -5435,7 +5630,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

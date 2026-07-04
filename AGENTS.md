@@ -156,6 +156,8 @@ Completed milestone: TOML is now the source of truth for advanced voice command,
 
 Completed milestone: `scripts/test-112-upgrade.sh` is the release-upgrade gate from v1.1.2. It builds the tagged 1.1.2 CLI in a temporary worktree, seeds a real 1.1.2 database, and runs the current bundled CLI against that database to verify TOML creation, existing-TOML preservation, invalid-config fail-quiet behavior, and preserved runtime state.
 
+Completed milestone: Settings has a TOML-oriented Voice panel with Open/Reveal/Validate/Reload controls and explicit Save buttons. Use `TSRS_SETTINGS_UI_ROUNDTRIP=1 TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS=1 scripts/capture-settings-ui.sh` for release-quality Settings persistence checks; it modifies values through the real Settings controller, verifies via the bundled CLI, restores the original TOML, and captures screenshots.
+
 ## Task exit criteria
 
 Every implementation task should end with:

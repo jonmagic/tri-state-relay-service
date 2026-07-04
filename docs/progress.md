@@ -187,5 +187,4 @@ CLI install panel update:
 4. Runtime playback, Settings edits, inactive-line combination, and cleanup retention now read voice/combiner/retention from TOML. Voice selection, active line, mode, mute, first-start completion, shortcut, diagnostics, and queue state remain SQLite state.
 5. Added `.github/skills/settings-ui-verification/SKILL.md` and AGENTS guidance for issue #2's screenshot and Accessibility-backed Settings workflow.
 6. Added `scripts/test-112-upgrade.sh`, which builds the tagged 1.1.2 CLI, creates a real 1.1.2 database, and verifies the current bundled CLI writes the TOML upgrade once, preserves existing TOML, keeps queue/runtime state, and fails quiet when TOML is invalid.
-3. Selecting a voice is quiet; Preview remains the explicit action that speaks a
-   sample.
+7. Settings now has a more compact TOML-oriented Voice panel, explicit Open/Reveal/Validate/Reload config controls, visible Save buttons for voice and combiner commands, and a reversible `TSRS_SETTINGS_UI_ROUNDTRIP=1` smoke gate that modifies values through the real Settings controller and restores the original TOML.
