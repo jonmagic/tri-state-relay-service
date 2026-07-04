@@ -186,5 +186,6 @@ CLI install panel update:
 3. The TOML parser is deliberately narrow and dependency-free. It supports the known `[voice]`, `[voice.variables]`, `[combiner]`, `[combiner.variables]`, and `[retention]` sections, quoted strings, integer retention, and allowlisted command placeholders.
 4. Runtime playback, Settings edits, voice selection, active line, mode, mute, first-start completion, shortcut, and queue state still use SQLite. The later source-of-truth migration needs an explicit fail-quiet contract before the app reads commands from TOML.
 5. Added `.github/skills/settings-ui-verification/SKILL.md` and AGENTS guidance for issue #2's screenshot and Accessibility-backed Settings workflow.
+6. Added `scripts/test-112-upgrade.sh`, which builds the tagged 1.1.2 CLI, creates a real 1.1.2 database, and verifies the current bundled CLI can preview the TOML upgrade without writing config or losing queue/runtime state.
 3. Selecting a voice is quiet; Preview remains the explicit action that speaks a
    sample.
