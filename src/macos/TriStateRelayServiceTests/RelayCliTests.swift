@@ -232,8 +232,11 @@ final class RelayCliTests: XCTestCase {
         let show = runRelayCli(["config", "show"])
         XCTAssertEqual(show.exitCode, 0)
         XCTAssertTrue(show.stdout.contains("[combiner]"))
+        XCTAssertTrue(show.stdout.contains("command = \"/usr/bin/say -f <text-file> -o <output-file>\""))
         XCTAssertTrue(show.stdout.contains("llm prompt <input> --system <system>"))
         XCTAssertTrue(show.stdout.contains("cleanup_retention_minutes = 1440"))
+        XCTAssertFalse(show.stdout.contains("\\n# Voice command."))
+        XCTAssertFalse(show.stdout.contains("Speechify example"))
 
         let validate = runRelayCli(["config", "validate"])
         XCTAssertEqual(validate.stdout, "config valid: \(configPath) (upgrade preview; file does not exist yet)")

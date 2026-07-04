@@ -227,11 +227,13 @@ struct RelayConfig {
     var cleanupRetentionMinutes: Int
 
     static func from(settings: [String: String]) -> RelayConfig {
-        let voice = settings["voice_command"].flatMap { shouldMigrateVoiceCommand($0) ? nil : $0 } ?? defaultVoiceCommand
+        let storedVoice = settings["voice_command"].flatMap { shouldMigrateVoiceCommand($0) ? nil : $0 } ?? defaultVoiceCommand
+        let voice = firstEnabledCommandLine(storedVoice) ?? "/usr/bin/say -f <text-file> -o <output-file>"
+        let storedCombiner = settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
         return RelayConfig(
             voiceCommand: voice,
             voiceVariables: [:],
-            combinerCommand: settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand,
+            combinerCommand: firstEnabledCommandLine(storedCombiner) ?? "",
             combinerVariables: [:],
             cleanupRetentionMinutes: cleanupRetentionMinutesFromSettings(settings)
         )
@@ -256,8 +258,8 @@ struct RelayConfig {
 
     func validate() throws {
         try validateCommandPlaceholders(voiceCommand, allowed: ["<text-file>", "<output-file>", "<voice-id>", "<app-bin>"], label: "voice")
-        guard enabledCommandLineCount(voiceCommand) == 1 else {
-            throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
+        guard !voiceCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RelayCliStoreError(message: "voice command is empty")
         }
         try validateCommandPlaceholders(combinerCommand, allowed: ["<input>", "<system>"], label: "inactive-line combiner")
         guard (1...maxCleanupRetentionMinutes).contains(cleanupRetentionMinutes) else {
