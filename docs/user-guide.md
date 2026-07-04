@@ -192,7 +192,7 @@ Combiner output should follow the same rules as any other relay: no secrets, no 
 
 Direct builds can use a configured voice command to generate an audio file for TSRS to play. This is modeled after `say -o`: the command must write audio to an output path and must not speak directly. TSRS still owns playback, mute/focus/live safety checks, and delivered-state marking.
 
-TSRS is moving advanced settings toward a TOML file at `~/Library/Application Support/Tri-State Relay Service/config.toml`. The current release can inspect and validate that config, but SQLite settings are still the runtime source of truth until the migration is complete.
+Advanced voice, inactive-line combiner, and cleanup retention settings live in `~/Library/Application Support/Tri-State Relay Service/config.toml`. On upgrade, TSRS creates this file once from existing 1.1.2 SQLite settings. If the file already exists, TSRS preserves it and treats it as the source of truth for those advanced settings.
 
 ```sh
 relay config path
@@ -200,7 +200,7 @@ relay config show
 relay config validate
 ```
 
-If no config file exists yet, `relay config show` prints the upgrade preview that would be produced from the existing SQLite settings. This lets 1.1.2 users confirm their inactive-line combiner, voice command, and retention values before a later migration writes the TOML file.
+If `config.toml` is malformed or uses unsupported placeholders, `relay config validate` reports the error. Playback fails quiet while the config is invalid: relays stay queued, Settings/status surface the config error, and TSRS does not claim messages for speech until the config is fixed.
 
 Inspect or set the command with:
 

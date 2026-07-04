@@ -1108,6 +1108,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let cleanupRetentionStatusView = NSTextField(labelWithString: "")
     private let cleanupRetentionSaveButton = NSButton(title: "Save retention", target: nil, action: nil)
     private let voiceCommandErrorView = NSTextField(labelWithString: "")
+    private let configErrorView = NSTextField(labelWithString: "")
     private var currentShortcut = KeyboardShortcut.defaultCommandPalette
     private let settingsTabView = NSTabView()
     private let cliSectionButton = NSButton(title: "Setup", target: nil, action: nil)
@@ -1347,6 +1348,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             voiceCommandErrorView.stringValue = "No BYO voice command errors recorded."
             voiceCommandErrorView.textColor = .secondaryLabelColor
         }
+        if let error = settings.configError {
+            configErrorView.stringValue = "Config error: \(error). Playback is paused until config.toml validates."
+            configErrorView.textColor = .systemRed
+        } else {
+            configErrorView.stringValue = "Config file is valid."
+            configErrorView.textColor = .secondaryLabelColor
+        }
         reloadShortcutRecorder(selectedShortcut: settings.commandPaletteShortcut)
         reloadOpenAtLogin()
         updateSetupIntroVisibility()
@@ -1400,6 +1408,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandErrorView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandErrorView.lineBreakMode = .byWordWrapping
         voiceCommandErrorView.maximumNumberOfLines = 0
+        configErrorView.textColor = .secondaryLabelColor
+        configErrorView.font = NSFont.systemFont(ofSize: 12)
+        configErrorView.lineBreakMode = .byWordWrapping
+        configErrorView.maximumNumberOfLines = 0
         voiceCommandStatusView.textColor = .secondaryLabelColor
         voiceCommandStatusView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandStatusView.lineBreakMode = .byWordWrapping
@@ -1431,6 +1443,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
         configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
         configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
+        configureAccessibility(configErrorView, identifier: "tsrs.settings.voice.config-error", label: "Config error status")
         configureAccessibility(combinerTextView, identifier: "tsrs.settings.combiner.command", label: "Inactive-line combiner command")
         configureAccessibility(cleanupRetentionField, identifier: "tsrs.settings.advanced.cleanup-retention-minutes", label: "Cleanup retention minutes")
         configureAccessibility(cleanupRetentionSaveButton, identifier: "tsrs.settings.advanced.save-retention", label: "Save cleanup retention")
@@ -1687,7 +1700,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, voiceCommandErrorView])
+        views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
 #endif
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1700,12 +1713,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         commandScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
         voiceCommandStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        configErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
 #endif
         stack.setCustomSpacing(18, after: title)
 #if !APP_STORE
         stack.setCustomSpacing(9, after: commandNote)
         stack.setCustomSpacing(18, after: voiceCommandStatusView)
+        stack.setCustomSpacing(8, after: configErrorView)
         stack.setCustomSpacing(18, after: voiceCommandErrorView)
 #endif
 
@@ -4026,6 +4041,7 @@ struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
     let voiceCommandLastError: String?
+    let configError: String?
     let cleanupRetentionMinutes: Int
     let speechVoiceIdentifier: String?
     let commandPaletteShortcut: KeyboardShortcut
@@ -4139,6 +4155,7 @@ final class NativeRelayStore {
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
+                configError: configError(settings),
                 cleanupRetentionMinutes: cleanupRetentionMinutes(settings),
                 speechVoiceIdentifier: speechVoiceIdentifier(settings),
                 commandPaletteShortcut: commandPaletteShortcut(settings),
@@ -4168,14 +4185,15 @@ final class NativeRelayStore {
         withWriteDatabase { database in
             expireStaleRelays(database)
             let settings = loadRawSettings(database)
+            let config = validRelayConfig(database, settings: settings)
             let counts = countByStatus(database)
             return QueueStatus(
                 mode: playbackMode(settings["mode"]),
-                muted: settings["muted"] == "true",
+                muted: settings["muted"] == "true" || config == nil,
                 queued: counts["queued"] ?? 0,
                 speaking: counts["speaking"] ?? 0,
                 heard: counts["heard"] ?? 0,
-                inactiveLineCombiner: inactiveLineCombiner(settings),
+                inactiveLineCombiner: inactiveLineCombiner(settings, config: config),
                 activeLine: settings["active_line"],
                 lines: lineSummaries(database),
                 lineSources: latestSourceContextsByLine(database)
@@ -4224,7 +4242,16 @@ final class NativeRelayStore {
         }
 
         write { database in
-            setSetting(database, key: "inactive_line_combiner_command", value: resetBlankCommand(inactiveLineCombinerCommand, fallback: defaultInactiveLineCombinerCommand))
+            var config = relayConfigForEditing(database)
+            config.combinerCommand = resetBlankCommand(inactiveLineCombinerCommand, fallback: "")
+            do {
+                try config.validate()
+                try config.write()
+                clearConfigError(database)
+                setSetting(database, key: "inactive_line_combiner_command", value: config.combinerCommand)
+            } catch {
+                setConfigError(database, relayConfigErrorMessage(error))
+            }
             setSetting(database, key: "speech_voice_identifier", value: voiceIdentifier)
             setSetting(database, key: "command_palette_shortcut", value: commandPaletteShortcut.identifier)
         }
@@ -4243,6 +4270,16 @@ final class NativeRelayStore {
         }
 
         write { database in
+            var config = relayConfigForEditing(database)
+            config.cleanupRetentionMinutes = minutes
+            do {
+                try config.validate()
+                try config.write()
+                clearConfigError(database)
+            } catch {
+                setConfigError(database, relayConfigErrorMessage(error))
+                return
+            }
             setSetting(database, key: "cleanup_retention_minutes", value: String(minutes))
         }
     }
@@ -4252,10 +4289,25 @@ final class NativeRelayStore {
         guard enabledCommandLineCount(normalized) == 1 else {
             throw NSError(domain: "TSRSVoiceCommand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Voice command must have exactly one uncommented command."])
         }
+        var writeError: Error?
 
         write { database in
-            setSetting(database, key: "voice_command", value: normalized)
-            setSetting(database, key: "voice_command_last_error", value: "")
+            var config = relayConfigForEditing(database)
+            config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+            do {
+                try config.validate()
+                try config.write()
+                clearConfigError(database)
+                setSetting(database, key: "voice_command", value: config.voiceCommand)
+                setSetting(database, key: "voice_command_last_error", value: "")
+            } catch {
+                writeError = error
+                setConfigError(database, relayConfigErrorMessage(error))
+            }
+        }
+
+        if let writeError {
+            throw writeError
         }
     }
 
@@ -4283,6 +4335,7 @@ final class NativeRelayStore {
             )
         }
         let settings = snapshot?.settings ?? [:]
+        let config = validRelayConfig(settings: settings)
         let activeLine = settings["active_line"]
         let shouldCombineInactive = playbackMode(settings["mode"]) != "live" && activeLine != nil && relay.line != activeLine
         let combinedRelay: NormalizedRelay?
@@ -4293,7 +4346,7 @@ final class NativeRelayStore {
                     activeLine: activeLine,
                     incoming: relay,
                     existing: snapshot?.existing,
-                    command: inactiveLineCombinerCommand(settings)
+                    command: inactiveLineCombinerCommand(settings, config: config)
                 ).relay
             } catch {
                 NSLog("TSRS inactive-line combiner failed: \(error)")
@@ -4442,7 +4495,7 @@ final class NativeRelayStore {
             expireStaleRelays(database)
             failStaleSpeaking(database)
             let settings = loadRawSettings(database)
-            guard settings["muted"] != "true" else {
+            guard settings["muted"] != "true", validRelayConfig(database, settings: settings) != nil else {
                 return nil
             }
 
@@ -4659,6 +4712,15 @@ final class NativeRelayStore {
         setSettingIfMissing(database, key: "command_palette_shortcut", value: KeyboardShortcut.defaultCommandPalette.identifier)
         migrateLegacyCombinerSetting(database)
         migrateLegacyVoiceCommandSetting(database)
+        do {
+            let config = try RelayConfig.loadOrCreate(settings: loadRawSettings(database))
+            setSetting(database, key: "inactive_line_combiner_command", value: config.combinerCommand)
+            setSetting(database, key: "voice_command", value: config.voiceCommand)
+            setSetting(database, key: "cleanup_retention_minutes", value: String(config.cleanupRetentionMinutes))
+            clearConfigError(database)
+        } catch {
+            setConfigError(database, relayConfigErrorMessage(error))
+        }
     }
 
     private func loadRawSettings(_ database: OpaquePointer) -> [String: String] {
@@ -4672,6 +4734,43 @@ final class NativeRelayStore {
         }
 
         return settings
+    }
+
+    private func validRelayConfig(_ database: OpaquePointer, settings: [String: String]) -> RelayConfig? {
+        do {
+            let config = try RelayConfig.loadExisting()
+            clearConfigError(database)
+            return config
+        } catch {
+            setConfigError(database, relayConfigErrorMessage(error))
+            return nil
+        }
+    }
+
+    private func validRelayConfig(settings: [String: String]) -> RelayConfig? {
+        try? RelayConfig.loadExisting()
+    }
+
+    private func relayConfigForEditing(_ database: OpaquePointer) -> RelayConfig {
+        if let config = try? RelayConfig.loadExisting() {
+            return config
+        }
+
+        return RelayConfig.from(settings: loadRawSettings(database))
+    }
+
+    private func setConfigError(_ database: OpaquePointer, _ message: String) {
+        if loadRawSettings(database)["config_last_error"] == message {
+            return
+        }
+        setSetting(database, key: "config_last_error", value: message)
+    }
+
+    private func clearConfigError(_ database: OpaquePointer) {
+        if loadRawSettings(database)["config_last_error"]?.isEmpty != false {
+            return
+        }
+        setSetting(database, key: "config_last_error", value: "")
     }
 
     private func countByStatus(_ database: OpaquePointer) -> [String: Int] {
@@ -4917,7 +5016,7 @@ final class NativeRelayStore {
     private func claimNextForSpeech(_ database: OpaquePointer) -> NativeRelay? {
         let settings = loadRawSettings(database)
 
-        guard settings["muted"] != "true" else {
+        guard settings["muted"] != "true", validRelayConfig(database, settings: settings) != nil else {
             return nil
         }
 
@@ -5028,7 +5127,7 @@ final class NativeRelayStore {
     private func claimNextForLine(_ database: OpaquePointer, line: String, maxId: Int? = nil) -> NativeRelay? {
         let settings = loadRawSettings(database)
 
-        guard settings["muted"] != "true" else {
+        guard settings["muted"] != "true", validRelayConfig(database, settings: settings) != nil else {
             return nil
         }
 
@@ -5233,20 +5332,22 @@ final class NativeRelayStore {
         }
     }
 
-    private func inactiveLineCombiner(_ settings: [String: String]) -> String {
+    private func inactiveLineCombiner(_ settings: [String: String], config: RelayConfig? = nil) -> String {
         if profile == "app-store" {
             return "none"
         }
 
-        return commandIsEnabled(settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand) ? "custom" : "none"
+        let config = config ?? validRelayConfig(settings: settings)
+        return config.map { commandIsEnabled($0.combinerCommand) ? "custom" : "none" } ?? "none"
     }
 
-    private func inactiveLineCombinerCommand(_ settings: [String: String]) -> String {
+    private func inactiveLineCombinerCommand(_ settings: [String: String], config: RelayConfig? = nil) -> String {
         if profile == "app-store" {
             return appStoreUnavailableCommand("inactive-line combiner")
         }
 
-        return settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
+        let config = config ?? validRelayConfig(settings: settings)
+        return config?.combinerCommand ?? ""
     }
 
     private func voiceCommand(_ settings: [String: String]) -> String {
@@ -5254,11 +5355,16 @@ final class NativeRelayStore {
             return appStoreUnavailableCommand("voice command")
         }
 
-        return settings["voice_command"] ?? defaultVoiceCommand
+        return validRelayConfig(settings: settings)?.voiceCommand ?? ""
     }
 
     private func voiceCommandLastError(_ settings: [String: String]) -> String? {
         let value = settings["voice_command_last_error"] ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    private func configError(_ settings: [String: String]) -> String? {
+        let value = settings["config_last_error"] ?? ""
         return value.isEmpty ? nil : value
     }
 
@@ -5267,11 +5373,7 @@ final class NativeRelayStore {
     }
 
     private func cleanupRetentionMinutes(_ settings: [String: String]) -> Int {
-        guard let value = settings["cleanup_retention_minutes"], let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
-            return defaultCleanupRetentionMinutes
-        }
-
-        return minutes
+        validRelayConfig(settings: settings)?.cleanupRetentionMinutes ?? defaultCleanupRetentionMinutes
     }
 
     private func speechVoiceIdentifier(_ settings: [String: String]) -> String? {
@@ -5333,7 +5435,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

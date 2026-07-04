@@ -9,6 +9,7 @@ xcuserdata/
 *.db-wal
 tmp/
 .artifacts/
+.test-artifacts/
 .swift-cli-parity/
 .env
 .env.*

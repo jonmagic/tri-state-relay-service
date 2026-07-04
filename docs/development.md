@@ -70,7 +70,7 @@ For release-upgrade coverage from the last public release, build the current dir
 scripts/test-112-upgrade.sh
 ```
 
-The harness builds the `v1.1.2` CLI in a temporary git worktree, creates a real 1.1.2 SQLite database with queue, mode, mute, active-line, first-start, speech, and combiner settings, then runs the current bundled `relay` against that same database. It verifies `relay config show` and `relay config validate` produce the TOML upgrade preview, preserve runtime state, and do not write `config.toml` before the explicit TOML write migration exists.
+The harness builds the `v1.1.2` CLI in a temporary git worktree, creates a real 1.1.2 SQLite database with queue, mode, mute, active-line, first-start, speech, and combiner settings, then runs the current bundled `relay` against that same database. It verifies `config.toml` is created once from 1.1.2 settings, existing TOML is preserved, `relay config show` and `relay config validate` read the effective config, runtime state survives the upgrade, and invalid TOML fails quiet without claiming queued speech.
 
 For app-visible direct-profile changes, rebuild and restart the direct app:
 

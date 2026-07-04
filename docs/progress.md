@@ -181,11 +181,11 @@ CLI install panel update:
 
 ## TOML config milestone
 
-1. Added the first safe TOML milestone for issue #3: `relay config path`, `relay config show`, `relay config validate`, and `relay config reload`.
-2. `relay config show` parses an existing config file when present; otherwise it prints an upgrade preview synthesized from the current SQLite settings. This keeps released 1.1.2 settings visible without writing a new persistence file yet.
+1. Added TOML-backed advanced config for issue #3: `relay config path`, `relay config show`, `relay config validate`, and `relay config reload`.
+2. TSRS creates `config.toml` once from existing SQLite settings and preserves an existing TOML file instead of overwriting user edits.
 3. The TOML parser is deliberately narrow and dependency-free. It supports the known `[voice]`, `[voice.variables]`, `[combiner]`, `[combiner.variables]`, and `[retention]` sections, quoted strings, integer retention, and allowlisted command placeholders.
-4. Runtime playback, Settings edits, voice selection, active line, mode, mute, first-start completion, shortcut, and queue state still use SQLite. The later source-of-truth migration needs an explicit fail-quiet contract before the app reads commands from TOML.
+4. Runtime playback, Settings edits, inactive-line combination, and cleanup retention now read voice/combiner/retention from TOML. Voice selection, active line, mode, mute, first-start completion, shortcut, diagnostics, and queue state remain SQLite state.
 5. Added `.github/skills/settings-ui-verification/SKILL.md` and AGENTS guidance for issue #2's screenshot and Accessibility-backed Settings workflow.
-6. Added `scripts/test-112-upgrade.sh`, which builds the tagged 1.1.2 CLI, creates a real 1.1.2 database, and verifies the current bundled CLI can preview the TOML upgrade without writing config or losing queue/runtime state.
+6. Added `scripts/test-112-upgrade.sh`, which builds the tagged 1.1.2 CLI, creates a real 1.1.2 database, and verifies the current bundled CLI writes the TOML upgrade once, preserves existing TOML, keeps queue/runtime state, and fails quiet when TOML is invalid.
 3. Selecting a voice is quiet; Preview remains the explicit action that speaks a
    sample.

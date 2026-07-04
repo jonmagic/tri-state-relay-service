@@ -7,6 +7,7 @@ final class NativeRelayStoreTests: XCTestCase {
         let missingDirectory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let databasePath = missingDirectory.appendingPathComponent("relay.db").path
+        let configPath = missingDirectory.appendingPathComponent("config.toml").path
         setenv("TSRS_DB_PATH", databasePath, 1)
         defer {
             unsetenv("TSRS_DB_PATH")
@@ -16,8 +17,8 @@ final class NativeRelayStoreTests: XCTestCase {
         let store = NativeRelayStore(profile: "direct")
         
         let settings = store.loadSettings()
-        XCTAssertTrue(settings.inactiveLineCombinerCommand.contains("Inactive line combiner command."))
-        XCTAssertTrue(settings.voiceCommand.contains("Voice command."))
+        XCTAssertEqual(settings.inactiveLineCombinerCommand, "")
+        XCTAssertEqual(settings.voiceCommand, "/usr/bin/say -f <text-file> -o <output-file>")
         XCTAssertNil(settings.voiceCommandLastError)
         XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
@@ -29,11 +30,12 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(status.queued, 0)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: databasePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configPath))
         let database = try DatabaseSnapshot(path: databasePath)
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'mode'"), "focus")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'muted'"), "false")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'command_palette_shortcut'"), "control-option-command-space")
-        XCTAssertTrue(database.scalar("SELECT value FROM settings WHERE key = 'voice_command'")?.contains("Voice command.") == true)
+        XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'voice_command'"), "/usr/bin/say -f <text-file> -o <output-file>")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'cleanup_retention_minutes'"), String(defaultCleanupRetentionMinutes))
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'first_start_setup_complete'"), "false")
         XCTAssertEqual(database.scalar("SELECT version FROM schema_migrations WHERE version = 1"), "1")
@@ -214,7 +216,7 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertTrue(config.contains("llm prompt <input> --system <system>"))
         XCTAssertFalse(config.contains("\\n# Voice command."))
         XCTAssertFalse(config.contains("Speechify example"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: configPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configPath))
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'speech_command'"), "/usr/bin/say -v Samantha <message>")
         XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'last_spoken_line'"), "{\"line\":\"Brain\",\"spokenAt\":\"2026-07-03T00:00:00.000Z\"}")
     }
@@ -252,8 +254,8 @@ final class NativeRelayStoreTests: XCTestCase {
         let show = runRelayCli(["config", "show"]).stdout
         let config = try String(contentsOfFile: configPath, encoding: .utf8)
 
-        XCTAssertEqual(settings.inactiveLineCombinerCommand, "llm prompt <input>")
-        XCTAssertEqual(settings.cleanupRetentionMinutes, 999)
+        XCTAssertEqual(settings.inactiveLineCombinerCommand, "apfel --system <system> --output plain <input>")
+        XCTAssertEqual(settings.cleanupRetentionMinutes, 42)
         XCTAssertTrue(show.contains("apfel --system <system> --output plain <input>"))
         XCTAssertTrue(show.contains("cleanup_retention_minutes = 42"))
         XCTAssertEqual(config, existingConfig)

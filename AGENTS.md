@@ -152,9 +152,9 @@ Completed milestone: Setup includes an explicit opt-in Open at Login checkbox
 backed by `SMAppService.mainApp`; TSRS still starts in Focus mode so login launch
 does not speak automatically.
 
-Completed milestone: the first TOML config work is additive and safe. `relay config path|show|validate|reload` can inspect an existing config or preview a 1.1.2 SQLite-settings upgrade, but runtime playback and Settings still use SQLite until the fail-quiet source-of-truth migration is explicitly implemented.
+Completed milestone: TOML is now the source of truth for advanced voice command, inactive-line combiner command, and cleanup retention settings. TSRS creates `config.toml` once from existing SQLite settings, preserves user-edited TOML, and fails quiet without claiming speech when TOML is invalid.
 
-Completed milestone: `scripts/test-112-upgrade.sh` is the release-upgrade gate from v1.1.2. It builds the tagged 1.1.2 CLI in a temporary worktree, seeds a real 1.1.2 database, and runs the current bundled CLI against that database to verify config preview and preserved runtime state.
+Completed milestone: `scripts/test-112-upgrade.sh` is the release-upgrade gate from v1.1.2. It builds the tagged 1.1.2 CLI in a temporary worktree, seeds a real 1.1.2 database, and runs the current bundled CLI against that database to verify TOML creation, existing-TOML preservation, invalid-config fail-quiet behavior, and preserved runtime state.
 
 ## Task exit criteria
 

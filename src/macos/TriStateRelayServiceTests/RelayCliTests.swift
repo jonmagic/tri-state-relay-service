@@ -207,7 +207,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(reread["voiceCommand"] as? String, command)
 
         let reset = try jsonObject(runRelayCli(["settings", "--voice-command", "none"]).stdout)
-        XCTAssertTrue((reset["voiceCommand"] as? String)?.contains("Voice command.") == true)
+        XCTAssertEqual(reset["voiceCommand"] as? String, command)
     }
 
     func testSettingsRejectsMultipleEnabledVoiceCommands() {
@@ -239,7 +239,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertFalse(show.stdout.contains("Speechify example"))
 
         let validate = runRelayCli(["config", "validate"])
-        XCTAssertEqual(validate.stdout, "config valid: \(configPath) (upgrade preview; file does not exist yet)")
+        XCTAssertEqual(validate.stdout, "config valid: \(configPath)")
     }
 
     func testConfigValidationRejectsUnknownPlaceholder() throws {
@@ -261,6 +261,34 @@ final class RelayCliTests: XCTestCase {
         let result = runRelayCli(["config", "validate"])
         XCTAssertEqual(result.exitCode, 1)
         XCTAssertTrue(result.stderr.contains("inactive-line combiner command contains unsupported placeholder <secret-file>"))
+    }
+
+    func testInvalidConfigFailsQuietAndPreservesQueuedRelay() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.appendingPathComponent("relay.db").path, 1)
+        setenv("TSRS_CONFIG_PATH", directory.appendingPathComponent("config.toml").path, 1)
+        setenv("TSRS_PROCESSOR_AUTH", appProcessorAuthorization, 1)
+
+        try """
+        [voice]
+        command = "/usr/bin/say -f <text-file> -o <output-file>"
+        [combiner]
+        command = "llm prompt <secret-file>"
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+
+        _ = runRelayCli(["--line", "Brain", "--message", "stay queued"])
+        _ = runRelayCli(["ready"])
+
+        XCTAssertEqual(runRelayCli(["app-claim-next"]).stdout, "null")
+
+        let status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["muted"] as? Bool, true)
+        XCTAssertEqual(status["queueCount"] as? Int, 1)
+        XCTAssertTrue((status["configError"] as? String)?.contains("<secret-file>") == true)
     }
 
     func testFirstStartCommandResetsOnlySetupCompletion() {
@@ -507,7 +535,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["line", "Brain"]).stdout, "active line set to Brain")
         XCTAssertEqual(runRelayCli(["line"]).stdout, "Brain")
 
-        XCTAssertTrue(runRelayCli(["combiner"]).stdout.contains("Inactive line combiner command."))
+        XCTAssertEqual(runRelayCli(["combiner"]).stdout, "")
         XCTAssertEqual(runRelayCli(["combiner", "--command", "llm prompt <input>"]).stdout, "inactive line combiner set to custom")
         XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=Brain, inactive-line-combiner=custom")
 

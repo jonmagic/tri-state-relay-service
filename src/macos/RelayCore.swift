@@ -250,6 +250,17 @@ struct RelayConfig {
         throw RelayCliStoreError(message: "config file does not exist: \(path)")
     }
 
+    static func loadOrCreate(settings: [String: String], path: String = relayConfigPath()) throws -> RelayConfig {
+        if FileManager.default.fileExists(atPath: path) {
+            return try loadExisting(path: path)
+        }
+
+        let config = RelayConfig.from(settings: settings)
+        try config.validate()
+        try config.write(to: path)
+        return config
+    }
+
     func write(to path: String = relayConfigPath()) throws {
         let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -437,6 +448,14 @@ private func cleanupRetentionMinutesFromSettings(_ settings: [String: String]) -
     }
 
     return minutes
+}
+
+func relayConfigErrorMessage(_ error: Error) -> String {
+    if let error = error as? RelayCliStoreError {
+        return error.message
+    }
+
+    return error.localizedDescription
 }
 
 // Mirrors core/message.ts spokenText: optional line prefix, type prefix for
@@ -840,14 +859,12 @@ private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNoti
 
     return withRelayCliStore { store in
         let path = relayConfigPath()
-        let existing = FileManager.default.fileExists(atPath: path)
-        let config = existing ? try RelayConfig.loadExisting(path: path) : try store.configPreview()
+        let config = try RelayConfig.loadExisting(path: path)
         switch action {
         case "show":
             return RelayCliResult(stdout: config.tomlString(), stderr: "", exitCode: 0)
         case "validate":
-            let suffix = existing ? "" : " (upgrade preview; file does not exist yet)"
-            return RelayCliResult(stdout: "config valid: \(path)\(suffix)", stderr: "", exitCode: 0)
+            return RelayCliResult(stdout: "config valid: \(path)", stderr: "", exitCode: 0)
         default:
             wakeNotifier.post()
             return RelayCliResult(stdout: "config valid; reload requested", stderr: "", exitCode: 0)
@@ -1260,10 +1277,11 @@ private final class RelayCliStore {
 
     func state() throws -> RelayCliQueueState {
         let settings = try rawSettings()
+        let config = try validConfigIfAvailable()
         return RelayCliQueueState(
             mode: playbackMode(settings["mode"]),
-            muted: settings["muted"] == "true",
-            inactiveLineCombiner: commandIsEnabled(settings["inactive_line_combiner_command"]) ? "custom" : "none",
+            muted: settings["muted"] == "true" || config == nil,
+            inactiveLineCombiner: config.map { commandIsEnabled($0.combinerCommand) ? "custom" : "none" } ?? "none",
             activeLine: settings["active_line"]
         )
     }
@@ -1277,6 +1295,8 @@ private final class RelayCliStore {
             "profile": "direct",
             "mode": state.mode,
             "muted": state.muted,
+            "configPath": relayConfigPath(),
+            "configError": try configError() as Any,
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
@@ -1312,6 +1332,7 @@ private final class RelayCliStore {
         let object: [String: Any] = [
             "profile": "direct",
             "configPath": relayConfigPath(),
+            "configError": try configError() as Any,
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
@@ -1348,11 +1369,16 @@ private final class RelayCliStore {
     }
 
     func inactiveLineCombinerCommand() throws -> String {
-        try rawSettings()["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
+        try validConfigIfAvailable()?.combinerCommand ?? ""
     }
 
     func setInactiveLineCombinerCommand(_ command: String) throws -> RelayCliQueueState {
-        try setSetting(key: "inactive_line_combiner_command", value: resetBlankCommand(command, fallback: defaultInactiveLineCombinerCommand))
+        var config = try config()
+        config.combinerCommand = resetBlankCommand(command, fallback: "")
+        try config.validate()
+        try config.write()
+        try clearConfigError()
+        try setSetting(key: "inactive_line_combiner_command", value: config.combinerCommand)
         return try state()
     }
 
@@ -1365,14 +1391,19 @@ private final class RelayCliStore {
     }
 
     func voiceCommand() throws -> String {
-        try rawSettings()["voice_command"] ?? defaultVoiceCommand
+        try validConfigIfAvailable()?.voiceCommand ?? ""
     }
 
     func setVoiceCommand(_ command: String) throws {
+        var config = try config()
         let normalized = command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         guard enabledCommandLineCount(normalized) == 1 else {
             throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
         }
+        config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+        try config.validate()
+        try config.write()
+        try clearConfigError()
         try setSetting(key: "voice_command", value: normalized)
         try setSetting(key: "voice_command_last_error", value: "")
     }
@@ -1383,7 +1414,7 @@ private final class RelayCliStore {
     }
 
     func cleanupRetentionMinutes() throws -> Int {
-        cleanupRetentionMinutes(from: try rawSettings())
+        try validConfigIfAvailable()?.cleanupRetentionMinutes ?? defaultCleanupRetentionMinutes
     }
 
     func setCleanupRetentionMinutes(_ value: String) throws {
@@ -1391,13 +1422,44 @@ private final class RelayCliStore {
             throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
         }
 
+        var config = try config()
+        config.cleanupRetentionMinutes = minutes
+        try config.validate()
+        try config.write()
+        try clearConfigError()
         try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
     }
 
-    func configPreview() throws -> RelayConfig {
-        let config = RelayConfig.from(settings: try rawSettings())
-        try config.validate()
-        return config
+    func config() throws -> RelayConfig {
+        try RelayConfig.loadExisting()
+    }
+
+    private func validConfigIfAvailable() throws -> RelayConfig? {
+        do {
+            let config = try RelayConfig.loadExisting()
+            try clearConfigError()
+            return config
+        } catch {
+            try setConfigError(relayConfigErrorMessage(error))
+            return nil
+        }
+    }
+
+    func configError() throws -> String? {
+        let value = try rawSettings()["config_last_error"] ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    private func setConfigError(_ message: String) throws {
+        if try rawSettings()["config_last_error"] != message {
+            try setSetting(key: "config_last_error", value: message)
+        }
+    }
+
+    private func clearConfigError() throws {
+        if try rawSettings()["config_last_error"]?.isEmpty == false {
+            try setSetting(key: "config_last_error", value: "")
+        }
     }
 
     func firstStartSetupComplete() throws -> Bool {
@@ -1890,6 +1952,15 @@ private final class RelayCliStore {
         try migrateLegacyVoiceCommandSetting()
         try setSettingIfMissing(key: "cleanup_retention_minutes", value: String(defaultCleanupRetentionMinutes))
         try setSettingIfMissing(key: "first_start_setup_complete", value: defaultFirstStartSetupCompleteValue())
+        do {
+            let config = try RelayConfig.loadOrCreate(settings: rawSettings())
+            try setSetting(key: "inactive_line_combiner_command", value: config.combinerCommand)
+            try setSetting(key: "voice_command", value: config.voiceCommand)
+            try setSetting(key: "cleanup_retention_minutes", value: String(config.cleanupRetentionMinutes))
+            try clearConfigError()
+        } catch {
+            try setConfigError(relayConfigErrorMessage(error))
+        }
     }
 
     private func migrateLegacyVoiceCommandSetting() throws {

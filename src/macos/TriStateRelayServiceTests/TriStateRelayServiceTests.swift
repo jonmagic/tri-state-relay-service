@@ -122,6 +122,7 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("scrollContainer.setAccessibilityIdentifier(\"tsrs.settings.advanced.panel\")"))
         XCTAssertTrue(source.contains("configureAccessibility(cliStatusView, identifier: \"tsrs.settings.setup.cli-status\""))
         XCTAssertTrue(source.contains("configureAccessibility(voiceCommandErrorView, identifier: \"tsrs.settings.voice.command-error\""))
+        XCTAssertTrue(source.contains("configureAccessibility(configErrorView, identifier: \"tsrs.settings.voice.config-error\""))
         XCTAssertTrue(source.contains("configureAccessibility(cleanupRetentionStatusView, identifier: \"tsrs.settings.advanced.cleanup-retention-status\""))
     }
 
@@ -221,7 +222,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, voiceCommandErrorView])"))
+        XCTAssertTrue(source.contains("views.append(contentsOf: [commandLabel, commandNote, commandScrollView, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView])"))
     }
 
