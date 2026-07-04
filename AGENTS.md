@@ -18,6 +18,11 @@ Tri-State Relay Service is a local macOS agent relay queue. Agents are implement
 Use these local skills when their trigger matches the work:
 
 - `.github/skills/improvement-loop/SKILL.md` when an agent makes a mistake, misses a requirement, overreaches, or after any significant task.
+- `.github/skills/settings-ui-verification/SKILL.md` when changing Settings UI, first-start setup, accessibility identifiers, Settings screenshots, or UI automation.
+
+## Settings UI verification
+
+Issue #2 added a safe, app-owned Settings opener and screenshot workflow. Use `scripts/capture-settings-ui.sh` for Settings or first-start UI changes after the direct app is rebuilt and restarted. The script forces Focus mode, opens Settings through `relay debug open-settings --panel <panel>`, captures screenshots under `.artifacts/settings-ui/`, and can run Accessibility-backed interaction checks without speaking or changing playback state. Use `TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS=1 scripts/capture-settings-ui.sh` when a change depends on focus, copy, field, tab, or sidebar interactions. Accessibility, Screen Recording, and Input Monitoring permissions are optional local development permissions, not normal TSRS runtime requirements; ask before changing permission, launch-agent, persistence, or playback behavior.
 
 ## Milestone commits
 
@@ -140,6 +145,8 @@ queue data.
 Completed milestone: Setup includes an explicit opt-in Open at Login checkbox
 backed by `SMAppService.mainApp`; TSRS still starts in Focus mode so login launch
 does not speak automatically.
+
+Completed milestone: the first TOML config work is additive and safe. `relay config path|show|validate|reload` can inspect an existing config or preview a 1.1.2 SQLite-settings upgrade, but runtime playback and Settings still use SQLite until the fail-quiet source-of-truth migration is explicitly implemented.
 
 ## Task exit criteria
 

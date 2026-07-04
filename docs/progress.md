@@ -178,5 +178,13 @@ CLI install panel update:
    first when available.
 2. Persisted voice identifiers are validated against the same options used by
    Settings and direct app-owned playback.
+
+## TOML config milestone
+
+1. Added the first safe TOML milestone for issue #3: `relay config path`, `relay config show`, `relay config validate`, and `relay config reload`.
+2. `relay config show` parses an existing config file when present; otherwise it prints an upgrade preview synthesized from the current SQLite settings. This keeps released 1.1.2 settings visible without writing a new persistence file yet.
+3. The TOML parser is deliberately narrow and dependency-free. It supports the known `[voice]`, `[voice.variables]`, `[combiner]`, `[combiner.variables]`, and `[retention]` sections, quoted strings, integer retention, and allowlisted command placeholders.
+4. Runtime playback, Settings edits, voice selection, active line, mode, mute, first-start completion, shortcut, and queue state still use SQLite. The later source-of-truth migration needs an explicit fail-quiet contract before the app reads commands from TOML.
+5. Added `.github/skills/settings-ui-verification/SKILL.md` and AGENTS guidance for issue #2's screenshot and Accessibility-backed Settings workflow.
 3. Selecting a voice is quiet; Preview remains the explicit action that speaks a
    sample.

@@ -173,6 +173,89 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(settings.inactiveLineCombinerCommand, "llm prompt <input> --system <system> --no-stream --no-log")
     }
 
+    func testVersion112SettingsProduceTomlUpgradePreviewWithoutLosingRuntimeState() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        database.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        database.execute("CREATE TABLE relays (id INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL, message TEXT NOT NULL, type TEXT NOT NULL, priority TEXT NOT NULL, session TEXT, app TEXT, cwd TEXT, url TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        database.execute("INSERT INTO settings (key, value) VALUES ('mode', 'live')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('muted', 'true')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('active_line', 'Brain')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('inactive_line_combiner_command', 'llm prompt <input> --system <system>')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('speech_command', '/usr/bin/say -v Samantha <message>')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('first_start_setup_complete', 'true')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('command_palette_shortcut', 'control-shift-command-y')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('last_spoken_line', '{\"line\":\"Brain\",\"spokenAt\":\"2026-07-03T00:00:00.000Z\"}')")
+
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        let settings = store.loadSettings()
+        let status = store.loadStatus()
+        let config = runRelayCli(["config", "show"]).stdout
+
+        XCTAssertEqual(settings.inactiveLineCombinerCommand, "llm prompt <input> --system <system>")
+        XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
+        XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-shift-command-y")
+        XCTAssertTrue(settings.firstStartSetupComplete)
+        XCTAssertEqual(status.mode, "live")
+        XCTAssertEqual(status.muted, true)
+        XCTAssertEqual(status.activeLine, "Brain")
+        XCTAssertTrue(config.contains("llm prompt <input> --system <system>"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configPath))
+        XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'speech_command'"), "/usr/bin/say -v Samantha <message>")
+        XCTAssertEqual(database.scalar("SELECT value FROM settings WHERE key = 'last_spoken_line'"), "{\"line\":\"Brain\",\"spokenAt\":\"2026-07-03T00:00:00.000Z\"}")
+    }
+
+    func testExistingTomlConfigIsNotOverwrittenBySettingsMigration() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+
+        let existingConfig = """
+        [voice]
+        command = "/usr/bin/say -f <text-file> -o <output-file>"
+        [combiner]
+        command = "apfel --system <system> --output plain <input>"
+        [retention]
+        cleanup_retention_minutes = 42
+        """
+        try existingConfig.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        database.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        database.execute("CREATE TABLE relays (id INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL, message TEXT NOT NULL, type TEXT NOT NULL, priority TEXT NOT NULL, session TEXT, app TEXT, cwd TEXT, url TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        database.execute("INSERT INTO settings (key, value) VALUES ('inactive_line_combiner_command', 'llm prompt <input>')")
+        database.execute("INSERT INTO settings (key, value) VALUES ('cleanup_retention_minutes', '999')")
+
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let settings = NativeRelayStore(profile: "direct").loadSettings()
+        let show = runRelayCli(["config", "show"]).stdout
+        let config = try String(contentsOfFile: configPath, encoding: .utf8)
+
+        XCTAssertEqual(settings.inactiveLineCombinerCommand, "llm prompt <input>")
+        XCTAssertEqual(settings.cleanupRetentionMinutes, 999)
+        XCTAssertTrue(show.contains("apfel --system <system> --output plain <input>"))
+        XCTAssertTrue(show.contains("cleanup_retention_minutes = 42"))
+        XCTAssertEqual(config, existingConfig)
+    }
+
     func testRecentLineMessagesReturnQueuedThenDelivered() throws {
         let directory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

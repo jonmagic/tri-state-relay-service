@@ -4,6 +4,7 @@ import XCTest
 final class RelayCliTests: XCTestCase {
     override func tearDown() {
         unsetenv("TSRS_DB_PATH")
+        unsetenv("TSRS_CONFIG_PATH")
         unsetenv("TSRS_PROCESSOR_AUTH")
         super.tearDown()
     }
@@ -216,6 +217,47 @@ final class RelayCliTests: XCTestCase {
 
         XCTAssertEqual(result.exitCode, 1)
         XCTAssertTrue(result.stderr.contains("voice command must have exactly one uncommented command"))
+    }
+
+    func testConfigCommandsShowAndValidateMigratedSettings() throws {
+        let databasePath = isolatedDatabasePath()
+        setenv("TSRS_DB_PATH", databasePath, 1)
+
+        _ = runRelayCli(["combiner", "--command", "llm prompt <input> --system <system>"])
+        _ = runRelayCli(["settings", "--cleanup-retention-minutes", "1440"])
+
+        let configPath = runRelayCli(["config", "path"]).stdout
+        XCTAssertTrue(configPath.hasSuffix("config.toml"))
+
+        let show = runRelayCli(["config", "show"])
+        XCTAssertEqual(show.exitCode, 0)
+        XCTAssertTrue(show.stdout.contains("[combiner]"))
+        XCTAssertTrue(show.stdout.contains("llm prompt <input> --system <system>"))
+        XCTAssertTrue(show.stdout.contains("cleanup_retention_minutes = 1440"))
+
+        let validate = runRelayCli(["config", "validate"])
+        XCTAssertEqual(validate.stdout, "config valid: \(configPath) (upgrade preview; file does not exist yet)")
+    }
+
+    func testConfigValidationRejectsUnknownPlaceholder() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.appendingPathComponent("relay.db").path, 1)
+        setenv("TSRS_CONFIG_PATH", directory.appendingPathComponent("config.toml").path, 1)
+
+        try """
+        [voice]
+        command = "/usr/bin/say -f <text-file> -o <output-file>"
+        [combiner]
+        command = "llm prompt <secret-file>"
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(["config", "validate"])
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("inactive-line combiner command contains unsupported placeholder <secret-file>"))
     }
 
     func testFirstStartCommandResetsOnlySetupCompletion() {

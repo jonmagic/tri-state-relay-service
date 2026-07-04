@@ -81,6 +81,8 @@ This workflow is optional local GUI automation. Normal TSRS usage does not requi
 
 Use `TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS=1 scripts/capture-settings-ui.sh` when the point of the run is to prove Accessibility-backed field interaction. That mode fails instead of silently falling back when macOS has not granted permission to the terminal app.
 
+Agents should also load `.github/skills/settings-ui-verification/SKILL.md` for Settings or first-start UI work. The skill keeps the issue #2 workflow close to the task: rebuild direct app, restart through the helper, capture screenshots, and use strict Accessibility-backed interaction checks when the change depends on focus, copy, sidebar, tab, or field behavior.
+
 For repository safety checks, run:
 
 ```sh

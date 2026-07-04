@@ -15,6 +15,7 @@ let relayDebugOpenSettingsPanels = ["setup", "voice", "secondary", "advanced"]
 let defaultCleanupRetentionMinutes = 365 * 24 * 60
 let maxCleanupRetentionMinutes = 10 * 365 * 24 * 60
 let defaultVoiceTempCleanupMinutes = 6 * 60
+let relayConfigPathEnv = "TSRS_CONFIG_PATH"
 
 struct RelayWakeNotifier {
     let post: () -> Void
@@ -218,6 +219,224 @@ func processorIsAppAuthorized(_ environment: [String: String] = ProcessInfo.proc
     environment[appProcessorAuthorizationEnv] == appProcessorAuthorization
 }
 
+struct RelayConfig {
+    var voiceCommand: String
+    var voiceVariables: [String: String]
+    var combinerCommand: String
+    var combinerVariables: [String: String]
+    var cleanupRetentionMinutes: Int
+
+    static func from(settings: [String: String]) -> RelayConfig {
+        let voice = settings["voice_command"].flatMap { shouldMigrateVoiceCommand($0) ? nil : $0 } ?? defaultVoiceCommand
+        return RelayConfig(
+            voiceCommand: voice,
+            voiceVariables: [:],
+            combinerCommand: settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand,
+            combinerVariables: [:],
+            cleanupRetentionMinutes: cleanupRetentionMinutesFromSettings(settings)
+        )
+    }
+
+    static func loadExisting(path: String = relayConfigPath()) throws -> RelayConfig {
+        if FileManager.default.fileExists(atPath: path) {
+            let text = try String(contentsOfFile: path, encoding: .utf8)
+            let config = try parseRelayConfigTOML(text)
+            try config.validate()
+            return config
+        }
+
+        throw RelayCliStoreError(message: "config file does not exist: \(path)")
+    }
+
+    func write(to path: String = relayConfigPath()) throws {
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        try tomlString().write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    func validate() throws {
+        try validateCommandPlaceholders(voiceCommand, allowed: ["<text-file>", "<output-file>", "<voice-id>", "<app-bin>"], label: "voice")
+        guard enabledCommandLineCount(voiceCommand) == 1 else {
+            throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
+        }
+        try validateCommandPlaceholders(combinerCommand, allowed: ["<input>", "<system>"], label: "inactive-line combiner")
+        guard (1...maxCleanupRetentionMinutes).contains(cleanupRetentionMinutes) else {
+            throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
+        }
+    }
+
+    func tomlString() -> String {
+        var lines = [
+            "# Tri-State Relay Service advanced config.",
+            "# Placeholders are inserted as single argv values, not shell-expanded.",
+            "",
+            "[voice]",
+            "command = \(tomlQuotedString(voiceCommand))",
+            "",
+            "[voice.variables]",
+        ]
+        lines += voiceVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        lines += [
+            "",
+            "[combiner]",
+            "command = \(tomlQuotedString(combinerCommand))",
+            "",
+            "[combiner.variables]",
+        ]
+        lines += combinerVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        lines += [
+            "",
+            "[retention]",
+            "cleanup_retention_minutes = \(cleanupRetentionMinutes)",
+            "",
+        ]
+        return lines.joined(separator: "\n")
+    }
+}
+
+func relayConfigPath(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    if let path = environment[relayConfigPathEnv], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return path
+    }
+
+    if let databasePath = environment["TSRS_DB_PATH"], !databasePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return URL(fileURLWithPath: databasePath).deletingLastPathComponent().appendingPathComponent("config.toml").path
+    }
+
+    let home = environment["HOME"] ?? NSHomeDirectory()
+    return "\(home)/Library/Application Support/Tri-State Relay Service/config.toml"
+}
+
+private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
+    var config = RelayConfig(
+        voiceCommand: defaultVoiceCommand,
+        voiceVariables: [:],
+        combinerCommand: defaultInactiveLineCombinerCommand,
+        combinerVariables: [:],
+        cleanupRetentionMinutes: defaultCleanupRetentionMinutes
+    )
+    var section = ""
+
+    for (index, originalLine) in text.components(separatedBy: .newlines).enumerated() {
+        let line = originalLine.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty || line.hasPrefix("#") {
+            continue
+        }
+
+        if line.hasPrefix("[") && line.hasSuffix("]") {
+            section = String(line.dropFirst().dropLast())
+            guard ["voice", "voice.variables", "combiner", "combiner.variables", "retention"].contains(section) else {
+                throw RelayCliStoreError(message: "config line \(index + 1): unsupported section [\(section)]")
+            }
+            continue
+        }
+
+        let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else {
+            throw RelayCliStoreError(message: "config line \(index + 1): expected key = value")
+        }
+
+        let key = parts[0].trimmingCharacters(in: .whitespaces)
+        let value = parts[1].trimmingCharacters(in: .whitespaces)
+
+        switch section {
+        case "voice" where key == "command":
+            config.voiceCommand = try parseTomlString(value, line: index + 1)
+        case "voice.variables":
+            config.voiceVariables[key] = try parseTomlString(value, line: index + 1)
+        case "combiner" where key == "command":
+            config.combinerCommand = try parseTomlString(value, line: index + 1)
+        case "combiner.variables":
+            config.combinerVariables[key] = try parseTomlString(value, line: index + 1)
+        case "retention" where key == "cleanup_retention_minutes":
+            guard let minutes = Int(value) else {
+                throw RelayCliStoreError(message: "config line \(index + 1): cleanup_retention_minutes must be an integer")
+            }
+            config.cleanupRetentionMinutes = minutes
+        default:
+            throw RelayCliStoreError(message: "config line \(index + 1): unsupported key \(key)")
+        }
+    }
+
+    return config
+}
+
+private func parseTomlString(_ value: String, line: Int) throws -> String {
+    guard value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 else {
+        throw RelayCliStoreError(message: "config line \(line): expected quoted string")
+    }
+
+    let body = String(value.dropFirst().dropLast())
+    var output = ""
+    var escaped = false
+
+    for character in body {
+        if escaped {
+            switch character {
+            case "n": output.append("\n")
+            case "t": output.append("\t")
+            case "\"": output.append("\"")
+            case "\\": output.append("\\")
+            default:
+                throw RelayCliStoreError(message: "config line \(line): unsupported escape \\" + String(character))
+            }
+            escaped = false
+        } else if character == "\\" {
+            escaped = true
+        } else {
+            output.append(character)
+        }
+    }
+
+    if escaped {
+        throw RelayCliStoreError(message: "config line \(line): unterminated escape")
+    }
+
+    return output
+}
+
+private func tomlQuotedString(_ value: String) -> String {
+    let escaped = value
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+        .replacingOccurrences(of: "\n", with: "\\n")
+        .replacingOccurrences(of: "\t", with: "\\t")
+    return "\"\(escaped)\""
+}
+
+private func tomlBareKey(_ value: String) -> String {
+    if value.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil {
+        return value
+    }
+
+    return tomlQuotedString(value)
+}
+
+private func validateCommandPlaceholders(_ command: String, allowed: Set<String>, label: String) throws {
+    let pattern = #"<[^>\s]+>"#
+    guard let expression = try? NSRegularExpression(pattern: pattern) else {
+        return
+    }
+    let range = NSRange(command.startIndex..<command.endIndex, in: command)
+    for match in expression.matches(in: command, range: range) {
+        guard let placeholderRange = Range(match.range, in: command) else {
+            continue
+        }
+        let placeholder = String(command[placeholderRange])
+        if !allowed.contains(placeholder) {
+            throw RelayCliStoreError(message: "\(label) command contains unsupported placeholder \(placeholder)")
+        }
+    }
+}
+
+private func cleanupRetentionMinutesFromSettings(_ settings: [String: String]) -> Int {
+    guard let value = settings["cleanup_retention_minutes"], let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+        return defaultCleanupRetentionMinutes
+    }
+
+    return minutes
+}
+
 // Mirrors core/message.ts spokenText: optional line prefix, type prefix for
 // non-update relays, then the message body.
 func spokenRelayText(line: String, type: String, message: String, includeLine: Bool) -> String {
@@ -270,6 +489,8 @@ Commands:
                        Get or set active line.
   combiner [--command <command>]
                        Get or set inactive-line combiner command.
+  config [path|show|validate|reload]
+                       Inspect and validate TOML-backed advanced config.
   settings [--combiner-command <command>] [--speech-command <command>] [--voice-command <command>]
            [--cleanup-retention-minutes <minutes>]
                        Print settings JSON.
@@ -414,6 +635,8 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeN
         return runLineCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "combiner":
         return runCombinerCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
+    case "config":
+        return runConfigCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "settings":
         return runSettingsCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "first-start":
@@ -596,6 +819,38 @@ private func runCombinerCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
         } catch {
             return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
         }
+}
+
+private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
+    let action = arguments.first ?? "show"
+
+    guard arguments.count <= 1 else {
+        return RelayCliResult(stdout: "", stderr: "config accepts one action: path, show, validate, or reload", exitCode: 1)
+    }
+
+    if action == "path" {
+        return RelayCliResult(stdout: relayConfigPath(), stderr: "", exitCode: 0)
+    }
+
+    guard ["show", "validate", "reload"].contains(action) else {
+        return RelayCliResult(stdout: "", stderr: "config action must be path, show, validate, or reload", exitCode: 1)
+    }
+
+    return withRelayCliStore { store in
+        let path = relayConfigPath()
+        let existing = FileManager.default.fileExists(atPath: path)
+        let config = existing ? try RelayConfig.loadExisting(path: path) : try store.configPreview()
+        switch action {
+        case "show":
+            return RelayCliResult(stdout: config.tomlString(), stderr: "", exitCode: 0)
+        case "validate":
+            let suffix = existing ? "" : " (upgrade preview; file does not exist yet)"
+            return RelayCliResult(stdout: "config valid: \(path)\(suffix)", stderr: "", exitCode: 0)
+        default:
+            wakeNotifier.post()
+            return RelayCliResult(stdout: "config valid; reload requested", stderr: "", exitCode: 0)
+        }
+    }
 }
 
 private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
@@ -1054,6 +1309,7 @@ private final class RelayCliStore {
         let state = try state()
         let object: [String: Any] = [
             "profile": "direct",
+            "configPath": relayConfigPath(),
             "inactiveLineCombiner": state.inactiveLineCombiner,
             "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
             "speechCommand": try speechCommand(),
@@ -1134,6 +1390,12 @@ private final class RelayCliStore {
         }
 
         try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
+    }
+
+    func configPreview() throws -> RelayConfig {
+        let config = RelayConfig.from(settings: try rawSettings())
+        try config.validate()
+        return config
     }
 
     func firstStartSetupComplete() throws -> Bool {
