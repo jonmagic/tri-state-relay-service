@@ -24,7 +24,7 @@ Current state:
 16. The menu bar app supports line-scoped source actions for revealing the latest captured cwd and copying the latest cwd or URL.
 17. The menu bar app periodically refreshes queue state and processes queued relays when Ready or Live is active and playback is unmuted.
 18. `docs/prompts/combine-inactive-line.md` defines the combiner prompt for collapsing inactive-line updates into one pending message.
-19. `relay combiner --command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
+19. `relay config set --combiner-command ...` configures whether inactive lines use latest-message-only behavior or CLI LLM combination.
 20. `relay line ...` sets the active line, the menu shows line counts, and the app auto-plays active-line messages while leaving other lines queued.
 21. Inactive-line enqueue policy is implemented: direct builds call the configured `llm`, `apfel`, or other no-shell helper command to combine pending inactive-line updates; when no combiner is configured, inactive lines use latest-only behavior.
 22. Line menu actions are scoped to the selected line: play next, skip next, clear queue, replay last, mark handled, and clear heard.
@@ -56,7 +56,7 @@ Current state additions:
 6. Source actions are line-scoped app menu actions using native `NSWorkspace` and `NSPasteboard` APIs.
 7. External inactive-line combiner execution is direct-profile only; App Store-safe mode reports it unavailable and uses latest-only inactive-line behavior.
 8. `relay` is the CLI/native binary.
-9. `relay settings` exposes a capability seam for direct versus App Store-safe behavior, including the one-line free-tier placeholder.
+9. `relay status` exposes a capability seam for direct versus App Store-safe behavior, including the one-line free-tier placeholder.
 10. `relay status` exposes the active profile and capabilities for diagnostics.
 11. App-only native playback helper commands originally required app authorization before claiming or mutating playback state.
 12. The CLI source command surface was removed; source actions live in line submenus.
@@ -88,7 +88,7 @@ Swift migration update:
 2. The macOS app no longer launches or supervises the legacy relay processor loop.
 3. Both macOS app profiles package only the CLI helper binary, `relay`.
 4. `relay-processor` has been retired from the source tree and remains absent from app bundles.
-5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to `relay status` or `relay settings`.
+5. The macOS app now reads menu status and settings directly from SQLite instead of shelling out to CLI helper commands.
 6. The macOS app now mutates queue state and claims/marks speech relays directly through Swift SQLite instead of shelling out to app-only helper commands.
 7. macOS app builds now run through `src/macos/TriStateRelayService.xcodeproj` and bundle the Swift-built `relay` CLI; the Swift CLI is now the active implementation and validation target.
 

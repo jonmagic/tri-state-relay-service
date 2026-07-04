@@ -185,46 +185,67 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(brainSource["app"] as? String, "Copilot")
     }
 
-    func testSettingsPersistsSpeechCommand() throws {
+    func testSettingsCommandIsRemoved() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
-        let updated = try jsonObject(runRelayCli(["settings", "--speech-command", "/usr/bin/say -v Samantha <message>"]).stdout)
-        XCTAssertEqual(updated["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
+        let result = runRelayCli(["settings"])
 
-        let reread = try jsonObject(runRelayCli(["settings"]).stdout)
-        XCTAssertEqual(reread["speechCommand"] as? String, "/usr/bin/say -v Samantha <message>")
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("unknown command: settings"))
     }
 
-    func testSettingsPersistsVoiceCommand() throws {
+    func testConfigSetPersistsVoiceCommand() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
         let command = "/usr/bin/say -f <text-file> -o <output-file>"
-        let updated = try jsonObject(runRelayCli(["settings", "--voice-command", command]).stdout)
-        XCTAssertEqual(updated["voiceCommand"] as? String, command)
-        XCTAssertNil(updated["voiceCommandLastError"] as? String)
+        let updated = runRelayCli(["config", "set", "--voice-command", command])
+        XCTAssertEqual(updated.exitCode, 0)
+        XCTAssertTrue(updated.stdout.contains("command = \"\(command)\""))
 
-        let reread = try jsonObject(runRelayCli(["settings"]).stdout)
-        XCTAssertEqual(reread["voiceCommand"] as? String, command)
+        let status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["voiceCommand"] as? String, command)
 
-        let reset = try jsonObject(runRelayCli(["settings", "--voice-command", "none"]).stdout)
-        XCTAssertEqual(reset["voiceCommand"] as? String, command)
+        let reset = runRelayCli(["config", "set", "--voice-command", "none"])
+        XCTAssertEqual(reset.exitCode, 0)
+        XCTAssertTrue(reset.stdout.contains("command = \"\(command)\""))
     }
 
-    func testSettingsRejectsMultipleEnabledVoiceCommands() {
+    func testConfigSetRejectsMultipleEnabledVoiceCommands() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
-        let result = runRelayCli(["settings", "--voice-command", "/usr/bin/say -f <text-file> -o <output-file>\n/usr/bin/false"])
+        let result = runRelayCli(["config", "set", "--voice-command", "/usr/bin/say -f <text-file> -o <output-file>\n/usr/bin/false"])
 
         XCTAssertEqual(result.exitCode, 1)
         XCTAssertTrue(result.stderr.contains("voice command must have exactly one uncommented command"))
+    }
+
+    func testConfigSetDoesNotPartiallyApplyWhenValidationFails() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let result = runRelayCli([
+            "config",
+            "set",
+            "--combiner-command",
+            "llm prompt <input>",
+            "--voice-command",
+            "/usr/bin/say -f <text-file> -o <output-file>\n/usr/bin/false"
+        ])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("voice command must have exactly one uncommented command"))
+        XCTAssertFalse(runRelayCli(["config", "show"]).stdout.contains("llm prompt <input>"))
+
+        let status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["inactiveLineCombiner"] as? String, "none")
+        XCTAssertEqual(status["inactiveLineCombinerCommand"] as? String, "")
     }
 
     func testConfigCommandsShowAndValidateMigratedSettings() throws {
         let databasePath = isolatedDatabasePath()
         setenv("TSRS_DB_PATH", databasePath, 1)
 
-        _ = runRelayCli(["combiner", "--command", "llm prompt <input> --system <system>"])
-        _ = runRelayCli(["settings", "--cleanup-retention-minutes", "1440"])
+        _ = runRelayCli(["config", "set", "--combiner-command", "llm prompt <input> --system <system>"])
+        _ = runRelayCli(["config", "set", "--cleanup-retention-minutes", "1440"])
 
         let configPath = runRelayCli(["config", "path"]).stdout
         XCTAssertTrue(configPath.hasSuffix("config.toml"))
@@ -351,7 +372,7 @@ final class RelayCliTests: XCTestCase {
         let script = try inactiveCombinerScript(outputMessage: "Other summary: setup issue is isolated to the old CLI path.")
 
         _ = runRelayCli(["line", "Brain"])
-        XCTAssertEqual(runRelayCli(["combiner", "--command", "\(script) <input> <system>"]).stdout, "inactive line combiner set to custom")
+        XCTAssertTrue(runRelayCli(["config", "set", "--combiner-command", "\(script) <input> <system>"]).stdout.contains("command = \"\(script) <input> <system>\""))
         _ = runRelayCli(["--line", "Other", "--message", "first inactive"])
         _ = runRelayCli(["--line", "Other", "--message", "second inactive"])
 
@@ -366,7 +387,7 @@ final class RelayCliTests: XCTestCase {
         let script = try inactiveCombinerScript(outputMessage: "Other summary: placeholder text stayed inside input.", rejectSystemPromptInInput: true)
 
         _ = runRelayCli(["line", "Brain"])
-        _ = runRelayCli(["combiner", "--command", "\(script) <input>"])
+        _ = runRelayCli(["config", "set", "--combiner-command", "\(script) <input>"])
         let result = runRelayCli(["--line", "Other", "--message", "literal <system> marker"])
 
         XCTAssertEqual(result.exitCode, 0)
@@ -536,12 +557,15 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["line"]).stdout, "Brain")
 
         XCTAssertEqual(runRelayCli(["combiner"]).stdout, "")
-        XCTAssertEqual(runRelayCli(["combiner", "--command", "llm prompt <input>"]).stdout, "inactive line combiner set to custom")
+        let removedCombinerSetter = runRelayCli(["combiner", "--command", "llm prompt <input>"])
+        XCTAssertEqual(removedCombinerSetter.exitCode, 1)
+        XCTAssertTrue(removedCombinerSetter.stderr.contains("combiner is read-only; use config set --combiner-command"))
+        XCTAssertTrue(runRelayCli(["config", "set", "--combiner-command", "llm prompt <input>"]).stdout.contains("command = \"llm prompt <input>\""))
         XCTAssertEqual(runRelayCli(["state"]).stdout, "focus, active-line=Brain, inactive-line-combiner=custom")
 
-        let settings = try jsonObject(runRelayCli(["settings"]).stdout)
-        XCTAssertEqual(settings["inactiveLineCombiner"] as? String, "custom")
-        XCTAssertEqual(settings["inactiveLineCombinerCommand"] as? String, "llm prompt <input>")
+        let status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["inactiveLineCombiner"] as? String, "custom")
+        XCTAssertEqual(status["inactiveLineCombinerCommand"] as? String, "llm prompt <input>")
 
         _ = runRelayCli(["--line", "Brain", "--message", "first"])
         _ = runRelayCli(["--line", "Brain", "--message", "second"])

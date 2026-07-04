@@ -176,12 +176,12 @@ For many people, the default behavior is enough. You can work on one line, then 
 
 The Combiner is for people who want an external agent or command to summarize many queued inactive-line updates into one short relay. It is useful when you run several agents at once and want a catch-up that sounds like a concise teammate summary.
 
-You can inspect or change the Combiner from the CLI:
+You can inspect the Combiner from the CLI and change it through the advanced config command:
 
 ```sh
 relay combiner
-relay combiner --command "llm prompt <input> --system <system> --no-stream --no-log"
-relay combiner --command none
+relay config set --combiner-command 'llm prompt <input> --system <system> --no-stream --no-log'
+relay config set --combiner-command none
 ```
 
 The command template receives the inactive-line updates as input and should return one safe, short message. Leave the Combiner unset if you prefer the simpler latest-update behavior.
@@ -198,16 +198,10 @@ Advanced voice, inactive-line combiner, and cleanup retention settings live in `
 relay config path
 relay config show
 relay config validate
+relay config set --voice-command '/usr/bin/say -f <text-file> -o <output-file>'
 ```
 
 If `config.toml` is malformed or uses unsupported placeholders, `relay config validate` reports the error. Playback fails quiet while the config is invalid: relays stay queued, Settings/status surface the config error, and TSRS does not claim messages for speech until the config is fixed.
-
-Inspect or set the command with:
-
-```sh
-relay settings
-relay settings --voice-command "/usr/bin/say -f <text-file> -o <output-file>"
-```
 
 You can also edit the command in Settings > Voice. The default template uses `/usr/bin/say`; the Speechify example stays commented until you choose to enable it.
 
@@ -233,7 +227,7 @@ security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api
 Configure the wrapper with an absolute path:
 
 ```sh
-relay settings --voice-command "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY"
+relay config set --voice-command '<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY'
 ```
 
 The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It never speaks directly.

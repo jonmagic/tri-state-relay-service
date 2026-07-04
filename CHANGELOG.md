@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0 - Unreleased
+
+- Made `relay config` the single CLI surface for TOML-backed advanced configuration.
+- Added `relay config set --voice-command`, `--combiner-command`, and `--cleanup-retention-minutes`.
+- Removed the duplicate `relay settings` command and made `relay combiner` read-only; use `relay config set --combiner-command` to change the combiner.
+- Preserved 1.1.2 upgrade migration from SQLite settings into `config.toml`.
+
 ## 1.1.2 - App wake and status refresh
 
 - Added Darwin notifications so the app wakes promptly when the CLI changes the relay queue or playback state.

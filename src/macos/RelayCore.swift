@@ -508,13 +508,11 @@ Commands:
                        Replay the latest delivered relay.
   line [line|--line <line>]
                        Get or set active line.
-  combiner [--command <command>]
-                       Get or set inactive-line combiner command.
+  combiner             Get inactive-line combiner command.
   config [path|show|validate|reload]
-                       Inspect and validate TOML-backed advanced config.
-  settings [--combiner-command <command>] [--speech-command <command>] [--voice-command <command>]
-           [--cleanup-retention-minutes <minutes>]
-                       Print settings JSON.
+  config set [--voice-command <command>] [--combiner-command <command>]
+             [--cleanup-retention-minutes <minutes>]
+                       Inspect, validate, and update TOML-backed advanced config.
   first-start [status|reset|complete]
                        Inspect or change only first-start setup completion.
   first-start dev-reset-database --confirm
@@ -661,8 +659,6 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeN
         return runCombinerCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "config":
         return runConfigCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
-    case "settings":
-        return runSettingsCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "first-start":
         return runFirstStartCommand(Array(arguments.dropFirst()), wakeNotifier: wakeNotifier)
     case "app-claim-next":
@@ -830,26 +826,36 @@ private func runCombinerCommand(_ arguments: [String], wakeNotifier: RelayWakeNo
             }
         }
 
+        return RelayCliResult(stdout: "", stderr: "combiner is read-only; use config set --combiner-command", exitCode: 1)
+}
+
+private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
+    let action = arguments.first ?? "show"
+
+    if action == "set" {
         do {
-            let flags = try parseRelayFlags(arguments, knownFlags: ["command", "tool"])
-            let requested = flags["command"] ?? flags["tool"] ?? ""
+            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["combiner-command", "voice-command", "cleanup-retention-minutes"])
+            guard !flags.isEmpty else {
+                return RelayCliResult(stdout: "", stderr: "config set requires at least one flag", exitCode: 1)
+            }
             return withRelayCliStore { store in
-                let state = try store.setInactiveLineCombinerCommand(requested == "none" ? "" : requested)
+                let config = try store.setAdvancedConfig(
+                    voiceCommand: flags["voice-command"],
+                    combinerCommand: flags["combiner-command"],
+                    cleanupRetentionMinutes: flags["cleanup-retention-minutes"]
+                )
                 wakeNotifier.post()
-                return RelayCliResult(stdout: "inactive line combiner set to \(state.inactiveLineCombiner)", stderr: "", exitCode: 0)
+                return RelayCliResult(stdout: config.tomlString(), stderr: "", exitCode: 0)
             }
         } catch let error as RelayCliFlagError {
             return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
         } catch {
             return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
         }
-}
-
-private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
-    let action = arguments.first ?? "show"
+    }
 
     guard arguments.count <= 1 else {
-        return RelayCliResult(stdout: "", stderr: "config accepts one action: path, show, validate, or reload", exitCode: 1)
+        return RelayCliResult(stdout: "", stderr: "config accepts one action: path, show, validate, reload, or set", exitCode: 1)
     }
 
     if action == "path" {
@@ -857,7 +863,7 @@ private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNoti
     }
 
     guard ["show", "validate", "reload"].contains(action) else {
-        return RelayCliResult(stdout: "", stderr: "config action must be path, show, validate, or reload", exitCode: 1)
+        return RelayCliResult(stdout: "", stderr: "config action must be path, show, validate, reload, or set", exitCode: 1)
     }
 
     return withRelayCliStore { store in
@@ -872,39 +878,6 @@ private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNoti
             wakeNotifier.post()
             return RelayCliResult(stdout: "config valid; reload requested", stderr: "", exitCode: 0)
         }
-    }
-}
-
-private func runSettingsCommand(_ arguments: [String], wakeNotifier: RelayWakeNotifier) -> RelayCliResult {
-        do {
-            let flags = try parseRelayFlags(arguments, knownFlags: ["combiner-command", "speech-command", "voice-command", "cleanup-retention-minutes"])
-            return withRelayCliStore { store in
-                var changed = false
-                if let command = flags["combiner-command"] {
-                    _ = try store.setInactiveLineCombinerCommand(command)
-                    changed = true
-                }
-                if let command = flags["speech-command"] {
-                    try store.setSpeechCommand(command)
-                    changed = true
-                }
-                if let command = flags["voice-command"] {
-                    try store.setVoiceCommand(command == "none" ? "" : command)
-                    changed = true
-                }
-                if let minutes = flags["cleanup-retention-minutes"] {
-                    try store.setCleanupRetentionMinutes(minutes)
-                    changed = true
-                }
-                if changed {
-                    wakeNotifier.post()
-                }
-                return RelayCliResult(stdout: try store.settingsJSON(), stderr: "", exitCode: 0)
-            }
-        } catch let error as RelayCliFlagError {
-            return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
-        } catch {
-            return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
     }
 }
 
@@ -1364,23 +1337,6 @@ private final class RelayCliStore {
         return try jsonString(object)
     }
 
-    func settingsJSON() throws -> String {
-        let state = try state()
-        let object: [String: Any] = [
-            "profile": "direct",
-            "configPath": relayConfigPath(),
-            "configError": try configError() as Any,
-            "inactiveLineCombiner": state.inactiveLineCombiner,
-            "inactiveLineCombinerCommand": try inactiveLineCombinerCommand(),
-            "speechCommand": try speechCommand(),
-            "voiceCommand": try voiceCommand(),
-            "voiceCommandLastError": try voiceCommandLastError() as Any,
-            "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
-            "capabilities": directRelayCapabilities,
-        ]
-        return try jsonString(object)
-    }
-
     func setMode(_ mode: String) throws -> RelayCliQueueState {
         guard ["focus", "ready", "live"].contains(mode) else {
             throw RelayCliStoreError(message: "invalid mode: \(mode)")
@@ -1475,6 +1431,48 @@ private final class RelayCliStore {
         try config.write()
         try clearConfigError()
         try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
+    }
+
+    func setAdvancedConfig(voiceCommand: String?, combinerCommand: String?, cleanupRetentionMinutes: String?) throws -> RelayConfig {
+        var config = try config()
+        var voiceCommandForSettings: String?
+
+        if let voiceCommand {
+            let normalized = voiceCommand == "none" ? defaultVoiceCommand : resetBlankCommand(voiceCommand, fallback: defaultVoiceCommand)
+            guard enabledCommandLineCount(normalized) == 1 else {
+                throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
+            }
+            config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+            voiceCommandForSettings = normalized
+        }
+
+        if let combinerCommand {
+            config.combinerCommand = combinerCommand == "none" ? "" : resetBlankCommand(combinerCommand, fallback: "")
+        }
+
+        if let cleanupRetentionMinutes {
+            guard let minutes = Int(cleanupRetentionMinutes), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+                throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
+            }
+            config.cleanupRetentionMinutes = minutes
+        }
+
+        try config.validate()
+        try config.write()
+        try clearConfigError()
+
+        if let voiceCommandForSettings {
+            try setSetting(key: "voice_command", value: voiceCommandForSettings)
+            try setSetting(key: "voice_command_last_error", value: "")
+        }
+        if combinerCommand != nil {
+            try setSetting(key: "inactive_line_combiner_command", value: config.combinerCommand)
+        }
+        if cleanupRetentionMinutes != nil {
+            try setSetting(key: "cleanup_retention_minutes", value: String(config.cleanupRetentionMinutes))
+        }
+
+        return config
     }
 
     func config() throws -> RelayConfig {

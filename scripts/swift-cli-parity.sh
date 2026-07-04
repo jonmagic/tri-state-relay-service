@@ -339,10 +339,7 @@ assert_text_command "focus" "$state_oracle_db" "$state_swift_db" focus
 assert_text_command "line set positional" "$state_oracle_db" "$state_swift_db" line "Tri-State Relay Service"
 assert_text_command "line get" "$state_oracle_db" "$state_swift_db" line
 assert_text_command "combiner default" "$state_oracle_db" "$state_swift_db" combiner
-assert_text_command "combiner custom" "$state_oracle_db" "$state_swift_db" combiner --command "printf <input>"
-assert_text_command "state with combiner" "$state_oracle_db" "$state_swift_db" state
-assert_json_command "settings with combiner" exact "$state_oracle_db" "$state_swift_db" settings --combiner-command "printf <input>"
-assert_db_equal "state/settings sequence" "$state_oracle_db" "$state_swift_db"
+assert_db_equal "state sequence" "$state_oracle_db" "$state_swift_db"
 
 fresh_pair_vars mutations
 mut_oracle_db="$ORACLE_DB"
@@ -374,9 +371,5 @@ assert_text_command "app helper enqueue" "$app_oracle_db" "$app_swift_db" --line
 assert_auth_json_command "app claim next" claim "$app_oracle_db" "$app_swift_db" app-claim-next
 assert_auth_text_command "app mark heard" "$app_oracle_db" "$app_swift_db" app-mark-heard --id 1
 assert_db_equal "app helper sequence" "$app_oracle_db" "$app_swift_db"
-
-fresh_pair_vars speech-settings
-assert_json_command "settings speech command" exact "$ORACLE_DB" "$SWIFT_DB" settings --speech-command "/usr/bin/say -v Samantha <message>"
-assert_db_equal "speech settings sequence" "$ORACLE_DB" "$SWIFT_DB"
 
 printf 'swift CLI parity harness: %d passed, %d skipped, %d gaps (strict=%s)\n' "$pass_count" "$skip_count" "$gap_count" "$STRICT"

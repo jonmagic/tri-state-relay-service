@@ -28,7 +28,7 @@ The App Store-safe profile:
 4. Masks external inactive-line combiner command templates.
 5. Has no CLI source command surface.
 6. Performs line-scoped app source actions with `NSWorkspace` and `NSPasteboard`.
-7. Exposes capabilities through `relay settings` and `relay status`.
+7. Exposes capabilities through `relay status`.
 8. Rejects terminal `relay --line ... --message ...` enqueueing until an App Store-safe storage model is chosen.
 
 The direct profile keeps:

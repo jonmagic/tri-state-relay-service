@@ -57,7 +57,6 @@ export TSRS_CONFIG_PATH="$config_path"
 config_show="$("$current_relay" config show)"
 config_validate="$("$current_relay" config validate)"
 status_json="$("$current_relay" status)"
-settings_json="$("$current_relay" settings)"
 
 case "$config_show" in
   *'command = "/usr/bin/say -f <text-file> -o <output-file>"'* ) ;;
@@ -86,12 +85,11 @@ if [[ "$config_validate" != "config valid: $config_path" ]]; then
   exit 1
 fi
 
-python3 - "$status_json" "$settings_json" <<'PY'
+python3 - "$status_json" <<'PY'
 import json
 import sys
 
 status = json.loads(sys.argv[1])
-settings = json.loads(sys.argv[2])
 expected = {
     "mode": "live",
     "muted": True,
@@ -105,8 +103,8 @@ for key, value in expected.items():
 if status.get("queueCount") != 1:
     raise SystemExit(f"expected queued relay to survive upgrade, got queueCount={status.get('queueCount')!r}")
 
-if settings.get("configError") is not None:
-    raise SystemExit(f"expected no config error after upgrade, got {settings.get('configError')!r}")
+if status.get("configError") is not None:
+    raise SystemExit(f"expected no config error after upgrade, got {status.get('configError')!r}")
 PY
 
 checksum_before="$(shasum -a 256 "$config_path" | awk '{print $1}')"

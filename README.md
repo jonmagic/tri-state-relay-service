@@ -25,7 +25,9 @@ relay replay-last
 relay line
 relay line "Tri-State Relay Service"
 relay combiner
-relay settings
+relay config show
+relay config validate
+relay config set --voice-command '/usr/bin/say -f <text-file> -o <output-file>'
 relay status
 ```
 
