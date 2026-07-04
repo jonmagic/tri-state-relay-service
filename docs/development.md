@@ -22,6 +22,14 @@ scripts/restart-macos-app.sh
 
 The macOS app is built through `src/macos/TriStateRelayService.xcodeproj`; the build wrapper bundles the Swift `relay` CLI for agent integrations and rejects any app bundle that contains `relay-processor`.
 
+For local development, point the `relay` command on `PATH` at the rebuilt bundled CLI so new commands are available immediately after a build:
+
+```sh
+scripts/install-dev-relay-symlink.sh
+```
+
+If `/usr/local/bin/relay` is root-owned, the helper prints the exact one-time `sudo` command needed to replace the stale copy with a symlink. Release installs can keep using Settings or `relay install-cli`; the symlink is for this repository's dev loop.
+
 Direct-download builds are arm64-only by default. If a future distribution need requires a universal app, opt in explicitly:
 
 ```sh

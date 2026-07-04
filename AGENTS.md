@@ -40,6 +40,12 @@ the handoff. Before any handoff or docs-only commit, check for pending app-visib
 Swift changes; if any exist, either run the restart gate and commit them first or
 explicitly say they remain uncommitted for review.
 
+When a change adds or changes `relay` CLI commands, verify both the bundled CLI
+and the `relay` command resolved from `PATH`. For local development, prefer
+`scripts/install-dev-relay-symlink.sh` so `/usr/local/bin/relay` follows the
+rebuilt bundled CLI; if root-owned permissions block it, report the helper's
+exact sudo command instead of claiming the PATH command was updated.
+
 ## Product rules
 
 Many agents may enqueue relays, but only the app-owned playback path may speak. The CLI submits and inspects relays; it does not invoke `/usr/bin/say`. In the direct profile, the Swift app may launch `/usr/bin/say` itself to preserve Siri/say voice behavior. In the App Store-safe profile, playback uses AVFoundation and must not launch external speech commands.
