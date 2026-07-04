@@ -29,7 +29,64 @@ def keychain_password(service):
     return result.stdout.strip()
 
 
+def voice_ids(data):
+    if isinstance(data, dict):
+        voices = data.get("voices") or data.get("data") or []
+    elif isinstance(data, list):
+        voices = data
+    else:
+        voices = []
+
+    ids = []
+    for voice in voices:
+        if isinstance(voice, str):
+            ids.append(voice)
+        elif isinstance(voice, dict):
+            voice_id = voice.get("id") or voice.get("voice_id")
+            if isinstance(voice_id, str) and voice_id:
+                ids.append(voice_id)
+    return ids
+
+
+def run_voices(argv) -> int:
+    parser = argparse.ArgumentParser(
+        description="List Speechify voice ids for TSRS line-voice assignment."
+    )
+    parser.add_argument("--keychain-service")
+    args = parser.parse_args(argv)
+
+    api_key = os.environ.get("SPEECHIFY_API_KEY") or keychain_password(args.keychain_service)
+    if not api_key:
+        print("SPEECHIFY_API_KEY is not set and --keychain-service did not return a secret", file=sys.stderr)
+        return 2
+
+    request = urllib.request.Request(
+        "https://api.speechify.ai/v1/voices",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        print(f"Speechify voices request failed: HTTP {error.code} {detail}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"Speechify voices request failed: {error}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(voice_ids(data)))
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "voices":
+        return run_voices(sys.argv[2:])
+
     parser = argparse.ArgumentParser(
         description="Generate a TSRS voice-command audio file with Speechify."
     )

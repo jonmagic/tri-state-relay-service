@@ -211,10 +211,12 @@ Supported placeholders are inserted as single arguments, not shell-expanded:
 | --- | --- |
 | `<text-file>` | UTF-8 file containing the relay text to synthesize |
 | `<output-file>` | Audio file path TSRS will play after the command exits |
-| `<voice-id>` | The selected TSRS voice name, such as a `say` voice |
+| `<voice-id>` | The provider voice id for the relay line when a provider is active; otherwise the selected TSRS voice name |
 | `<app-bin>` | The app bundle's `Contents/MacOS` directory |
 
 This makes cloud or local model wrappers possible later, including an ElevenLabs-backed CLI, without putting provider-specific API code into the app. The wrapper should read the text file, write an audio file, and exit nonzero if synthesis fails.
+
+The default `/usr/bin/say` path does not use provider line voices. It keeps using System Default unless you deliberately replace the voice command with a provider wrapper.
 
 ### Speechify example
 
@@ -224,13 +226,27 @@ Direct builds include a Speechify-compatible wrapper at `<app-bin>/speechify`. S
 security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
 ```
 
-Configure the wrapper with an absolute path:
+Edit `config.toml` to opt into Speechify line voices:
 
-```sh
-relay config set --voice-command '<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY'
+```toml
+[voice]
+provider = "speechify"
+command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id> --keychain-service TSRS_SPEECHIFY_API_KEY"
+
+[speechify]
+default_voice_id = "george"
+auto_assign_line_voices = true
+catalog_command = "<app-bin>/speechify voices --keychain-service TSRS_SPEECHIFY_API_KEY"
+assignment_strategy = "stable-hash"
+
+[speechify.line_voices]
+Brain = "george"
+"Tri-State Relay Service" = "henry"
 ```
 
-The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It never speaks directly.
+When a line has an explicit mapping, TSRS substitutes that id into `<voice-id>`. When a new line has no mapping and `auto_assign_line_voices` is true, TSRS runs `catalog_command`, picks a stable id from the returned catalog, writes it once to `[speechify.line_voices]`, and reuses that sticky mapping after restart. The write reloads the current TOML first and saves normalized TOML, so comments in the file are not preserved. If the catalog command fails or returns no ids, TSRS falls back to `default_voice_id` and still lets the wrapper synthesize audio.
+
+The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. Its `voices` subcommand calls `GET https://api.speechify.ai/v1/voices` and prints voice ids only. It never speaks directly or stores API keys in TOML.
 
 ## Advanced: local cleanup retention
 

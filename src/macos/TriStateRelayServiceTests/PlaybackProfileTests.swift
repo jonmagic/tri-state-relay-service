@@ -49,6 +49,123 @@ final class PlaybackProfileTests: XCTestCase {
         )
     }
 
+    func testResolvedVoiceIdentifierUsesLineMappingThenProviderDefaultThenSelectedVoice() {
+        let config = RelayConfig(
+            voiceCommand: "<app-bin>/speechify --voice-id <voice-id> --text-file <text-file> --output-file <output-file>",
+            voiceProvider: "speechify",
+            voiceVariables: [:],
+            voiceProviders: [
+                "speechify": RelayVoiceProviderConfig(
+                    defaultVoiceId: "george",
+                    autoAssignLineVoices: false,
+                    catalogCommand: nil,
+                    assignmentStrategy: defaultLineVoiceAssignmentStrategy,
+                    lineVoices: ["Brain": "henry"]
+                )
+            ],
+            combinerCommand: "",
+            combinerVariables: [:],
+            cleanupRetentionMinutes: defaultCleanupRetentionMinutes
+        )
+
+        XCTAssertEqual(resolvedVoiceIdentifier(for: "Brain", config: config, selectedVoice: "System Default"), "henry")
+        XCTAssertEqual(resolvedVoiceIdentifier(for: "Work", config: config, selectedVoice: "System Default"), "george")
+
+        var noProvider = config
+        noProvider.voiceProvider = nil
+        XCTAssertEqual(resolvedVoiceIdentifier(for: "Brain", config: noProvider, selectedVoice: "System Default"), "System Default")
+    }
+
+    func testAutoAssignLineVoicePersistsStickyMapping() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let configPath = directory.appendingPathComponent("config.toml").path
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices"
+        assignment_strategy = "stable-hash"
+        [speechify.line_voices]
+        Brain = "george"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let first = try autoAssignLineVoiceIfNeeded(
+            line: "Work",
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { command in
+                XCTAssertEqual(command, ["/Applications/TSRS.app/Contents/MacOS/speechify", "voices"])
+                return ["george", "henry", "simba"]
+            }
+        )
+        XCTAssertNotNil(first)
+
+        let afterFirst = try RelayConfig.loadExisting(path: configPath)
+        XCTAssertEqual(afterFirst.voiceProviders["speechify"]?.lineVoices["Work"], first)
+
+        let second = try autoAssignLineVoiceIfNeeded(
+            line: "Work",
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in
+                XCTFail("existing line mapping should skip catalog fetch")
+                return ["simba", "henry", "george"]
+            }
+        )
+        XCTAssertNil(second)
+        XCTAssertEqual(resolvedVoiceIdentifier(for: "Work", config: afterFirst, selectedVoice: nil), first)
+    }
+
+    func testProviderMappingsAreInertWithoutVoicePlaceholder() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let configPath = directory.appendingPathComponent("config.toml").path
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file>"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices"
+        [speechify.line_voices]
+        Brain = "henry"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let resolution = resolvedVoiceIdentifierForPlayback(
+            line: "Brain",
+            selectedVoice: "System Default",
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in
+                XCTFail("catalog should not run without <voice-id>")
+                return ["george", "henry"]
+            }
+        )
+
+        XCTAssertEqual(resolution.voiceIdentifier, "System Default")
+    }
+
     func testVoiceCommandFailuresRecordDiagnosticsAndFallbackToSay() throws {
         let source = try triStateRelayServiceSource()
 
@@ -58,6 +175,14 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("model.status.muted || inputCaptureSensor.isInputCaptureActive()"))
         XCTAssertTrue(source.contains("speakWithSay(text: text, option: option, claimId: claimId"))
         XCTAssertTrue(source.contains("Last BYO voice command error:"))
+    }
+
+    func testVoiceCommandPlaybackResolvesLineVoiceIdentifier() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("synthesizeVoiceCommand(text: claim.text, line: claim.line"))
+        XCTAssertTrue(source.contains("resolvedVoiceIdentifierForPlayback(line: line"))
+        XCTAssertTrue(source.contains("voiceID: resolution.voiceIdentifier"))
     }
 
     func testStaleVoiceCommandDirectoriesAreCleanedUp() throws {

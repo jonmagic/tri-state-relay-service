@@ -314,6 +314,47 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(database.scalar("SELECT SUM(character_count) FROM spoken_usage_daily WHERE line = 'Brain'"), "18")
     }
 
+    func testMarkNativeSpeechHeardRecordsProviderLineVoiceIdentifier() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        setenv("TSRS_CONFIG_PATH", configPath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = false
+        [speechify.line_voices]
+        Brain = "henry"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let store = NativeRelayStore(profile: "direct")
+        let relay = try XCTUnwrap(try store.enqueue(NewRelayInput(line: "Brain", message: "first", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil)))
+
+        XCTAssertEqual(store.claimQueuedMessageForNativeSpeech(line: "Brain", id: relay.id)?.line, "Brain")
+        store.markNativeSpeechHeard(id: relay.id)
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        XCTAssertEqual(database.scalar("SELECT provider FROM spoken_usage_daily WHERE line = 'Brain'"), "speechify")
+        XCTAssertEqual(database.scalar("SELECT model FROM spoken_usage_daily WHERE line = 'Brain'"), "audio-file")
+        XCTAssertEqual(database.scalar("SELECT voice_identifier FROM spoken_usage_daily WHERE line = 'Brain'"), "henry")
+    }
+
     func testLoadStatusUsesLatestSourceContextByLine() throws {
         let directory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SQLite3
 
 // UI-free relay core shared by the macOS app target and the native `relay`
@@ -221,10 +222,20 @@ func processorIsAppAuthorized(_ environment: [String: String] = ProcessInfo.proc
 
 struct RelayConfig {
     var voiceCommand: String
+    var voiceProvider: String?
     var voiceVariables: [String: String]
+    var voiceProviders: [String: RelayVoiceProviderConfig]
     var combinerCommand: String
     var combinerVariables: [String: String]
     var cleanupRetentionMinutes: Int
+
+    var activeVoiceProvider: RelayVoiceProviderConfig? {
+        guard let voiceProvider else {
+            return nil
+        }
+
+        return voiceProviders[voiceProvider]
+    }
 
     static func from(settings: [String: String]) -> RelayConfig {
         let storedVoice = settings["voice_command"].flatMap { shouldMigrateVoiceCommand($0) ? nil : $0 } ?? defaultVoiceCommand
@@ -232,7 +243,9 @@ struct RelayConfig {
         let storedCombiner = settings["inactive_line_combiner_command"] ?? defaultInactiveLineCombinerCommand
         return RelayConfig(
             voiceCommand: voice,
+            voiceProvider: nil,
             voiceVariables: [:],
+            voiceProviders: [:],
             combinerCommand: firstEnabledCommandLine(storedCombiner) ?? "",
             combinerVariables: [:],
             cleanupRetentionMinutes: cleanupRetentionMinutesFromSettings(settings)
@@ -261,7 +274,18 @@ struct RelayConfig {
         return config
     }
 
-    func write(to path: String = relayConfigPath()) throws {
+    func write(to path: String = relayConfigPath(), lock: Bool = true) throws {
+        if lock {
+            try withRelayConfigFileLock(path: path) {
+                try writeUnlocked(to: path)
+            }
+            return
+        }
+
+        try writeUnlocked(to: path)
+    }
+
+    private func writeUnlocked(to path: String) throws {
         let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         try tomlString().write(toFile: path, atomically: true, encoding: .utf8)
@@ -271,6 +295,16 @@ struct RelayConfig {
         try validateCommandPlaceholders(voiceCommand, allowed: ["<text-file>", "<output-file>", "<voice-id>", "<app-bin>"], label: "voice")
         guard !voiceCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw RelayCliStoreError(message: "voice command is empty")
+        }
+        if let voiceProvider {
+            try validateVoiceProviderName(voiceProvider, line: nil)
+            guard voiceProviders[voiceProvider] != nil else {
+                throw RelayCliStoreError(message: "voice provider [\(voiceProvider)] section is required")
+            }
+        }
+        for (providerName, provider) in voiceProviders {
+            try validateVoiceProviderName(providerName, line: nil)
+            try provider.validate(providerName: providerName)
         }
         try validateCommandPlaceholders(combinerCommand, allowed: ["<input>", "<system>"], label: "inactive-line combiner")
         guard (1...maxCleanupRetentionMinutes).contains(cleanupRetentionMinutes) else {
@@ -284,11 +318,40 @@ struct RelayConfig {
             "# Placeholders are inserted as single argv values, not shell-expanded.",
             "",
             "[voice]",
+        ]
+        if let voiceProvider {
+            lines.append("provider = \(tomlQuotedString(voiceProvider))")
+        }
+        lines += [
             "command = \(tomlQuotedString(voiceCommand))",
             "",
             "[voice.variables]",
         ]
         lines += voiceVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        for providerName in voiceProviderSerializationOrder() {
+            guard let provider = voiceProviders[providerName] else {
+                continue
+            }
+            lines += [
+                "",
+                "[\(providerName)]",
+            ]
+            if let defaultVoiceId = provider.defaultVoiceId {
+                lines.append("default_voice_id = \(tomlQuotedString(defaultVoiceId))")
+            }
+            lines.append("auto_assign_line_voices = \(provider.autoAssignLineVoices ? "true" : "false")")
+            if let catalogCommand = provider.catalogCommand {
+                lines.append("catalog_command = \(tomlQuotedString(catalogCommand))")
+            }
+            lines.append("assignment_strategy = \(tomlQuotedString(provider.assignmentStrategy))")
+            if !provider.lineVoices.isEmpty {
+                lines += [
+                    "",
+                    "[\(providerName).line_voices]",
+                ]
+                lines += provider.lineVoices.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+            }
+        }
         lines += [
             "",
             "[combiner]",
@@ -304,6 +367,54 @@ struct RelayConfig {
             "",
         ]
         return lines.joined(separator: "\n")
+    }
+
+    private func voiceProviderSerializationOrder() -> [String] {
+        var names = voiceProviders.keys.sorted()
+        if let voiceProvider, let index = names.firstIndex(of: voiceProvider) {
+            names.remove(at: index)
+            names.insert(voiceProvider, at: 0)
+        }
+        return names
+    }
+}
+
+let defaultLineVoiceAssignmentStrategy = "stable-hash"
+
+struct RelayVoiceProviderConfig: Equatable {
+    var defaultVoiceId: String?
+    var autoAssignLineVoices: Bool
+    var catalogCommand: String?
+    var assignmentStrategy: String
+    var lineVoices: [String: String]
+
+    static let empty = RelayVoiceProviderConfig(
+        defaultVoiceId: nil,
+        autoAssignLineVoices: false,
+        catalogCommand: nil,
+        assignmentStrategy: defaultLineVoiceAssignmentStrategy,
+        lineVoices: [:]
+    )
+
+    func validate(providerName: String) throws {
+        if let defaultVoiceId {
+            try validateVoiceIdentifier(defaultVoiceId, label: "[\(providerName)].default_voice_id")
+        }
+        if let catalogCommand {
+            try validateCommandPlaceholders(catalogCommand, allowed: ["<app-bin>"], label: "voice catalog")
+        }
+        if autoAssignLineVoices && !commandIsEnabled(catalogCommand) {
+            throw RelayCliStoreError(message: "[\(providerName)].catalog_command is required when auto_assign_line_voices is true")
+        }
+        guard assignmentStrategy == defaultLineVoiceAssignmentStrategy else {
+            throw RelayCliStoreError(message: "[\(providerName)].assignment_strategy must be stable-hash")
+        }
+        for (line, voiceId) in lineVoices {
+            guard normalizedLineVoiceKey(line) != nil else {
+                throw RelayCliStoreError(message: "[\(providerName).line_voices] line name must not be empty")
+            }
+            try validateVoiceIdentifier(voiceId, label: "[\(providerName).line_voices].\(line)")
+        }
     }
 }
 
@@ -323,12 +434,15 @@ func relayConfigPath(_ environment: [String: String] = ProcessInfo.processInfo.e
 private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
     var config = RelayConfig(
         voiceCommand: defaultVoiceCommand,
+        voiceProvider: nil,
         voiceVariables: [:],
+        voiceProviders: [:],
         combinerCommand: defaultInactiveLineCombinerCommand,
         combinerVariables: [:],
         cleanupRetentionMinutes: defaultCleanupRetentionMinutes
     )
     var section = ""
+    var lineVoiceKeys: Set<String> = []
 
     for (index, originalLine) in text.components(separatedBy: .newlines).enumerated() {
         let line = originalLine.trimmingCharacters(in: .whitespaces)
@@ -338,23 +452,23 @@ private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
 
         if line.hasPrefix("[") && line.hasSuffix("]") {
             section = String(line.dropFirst().dropLast())
-            guard ["voice", "voice.variables", "combiner", "combiner.variables", "retention"].contains(section) else {
+            guard isSupportedRelayConfigSection(section) else {
                 throw RelayCliStoreError(message: "config line \(index + 1): unsupported section [\(section)]")
             }
             continue
         }
 
-        let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2 else {
-            throw RelayCliStoreError(message: "config line \(index + 1): expected key = value")
-        }
-
-        let key = parts[0].trimmingCharacters(in: .whitespaces)
-        let value = parts[1].trimmingCharacters(in: .whitespaces)
+        let parts = try splitTomlKeyValue(line, line: index + 1)
+        let key = try parseTomlKey(parts.key, line: index + 1)
+        let value = parts.value
 
         switch section {
         case "voice" where key == "command":
             config.voiceCommand = try parseTomlString(value, line: index + 1)
+        case "voice" where key == "provider":
+            let provider = try parseTomlString(value, line: index + 1)
+            try validateVoiceProviderName(provider, line: index + 1)
+            config.voiceProvider = provider
         case "voice.variables":
             config.voiceVariables[key] = try parseTomlString(value, line: index + 1)
         case "combiner" where key == "command":
@@ -367,11 +481,97 @@ private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
             }
             config.cleanupRetentionMinutes = minutes
         default:
-            throw RelayCliStoreError(message: "config line \(index + 1): unsupported key \(key)")
+            if let providerName = providerName(forConfigSection: section) {
+                var provider = config.voiceProviders[providerName] ?? .empty
+                switch section {
+                case let currentSection where currentSection == providerName && key == "default_voice_id":
+                    provider.defaultVoiceId = try parseTomlString(value, line: index + 1)
+                case let currentSection where currentSection == providerName && key == "auto_assign_line_voices":
+                    provider.autoAssignLineVoices = try parseTomlBool(value, line: index + 1)
+                case let currentSection where currentSection == providerName && key == "catalog_command":
+                    provider.catalogCommand = try parseTomlString(value, line: index + 1)
+                case let currentSection where currentSection == providerName && key == "assignment_strategy":
+                    provider.assignmentStrategy = try parseTomlString(value, line: index + 1)
+                case let currentSection where currentSection == "\(providerName).line_voices":
+                    guard let normalized = normalizedLineVoiceKey(key) else {
+                        throw RelayCliStoreError(message: "config line \(index + 1): line voice key must not be empty")
+                    }
+                    let duplicateKey = "\(providerName)\u{0}\(normalized)"
+                    guard !lineVoiceKeys.contains(duplicateKey) else {
+                        throw RelayCliStoreError(message: "config line \(index + 1): duplicate line voice key \(key)")
+                    }
+                    lineVoiceKeys.insert(duplicateKey)
+                    provider.lineVoices[normalized] = try parseTomlString(value, line: index + 1)
+                default:
+                    throw RelayCliStoreError(message: "config line \(index + 1): unsupported key \(key)")
+                }
+                config.voiceProviders[providerName] = provider
+            } else {
+                throw RelayCliStoreError(message: "config line \(index + 1): unsupported key \(key)")
+            }
         }
     }
 
     return config
+}
+
+private func isSupportedRelayConfigSection(_ section: String) -> Bool {
+    if ["voice", "voice.variables", "combiner", "combiner.variables", "retention"].contains(section) {
+        return true
+    }
+
+    return providerName(forConfigSection: section) != nil
+}
+
+private func providerName(forConfigSection section: String) -> String? {
+    if section.hasSuffix(".line_voices") {
+        let providerName = String(section.dropLast(".line_voices".count))
+        return isValidVoiceProviderName(providerName) ? providerName : nil
+    }
+
+    guard !section.contains("."), isValidVoiceProviderName(section) else {
+        return nil
+    }
+    return section
+}
+
+private func parseTomlKey(_ value: String, line: Int) throws -> String {
+    if value.hasPrefix("\"") {
+        return try parseTomlString(value, line: line)
+    }
+
+    guard value.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil else {
+        throw RelayCliStoreError(message: "config line \(line): expected bare or quoted key")
+    }
+    return value
+}
+
+private func splitTomlKeyValue(_ lineText: String, line: Int) throws -> (key: String, value: String) {
+    var quote = false
+    var escaped = false
+    var index = lineText.startIndex
+
+    while index < lineText.endIndex {
+        let character = lineText[index]
+        if escaped {
+            escaped = false
+        } else if quote && character == "\\" {
+            escaped = true
+        } else if character == "\"" {
+            quote.toggle()
+        } else if character == "=" && !quote {
+            let key = lineText[..<index].trimmingCharacters(in: .whitespaces)
+            let valueStart = lineText.index(after: index)
+            let value = lineText[valueStart...].trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty, !value.isEmpty else {
+                throw RelayCliStoreError(message: "config line \(line): expected key = value")
+            }
+            return (key, value)
+        }
+        index = lineText.index(after: index)
+    }
+
+    throw RelayCliStoreError(message: "config line \(line): expected key = value")
 }
 
 private func parseTomlString(_ value: String, line: Int) throws -> String {
@@ -408,6 +608,16 @@ private func parseTomlString(_ value: String, line: Int) throws -> String {
     return output
 }
 
+private func parseTomlBool(_ value: String, line: Int) throws -> Bool {
+    if value == "true" {
+        return true
+    }
+    if value == "false" {
+        return false
+    }
+    throw RelayCliStoreError(message: "config line \(line): expected true or false")
+}
+
 private func tomlQuotedString(_ value: String) -> String {
     let escaped = value
         .replacingOccurrences(of: "\\", with: "\\\\")
@@ -440,6 +650,296 @@ private func validateCommandPlaceholders(_ command: String, allowed: Set<String>
             throw RelayCliStoreError(message: "\(label) command contains unsupported placeholder \(placeholder)")
         }
     }
+}
+
+private func isValidVoiceProviderName(_ provider: String) -> Bool {
+    guard provider.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil else {
+        return false
+    }
+    return !["voice", "combiner", "retention"].contains(provider)
+}
+
+private func validateVoiceProviderName(_ provider: String, line: Int?) throws {
+    guard isValidVoiceProviderName(provider) else {
+        if let line {
+            throw RelayCliStoreError(message: "config line \(line): invalid voice provider name \(provider)")
+        }
+        throw RelayCliStoreError(message: "invalid voice provider name \(provider)")
+    }
+}
+
+private func validateVoiceIdentifier(_ value: String, label: String) throws {
+    guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        throw RelayCliStoreError(message: "\(label) must not be empty")
+    }
+    guard value.rangeOfCharacter(from: .newlines) == nil else {
+        throw RelayCliStoreError(message: "\(label) must be one line")
+    }
+}
+
+func normalizedLineVoiceKey(_ line: String?) -> String? {
+    let normalized = normalizeRelayWhitespace(line ?? "")
+    guard !normalized.isEmpty else {
+        return nil
+    }
+    return normalized
+}
+
+func resolvedVoiceIdentifier(for line: String?, config: RelayConfig, selectedVoice: String?) -> String {
+    if let provider = config.activeVoiceProvider {
+        if let lineKey = normalizedLineVoiceKey(line), let voiceId = provider.lineVoices[lineKey] {
+            return voiceId
+        }
+        if let defaultVoiceId = provider.defaultVoiceId, !defaultVoiceId.isEmpty {
+            return defaultVoiceId
+        }
+    }
+
+    let selected = selectedVoice?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return selected?.isEmpty == false ? selected! : defaultSpeechUsageVoiceIdentifier
+}
+
+struct RelayVoiceResolution {
+    let voiceIdentifier: String
+    let provider: String?
+    let diagnostic: String?
+}
+
+func resolvedVoiceIdentifierForPlayback(
+    line: String?,
+    selectedVoice: String?,
+    configPath: String = relayConfigPath(),
+    appBin: String = "",
+    catalogRunner: ([String]) throws -> [String] = runVoiceCatalogCommand
+) -> RelayVoiceResolution {
+    var diagnostic: String?
+    do {
+        _ = try autoAssignLineVoiceIfNeeded(line: line, configPath: configPath, appBin: appBin, catalogRunner: catalogRunner)
+    } catch {
+        diagnostic = "voice catalog assignment failed: \(relayConfigErrorMessage(error))"
+    }
+
+    if let config = try? RelayConfig.loadExisting(path: configPath) {
+        let voiceIdentifier = config.voiceCommand.contains("<voice-id>")
+            ? resolvedVoiceIdentifier(for: line, config: config, selectedVoice: selectedVoice)
+            : (selectedVoice?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? selectedVoice! : defaultSpeechUsageVoiceIdentifier)
+        return RelayVoiceResolution(
+            voiceIdentifier: voiceIdentifier,
+            provider: config.voiceProvider,
+            diagnostic: diagnostic
+        )
+    }
+
+    return RelayVoiceResolution(
+        voiceIdentifier: selectedVoice?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? selectedVoice! : defaultSpeechUsageVoiceIdentifier,
+        provider: nil,
+        diagnostic: diagnostic
+    )
+}
+
+@discardableResult
+func autoAssignLineVoiceIfNeeded(
+    line: String?,
+    configPath: String = relayConfigPath(),
+    appBin: String = "",
+    catalogRunner: ([String]) throws -> [String] = runVoiceCatalogCommand
+) throws -> String? {
+    let config = try RelayConfig.loadExisting(path: configPath)
+    guard
+        config.voiceCommand.contains("<voice-id>"),
+        let providerName = config.voiceProvider,
+        let provider = config.voiceProviders[providerName],
+        provider.autoAssignLineVoices,
+        let lineKey = normalizedLineVoiceKey(line),
+        provider.lineVoices[lineKey] == nil,
+        let catalogCommand = firstEnabledCommandLine(provider.catalogCommand)
+    else {
+        return nil
+    }
+
+    let catalog = try catalogRunner(voiceCatalogCommandArguments(catalogCommand, appBin: appBin))
+    let voiceIds = stableVoiceCatalogIDs(catalog)
+    guard !voiceIds.isEmpty else {
+        return nil
+    }
+    let assignedVoiceId = voiceIds[stableLineVoiceIndex(lineKey, count: voiceIds.count)]
+
+    return try withRelayConfigFileLock(path: configPath) {
+        var freshConfig = try RelayConfig.loadExisting(path: configPath)
+        guard
+            freshConfig.voiceCommand.contains("<voice-id>"),
+            freshConfig.voiceProvider == providerName,
+            var freshProvider = freshConfig.voiceProviders[providerName],
+            freshProvider.autoAssignLineVoices,
+            freshProvider.lineVoices[lineKey] == nil
+        else {
+            return nil
+        }
+
+        freshProvider.lineVoices[lineKey] = assignedVoiceId
+        freshConfig.voiceProviders[providerName] = freshProvider
+        try freshConfig.validate()
+        try freshConfig.write(to: configPath, lock: false)
+        return assignedVoiceId
+    }
+}
+
+func voiceCatalogCommandArguments(_ commandLine: String, appBin: String = "") throws -> [String] {
+    try splitCommandLine(commandLine).map {
+        $0.replacingOccurrences(of: "<app-bin>", with: appBin)
+    }
+}
+
+private func runVoiceCatalogCommand(_ commandParts: [String]) throws -> [String] {
+    guard let executable = commandParts.first else {
+        throw RelayCliStoreError(message: "voice catalog command is empty")
+    }
+
+    let process = Process()
+    if executable.contains("/") {
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = Array(commandParts.dropFirst())
+    } else {
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = commandParts
+    }
+    let output = Pipe()
+    let error = Pipe()
+    process.standardOutput = output
+    process.standardError = error
+
+    let semaphore = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in
+        semaphore.signal()
+    }
+    try process.run()
+    let completed = semaphore.wait(timeout: .now() + 60) == .success
+    if !completed {
+        process.terminate()
+        throw RelayCliStoreError(message: "voice catalog command timed out")
+    }
+
+    let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    guard process.terminationStatus == 0 else {
+        let detail = redactedVoiceProviderDiagnostic(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+        throw RelayCliStoreError(message: detail.isEmpty ? "voice catalog command failed" : "voice catalog command failed: \(detail)")
+    }
+
+    return try parseVoiceCatalogOutput(stdout)
+}
+
+func parseVoiceCatalogOutput(_ output: String) throws -> [String] {
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return []
+    }
+
+    if let data = trimmed.data(using: .utf8),
+       let object = try? JSONSerialization.jsonObject(with: data) {
+        if let ids = object as? [String] {
+            return stableVoiceCatalogIDs(ids)
+        }
+        if let objects = object as? [[String: Any]] {
+            return stableVoiceCatalogIDs(objects.compactMap { ($0["id"] ?? $0["voice_id"]) as? String })
+        }
+        if let dictionary = object as? [String: Any], let voices = dictionary["voices"] {
+            if let ids = voices as? [String] {
+                return stableVoiceCatalogIDs(ids)
+            }
+            if let objects = voices as? [[String: Any]] {
+                return stableVoiceCatalogIDs(objects.compactMap { ($0["id"] ?? $0["voice_id"]) as? String })
+            }
+        }
+        throw RelayCliStoreError(message: "voice catalog command must return voice ids")
+    }
+
+    return stableVoiceCatalogIDs(trimmed.components(separatedBy: .newlines))
+}
+
+private func stableVoiceCatalogIDs(_ ids: [String]) -> [String] {
+    var seen: Set<String> = []
+    var stable: [String] = []
+    for id in ids {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: .newlines) == nil, !seen.contains(trimmed) else {
+            continue
+        }
+        seen.insert(trimmed)
+        stable.append(trimmed)
+    }
+    return stable
+}
+
+private func stableLineVoiceIndex(_ line: String, count: Int) -> Int {
+    guard count > 0 else {
+        return 0
+    }
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in line.utf8 {
+        hash ^= UInt64(byte)
+        hash = hash &* 1_099_511_628_211
+    }
+    return Int(hash % UInt64(count))
+}
+
+private func redactedVoiceProviderDiagnostic(_ message: String) -> String {
+    message
+        .replacingOccurrences(of: #"(?i)(bearer\s+)[^\s"]+"#, with: "$1[redacted]", options: .regularExpression)
+        .replacingOccurrences(of: #"(?i)(api[_-]?key["'\s:=]+)[^"'\s]+"#, with: "$1[redacted]", options: .regularExpression)
+}
+
+func updateRelayConfig(
+    path: String = relayConfigPath(),
+    fallbackSettings: [String: String]? = nil,
+    _ update: (inout RelayConfig) throws -> Void
+) throws -> RelayConfig {
+    try withRelayConfigFileLock(path: path) {
+        let config: RelayConfig
+        if FileManager.default.fileExists(atPath: path) {
+            do {
+                config = try RelayConfig.loadExisting(path: path)
+            } catch {
+                guard let fallbackSettings else {
+                    throw error
+                }
+                config = RelayConfig.from(settings: fallbackSettings)
+            }
+        } else if let fallbackSettings {
+            config = RelayConfig.from(settings: fallbackSettings)
+        } else {
+            throw RelayCliStoreError(message: "config file does not exist: \(path)")
+        }
+
+        var updated = config
+        try update(&updated)
+        try updated.validate()
+        try updated.write(to: path, lock: false)
+        return updated
+    }
+}
+
+private func withRelayConfigFileLock<T>(path: String, _ body: () throws -> T) throws -> T {
+    let lockPath = "\(path).lock"
+    let directory = URL(fileURLWithPath: lockPath).deletingLastPathComponent().path
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+
+    let descriptor = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+    guard descriptor >= 0 else {
+        throw RelayCliStoreError(message: "could not open config lock: \(lockPath)")
+    }
+    defer {
+        close(descriptor)
+    }
+
+    guard flock(descriptor, LOCK_EX) == 0 else {
+        throw RelayCliStoreError(message: "could not lock config: \(lockPath)")
+    }
+    defer {
+        flock(descriptor, LOCK_UN)
+    }
+
+    return try body()
 }
 
 private func cleanupRetentionMinutesFromSettings(_ settings: [String: String]) -> Int {
@@ -1299,6 +1799,7 @@ private final class RelayCliStore {
     func statusJSON() throws -> String {
         _ = try expireStaleRelays()
         let state = try state()
+        let config = try validConfigIfAvailable()
         let counts = try countsByStatus()
         let lines = try lineSummaries()
         var object: [String: Any] = [
@@ -1322,6 +1823,13 @@ private final class RelayCliStore {
             "spokenUsage": try spokenUsageSummary(),
             "capabilities": directRelayCapabilities,
         ]
+
+        if let config, let providerName = config.voiceProvider, let provider = config.voiceProviders[providerName] {
+            object["voiceProvider"] = providerName
+            object["voiceProviderDefaultVoiceId"] = provider.defaultVoiceId as Any
+            object["voiceProviderAutoAssignLineVoices"] = provider.autoAssignLineVoices
+            object["voiceProviderLineVoices"] = provider.lineVoices
+        }
 
         let lineSources = try latestSourceContextsByLine()
         if !lineSources.isEmpty {
@@ -1376,10 +1884,9 @@ private final class RelayCliStore {
     }
 
     func setInactiveLineCombinerCommand(_ command: String) throws -> RelayCliQueueState {
-        var config = try config()
-        config.combinerCommand = resetBlankCommand(command, fallback: "")
-        try config.validate()
-        try config.write()
+        let config = try updateRelayConfig { config in
+            config.combinerCommand = resetBlankCommand(command, fallback: "")
+        }
         try clearConfigError()
         try setSetting(key: "inactive_line_combiner_command", value: config.combinerCommand)
         return try state()
@@ -1398,16 +1905,15 @@ private final class RelayCliStore {
     }
 
     func setVoiceCommand(_ command: String) throws {
-        var config = try config()
         let normalized = command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         guard enabledCommandLineCount(normalized) == 1 else {
             throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
         }
-        config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
-        try config.validate()
-        try config.write()
+        let config = try updateRelayConfig { config in
+            config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+        }
         try clearConfigError()
-        try setSetting(key: "voice_command", value: normalized)
+        try setSetting(key: "voice_command", value: config.voiceCommand)
         try setSetting(key: "voice_command_last_error", value: "")
     }
 
@@ -1425,44 +1931,48 @@ private final class RelayCliStore {
             throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
         }
 
-        var config = try config()
-        config.cleanupRetentionMinutes = minutes
-        try config.validate()
-        try config.write()
+        let config = try updateRelayConfig { config in
+            config.cleanupRetentionMinutes = minutes
+        }
         try clearConfigError()
         try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
     }
 
     func setAdvancedConfig(voiceCommand: String?, combinerCommand: String?, cleanupRetentionMinutes: String?) throws -> RelayConfig {
-        var config = try config()
         var voiceCommandForSettings: String?
+        let normalizedVoiceCommand = voiceCommand.map { command -> String in
+            command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
+        }
 
-        if let voiceCommand {
-            let normalized = voiceCommand == "none" ? defaultVoiceCommand : resetBlankCommand(voiceCommand, fallback: defaultVoiceCommand)
+        if let normalized = normalizedVoiceCommand {
             guard enabledCommandLineCount(normalized) == 1 else {
                 throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
             }
-            config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
             voiceCommandForSettings = normalized
         }
 
-        if let combinerCommand {
-            config.combinerCommand = combinerCommand == "none" ? "" : resetBlankCommand(combinerCommand, fallback: "")
-        }
-
-        if let cleanupRetentionMinutes {
-            guard let minutes = Int(cleanupRetentionMinutes), (1...maxCleanupRetentionMinutes).contains(minutes) else {
+        let cleanupMinutes = try cleanupRetentionMinutes.map { value in
+            guard let minutes = Int(value), (1...maxCleanupRetentionMinutes).contains(minutes) else {
                 throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
             }
-            config.cleanupRetentionMinutes = minutes
+            return minutes
         }
 
-        try config.validate()
-        try config.write()
+        let config = try updateRelayConfig { config in
+            if let normalized = normalizedVoiceCommand {
+                config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+            }
+            if let combinerCommand {
+                config.combinerCommand = combinerCommand == "none" ? "" : resetBlankCommand(combinerCommand, fallback: "")
+            }
+            if let cleanupMinutes {
+                config.cleanupRetentionMinutes = cleanupMinutes
+            }
+        }
         try clearConfigError()
 
         if let voiceCommandForSettings {
-            try setSetting(key: "voice_command", value: voiceCommandForSettings)
+            try setSetting(key: "voice_command", value: config.voiceCommand)
             try setSetting(key: "voice_command_last_error", value: "")
         }
         if combinerCommand != nil {
@@ -2734,8 +3244,8 @@ let defaultVoiceCommand = """
 # Speechify example using the bundled speechify helper:
 # 1. Store your API key in Keychain:
 #    security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
-# 2. Uncomment this command:
-# <app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id george --keychain-service TSRS_SPEECHIFY_API_KEY
+# 2. Set [voice] provider = "speechify", add [speechify] settings, then uncomment this command:
+# <app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id> --keychain-service TSRS_SPEECHIFY_API_KEY
 """
 
 let legacyCommentedVoiceCommand = """

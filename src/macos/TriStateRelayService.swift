@@ -1164,6 +1164,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let copyBundledCliPathButton = NSButton(title: "Copy bundled CLI path", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voiceCommandTextView = NSTextView()
+    private let voiceProviderSummaryView = NSTextField(labelWithString: "")
     private let voiceCommandStatusView = NSTextField(labelWithString: "")
     private let saveVoiceCommandButton = NSButton(title: "Save voice command", target: nil, action: nil)
     private let saveCombinerCommandButton = NSButton(title: "Save combiner", target: nil, action: nil)
@@ -1467,6 +1468,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         voiceCommandTextView.string = settings.voiceCommand
+        voiceProviderSummaryView.stringValue = settings.voiceProviderSummary
         resetVoiceCommandTextViewScroll()
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
         configPathView.stringValue = settings.configPath
@@ -1551,6 +1553,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandStatusView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandStatusView.lineBreakMode = .byWordWrapping
         voiceCommandStatusView.maximumNumberOfLines = 0
+        voiceProviderSummaryView.textColor = .secondaryLabelColor
+        voiceProviderSummaryView.font = NSFont.systemFont(ofSize: 12)
+        voiceProviderSummaryView.lineBreakMode = .byWordWrapping
+        voiceProviderSummaryView.maximumNumberOfLines = 0
         configPathView.textColor = .secondaryLabelColor
         configPathView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         configPathView.lineBreakMode = .byTruncatingMiddle
@@ -1580,6 +1586,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureAccessibility(openAtLoginCheckbox, identifier: "tsrs.settings.setup.open-at-login", label: "Open Tri-State Relay Service at login")
         configureAccessibility(openAtLoginStatusView, identifier: "tsrs.settings.setup.open-at-login-status", label: "Open at Login status")
         configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
+        configureAccessibility(voiceProviderSummaryView, identifier: "tsrs.settings.voice.provider-summary", label: "Voice provider summary")
         configureAccessibility(saveVoiceCommandButton, identifier: "tsrs.settings.voice.save-command", label: "Save voice command")
         configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
         configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
@@ -1861,11 +1868,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandNote.lineBreakMode = .byWordWrapping
         commandNote.maximumNumberOfLines = 0
 
+        let providerLabel = NSTextField(labelWithString: "Provider line voices")
+        providerLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
         let commandScrollView = Self.configuredTextViewScrollView(voiceCommandTextView, wrapsLines: true)
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
+        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, providerLabel, voiceProviderSummaryView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
 #endif
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1881,6 +1891,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandScrollView.heightAnchor.constraint(equalToConstant: 96).isActive = true
         saveVoiceCommandButton.widthAnchor.constraint(equalToConstant: 160).isActive = true
         voiceCommandStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        voiceProviderSummaryView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         configErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
 #endif
@@ -1889,6 +1900,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(18, after: configSection)
         stack.setCustomSpacing(9, after: commandNote)
         stack.setCustomSpacing(14, after: voiceCommandStatusView)
+        stack.setCustomSpacing(14, after: voiceProviderSummaryView)
         stack.setCustomSpacing(8, after: configErrorView)
         stack.setCustomSpacing(18, after: voiceCommandErrorView)
 #endif
@@ -2740,6 +2752,8 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private var currentProcess: Process?
     private var currentAudioPlayer: AVAudioPlayer?
     private var currentAudioDirectory: URL?
+    private var resolvingVoiceCommand = false
+    private var currentVoiceCommandToken: UUID?
     private var inputCaptureRetryTimer: Timer?
     private let synthesizer = AVSpeechSynthesizer()
 
@@ -2748,7 +2762,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private var isPlaybackBusy: Bool {
-        currentProcess != nil || currentAudioPlayer != nil || synthesizer.isSpeaking
+        resolvingVoiceCommand || currentProcess != nil || currentAudioPlayer != nil || synthesizer.isSpeaking
     }
 
     init(model: MenuBarModel, inputCaptureSensor: InputCaptureSensing = DefaultInputCaptureSensor(), onChange: @escaping () -> Void) {
@@ -2877,7 +2891,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         let settings = model.loadSettings()
         let option = defaultSpeechVoiceOption
         if commandIsEnabled(settings.voiceCommand) {
-            synthesizeVoiceCommand(text: claim.text, option: option, claimId: claim.id, command: settings.voiceCommand)
+            synthesizeVoiceCommand(text: claim.text, line: claim.line, option: option, claimId: claim.id, command: settings.voiceCommand)
             return
         }
 
@@ -2896,7 +2910,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         let settings = model.loadSettings()
         let option = defaultSpeechVoiceOption
         if commandIsEnabled(settings.voiceCommand) {
-            synthesizeVoiceCommand(text: text, option: option, claimId: nil, command: settings.voiceCommand)
+            synthesizeVoiceCommand(text: text, line: nil, option: option, claimId: nil, command: settings.voiceCommand)
             return
         }
 
@@ -2947,11 +2961,12 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
-    private func synthesizeVoiceCommand(text: String, option: SpeechVoiceOption, claimId: Int?, command: String) {
+    private func synthesizeVoiceCommand(text: String, line: String?, option: SpeechVoiceOption, claimId: Int?, command: String) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tsrs-voice-\(UUID().uuidString)", isDirectory: true)
         let textURL = directory.appendingPathComponent("relay.txt")
         let outputURL = directory.appendingPathComponent("relay.mp3")
+        let token = UUID()
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -2960,12 +2975,70 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
                 throw VoiceCommandError.empty
             }
             let commandParts = try splitVoiceCommand(enabledCommand)
+            resolvingVoiceCommand = true
+            currentVoiceCommandToken = token
+            currentAudioDirectory = directory
+            let appBin = appBinPath()
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let resolution = resolvedVoiceIdentifierForPlayback(line: line, selectedVoice: option.name, appBin: appBin)
+                DispatchQueue.main.async {
+                    guard let self, self.currentVoiceCommandToken == token else {
+                        cleanupVoiceCommandDirectory(directory)
+                        return
+                    }
+                    self.startResolvedVoiceCommand(
+                        commandParts: commandParts,
+                        text: text,
+                        option: option,
+                        claimId: claimId,
+                        directory: directory,
+                        textURL: textURL,
+                        outputURL: outputURL,
+                        appBin: appBin,
+                        resolution: resolution,
+                        token: token
+                    )
+                }
+            }
+        } catch {
+            cleanupVoiceCommandDirectory(directory)
+            resolvingVoiceCommand = false
+            currentVoiceCommandToken = nil
+            currentAudioDirectory = nil
+            handleVoiceCommandFailure("voice command could not start: \(error.localizedDescription)", text: text, option: option, claimId: claimId)
+        }
+    }
+
+    private func startResolvedVoiceCommand(
+        commandParts: [String],
+        text: String,
+        option: SpeechVoiceOption,
+        claimId: Int?,
+        directory: URL,
+        textURL: URL,
+        outputURL: URL,
+        appBin: String,
+        resolution: RelayVoiceResolution,
+        token: UUID
+    ) {
+        guard currentVoiceCommandToken == token else {
+            cleanupVoiceCommandDirectory(directory)
+            return
+        }
+        resolvingVoiceCommand = false
+        currentVoiceCommandToken = nil
+
+        if let diagnostic = resolution.diagnostic {
+            model.recordVoiceCommandError(redactedVoiceCommandError(diagnostic))
+        }
+
+        do {
             let expandedParts = voiceCommandArguments(
                 commandParts,
                 textFile: textURL.path,
                 outputFile: outputURL.path,
-                voiceID: option.name,
-                appBin: appBinPath()
+                voiceID: resolution.voiceIdentifier,
+                appBin: appBin
             )
             guard let executable = expandedParts.first else {
                 throw VoiceCommandError.empty
@@ -3982,6 +4055,7 @@ final class MenuBarModel {
 
 struct NativeSpeechClaim {
     let id: Int
+    let line: String
     let text: String
 }
 
@@ -4209,6 +4283,7 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
+    let voiceProviderSummary: String
     let voiceCommandLastError: String?
     let configError: String?
     let configPath: String
@@ -4330,6 +4405,7 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
+                voiceProviderSummary: voiceProviderSummary(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
                 configError: configError(settings),
                 configPath: relayConfigPath(),
@@ -4419,11 +4495,10 @@ final class NativeRelayStore {
         }
 
         write { database in
-            var config = relayConfigForEditing(database)
-            config.combinerCommand = resetBlankCommand(inactiveLineCombinerCommand, fallback: "")
             do {
-                try config.validate()
-                try config.write()
+                let config = try updateRelayConfig(fallbackSettings: loadRawSettings(database)) { config in
+                    config.combinerCommand = resetBlankCommand(inactiveLineCombinerCommand, fallback: "")
+                }
                 clearConfigError(database)
                 setSetting(database, key: "inactive_line_combiner_command", value: config.combinerCommand)
             } catch {
@@ -4445,13 +4520,11 @@ final class NativeRelayStore {
             NSLog("TSRS native store rejected invalid cleanup retention minutes: \(minutes)")
             return
         }
-
         write { database in
-            var config = relayConfigForEditing(database)
-            config.cleanupRetentionMinutes = minutes
             do {
-                try config.validate()
-                try config.write()
+                try updateRelayConfig(fallbackSettings: loadRawSettings(database)) { config in
+                    config.cleanupRetentionMinutes = minutes
+                }
                 clearConfigError(database)
             } catch {
                 setConfigError(database, relayConfigErrorMessage(error))
@@ -4467,13 +4540,11 @@ final class NativeRelayStore {
             throw NSError(domain: "TSRSVoiceCommand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Voice command must have exactly one uncommented command."])
         }
         var writeError: Error?
-
         write { database in
-            var config = relayConfigForEditing(database)
-            config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
             do {
-                try config.validate()
-                try config.write()
+                let config = try updateRelayConfig(fallbackSettings: loadRawSettings(database)) { config in
+                    config.voiceCommand = firstEnabledCommandLine(normalized) ?? normalized
+                }
                 clearConfigError(database)
                 setSetting(database, key: "voice_command", value: config.voiceCommand)
                 setSetting(database, key: "voice_command_last_error", value: "")
@@ -4711,6 +4782,7 @@ final class NativeRelayStore {
             let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             return NativeSpeechClaim(
                 id: relay.id,
+                line: relay.line,
                 text: spokenText(relay, includeLine: includeLine)
             )
         }
@@ -4737,6 +4809,7 @@ final class NativeRelayStore {
             let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             return NativeSpeechClaim(
                 id: relay.id,
+                line: relay.line,
                 text: spokenText(relay, includeLine: includeLine)
             )
         }
@@ -4787,13 +4860,16 @@ final class NativeRelayStore {
             let includeLine = shouldPrefixSpokenLine(database, line: relay.line)
             let spoken = spokenText(relay, includeLine: includeLine)
             let settings = loadRawSettings(database)
-            let usesVoiceCommand = commandIsEnabled(voiceCommand(settings))
+            let config = validRelayConfig(database, settings: settings)
+            let usesVoiceCommand = profile != "app-store" && (config.map { commandIsEnabled($0.voiceCommand) } ?? false)
+            let usesProviderVoiceIdentifier = usesVoiceCommand && (config?.voiceCommand.contains("<voice-id>") == true)
+            let selectedVoice = speechVoiceIdentifier(settings) ?? defaultSpeechVoiceIdentifier
             recordSpokenUsage(
                 database,
                 line: relay.line,
-                provider: usesVoiceCommand ? "voice-command" : "apple",
+                provider: usesVoiceCommand ? (config?.voiceProvider ?? "voice-command") : "apple",
                 model: usesVoiceCommand ? "audio-file" : (profile == "app-store" ? "avfoundation" : "direct-say"),
-                voiceIdentifier: speechVoiceIdentifier(settings) ?? defaultSpeechVoiceIdentifier,
+                voiceIdentifier: usesProviderVoiceIdentifier ? resolvedVoiceIdentifier(for: relay.line, config: config!, selectedVoice: selectedVoice) : selectedVoice,
                 characterCount: spoken.count
             )
             recordSpokenLine(database, line: relay.line)
@@ -5584,6 +5660,33 @@ final class NativeRelayStore {
         return validRelayConfig(settings: settings)?.voiceCommand ?? ""
     }
 
+    private func voiceProviderSummary(_ settings: [String: String]) -> String {
+        if profile == "app-store" {
+            return "External voice providers are unavailable in the App Store-safe profile."
+        }
+
+        guard let config = validRelayConfig(settings: settings) else {
+            return "Config is invalid. Playback stays quiet until config.toml validates."
+        }
+        guard let providerName = config.voiceProvider, let provider = config.voiceProviders[providerName] else {
+            return "No active voice provider. The default say path keeps using System Default."
+        }
+
+        var lines = ["Active provider: \(providerName)"]
+        lines.append("Default voice id: \(provider.defaultVoiceId ?? "none")")
+        lines.append("Automatic line assignment: \(provider.autoAssignLineVoices ? "on" : "off")")
+        if provider.lineVoices.isEmpty {
+            lines.append("Line mappings: none")
+        } else {
+            let mappings = provider.lineVoices
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: ", ")
+            lines.append("Line mappings: \(mappings)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func voiceCommandLastError(_ settings: [String: String]) -> String? {
         let value = settings["voice_command_last_error"] ?? ""
         return value.isEmpty ? nil : value
@@ -5661,7 +5764,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceProviderSummary: "No active voice provider. The default say path keeps using System Default.", voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

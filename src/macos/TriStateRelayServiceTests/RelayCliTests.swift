@@ -263,6 +263,56 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(validate.stdout, "config valid: \(configPath)")
     }
 
+    func testConfigShowRoundTripsProviderLineVoices() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.appendingPathComponent("relay.db").path, 1)
+        setenv("TSRS_CONFIG_PATH", directory.appendingPathComponent("config.toml").path, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id> --keychain-service TSRS_SPEECHIFY_API_KEY"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices --keychain-service TSRS_SPEECHIFY_API_KEY"
+        assignment_strategy = "stable-hash"
+        [speechify.line_voices]
+        Brain = "george"
+        "Agent=One" = "simba"
+        "Tri-State Relay Service" = "henry"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+
+        let validate = runRelayCli(["config", "validate"])
+        XCTAssertEqual(validate.exitCode, 0)
+
+        let show = runRelayCli(["config", "show"])
+        XCTAssertEqual(show.exitCode, 0)
+        XCTAssertTrue(show.stdout.contains("provider = \"speechify\""))
+        XCTAssertTrue(show.stdout.contains("[speechify]"))
+        XCTAssertTrue(show.stdout.contains("default_voice_id = \"george\""))
+        XCTAssertTrue(show.stdout.contains("auto_assign_line_voices = true"))
+        XCTAssertTrue(show.stdout.contains("catalog_command = \"<app-bin>/speechify voices --keychain-service TSRS_SPEECHIFY_API_KEY\""))
+        XCTAssertTrue(show.stdout.contains("[speechify.line_voices]"))
+        XCTAssertTrue(show.stdout.contains("\"Agent=One\" = \"simba\""))
+        XCTAssertTrue(show.stdout.contains("Brain = \"george\""))
+        XCTAssertTrue(show.stdout.contains("\"Tri-State Relay Service\" = \"henry\""))
+
+        try show.stdout.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+        XCTAssertEqual(runRelayCli(["config", "validate"]).exitCode, 0)
+    }
+
     func testConfigValidationRejectsUnknownPlaceholder() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -282,6 +332,75 @@ final class RelayCliTests: XCTestCase {
         let result = runRelayCli(["config", "validate"])
         XCTAssertEqual(result.exitCode, 1)
         XCTAssertTrue(result.stderr.contains("inactive-line combiner command contains unsupported placeholder <secret-file>"))
+    }
+
+    func testConfigValidationRejectsInvalidProviderSettings() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.appendingPathComponent("relay.db").path, 1)
+        setenv("TSRS_CONFIG_PATH", directory.appendingPathComponent("config.toml").path, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [speechify]
+        default_voice_id = ""
+        auto_assign_line_voices = true
+        catalog_command = "<secret-file>"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(["config", "validate"])
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stderr.contains("default_voice_id must not be empty") || result.stderr.contains("voice catalog command contains unsupported placeholder <secret-file>"))
+    }
+
+    func testConfigSetPreservesProviderLineVoices() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.appendingPathComponent("relay.db").path, 1)
+        setenv("TSRS_CONFIG_PATH", directory.appendingPathComponent("config.toml").path, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices"
+        assignment_strategy = "stable-hash"
+        [speechify.line_voices]
+        Brain = "george"
+        "Agent=One" = "simba"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(["config", "set", "--cleanup-retention-minutes", "120"])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("cleanup_retention_minutes = 120"))
+        XCTAssertTrue(result.stdout.contains("provider = \"speechify\""))
+        XCTAssertTrue(result.stdout.contains("\"Agent=One\" = \"simba\""))
     }
 
     func testInvalidConfigFailsQuietAndPreservesQueuedRelay() throws {
