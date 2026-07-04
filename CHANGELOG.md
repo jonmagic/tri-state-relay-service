@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2 - App wake and status refresh
+
+- Added Darwin notifications so the app wakes promptly when the CLI changes the relay queue or playback state.
+- Optimized relay status refresh queries to reduce work while keeping Settings and menu state current.
+- Added Live mode to the overview docs.
+- Updated the app and CLI version to 1.1.2.
+
 ## 1.1.1 - Inactive-line combiner fix
 
 - Fixed configured inactive-line combiners so direct builds execute the configured command instead of always using latest-only replacement.
