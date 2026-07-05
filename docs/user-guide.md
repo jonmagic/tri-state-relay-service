@@ -246,7 +246,7 @@ Brain = "george"
 
 When a line has an explicit mapping, TSRS substitutes that id into `<voice-id>`. When a new line has no mapping and `auto_assign_line_voices` is true, TSRS runs `catalog_command`, picks a stable id from the returned catalog, writes it once to `[speechify.line_voices]`, and reuses that sticky mapping after restart. The write reloads the current TOML first and saves normalized TOML, so comments in the file are not preserved. If the catalog command fails or returns no ids, TSRS falls back to `default_voice_id` and still lets the wrapper synthesize audio.
 
-The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. Its `voices` subcommand calls `GET https://api.speechify.ai/v1/voices` and prints voice ids only. It never speaks directly or stores API keys in TOML.
+The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It serializes synthesis requests for the configured account, retries 429 responses with Speechify's `Retry-After` guidance when present, and reports safe rate-limit diagnostics such as request ids and rate-limit headers. Its `voices` subcommand calls `GET https://api.speechify.ai/v1/voices`, caches voice ids locally for a short TTL, and prints voice ids only. It never speaks directly, stores API keys in TOML, or caches generated relay audio.
 
 ## Advanced: local cleanup retention
 

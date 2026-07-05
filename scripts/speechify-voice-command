@@ -1,12 +1,49 @@
 #!/usr/bin/env python3
 import argparse
 import base64
+import contextlib
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+
+DEFAULT_API_BASE_URL = "https://api.speechify.ai"
+DEFAULT_CACHE_TTL_SECONDS = 3600
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_RETRY_DELAY = 1.0
+DEFAULT_MAX_RETRY_DELAY = 60.0
+SAFE_HEADER_NAMES = [
+    "Retry-After",
+    "RateLimit-Limit",
+    "RateLimit-Remaining",
+    "RateLimit-Reset",
+    "RateLimit-Policy",
+    "RateLimit-Remaining-Calls",
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "X-Request-ID",
+]
+
+
+class SpeechifyHTTPFailure(Exception):
+    def __init__(self, message, status=None, code=None):
+        super().__init__(message)
+        self.status = status
+        self.code = code
 
 
 def keychain_password(service):
@@ -45,48 +82,343 @@ def voice_ids(data):
             voice_id = voice.get("id") or voice.get("voice_id")
             if isinstance(voice_id, str) and voice_id:
                 ids.append(voice_id)
-    return ids
+    return stable_voice_ids(ids)
+
+
+def stable_voice_ids(ids):
+    seen = set()
+    stable = []
+    for voice_id in ids:
+        if not isinstance(voice_id, str):
+            continue
+        voice_id = voice_id.strip()
+        if not voice_id or voice_id in seen:
+            continue
+        seen.add(voice_id)
+        stable.append(voice_id)
+    return stable
+
+
+def api_key_from_args(args):
+    api_key = os.environ.get("SPEECHIFY_API_KEY") or keychain_password(args.keychain_service)
+    if not api_key:
+        raise ValueError("SPEECHIFY_API_KEY is not set and --keychain-service did not return a secret")
+    return api_key
+
+
+def int_from_env(name, fallback):
+    value = os.environ.get(name)
+    if not value:
+        return fallback
+    try:
+        return int(value)
+    except ValueError:
+        return fallback
+
+
+def float_from_env(name, fallback):
+    value = os.environ.get(name)
+    if not value:
+        return fallback
+    try:
+        return float(value)
+    except ValueError:
+        return fallback
+
+
+def cache_root():
+    override = os.environ.get("TSRS_SPEECHIFY_CACHE_DIR")
+    if override:
+        return override
+    return os.path.expanduser("~/Library/Caches/Tri-State Relay Service")
+
+
+def cache_key(keychain_service, api_base_url):
+    account_hint = keychain_service or ("env" if os.environ.get("SPEECHIFY_API_KEY") else "default")
+    source = f"{api_base_url}|{account_hint}"
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+
+
+def voice_cache_path(keychain_service, api_base_url):
+    return os.path.join(cache_root(), f"speechify-voices-{cache_key(keychain_service, api_base_url)}.json")
+
+
+def synth_lock_path(keychain_service, api_base_url):
+    return os.path.join(cache_root(), f"speechify-synthesis-{cache_key(keychain_service, api_base_url)}.lock")
+
+
+def load_voice_cache(path, ttl_seconds=None):
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return None, False
+
+    ids = stable_voice_ids(data.get("voice_ids") or data.get("ids") or [])
+    if not ids:
+        return None, False
+
+    created_at = data.get("created_at")
+    try:
+        age = time.time() - float(created_at)
+    except (TypeError, ValueError):
+        age = None
+
+    fresh = ttl_seconds is None or (age is not None and age <= ttl_seconds)
+    return ids, fresh
+
+
+def write_voice_cache(path, ids):
+    ids = stable_voice_ids(ids)
+    if not ids:
+        return
+
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    payload = {
+        "created_at": time.time(),
+        "voice_ids": ids,
+    }
+    fd, temp_path = tempfile.mkstemp(prefix=".speechify-voices-", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(payload, file, separators=(",", ":"))
+            file.write("\n")
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+@contextlib.contextmanager
+def exclusive_lock(path):
+    if fcntl is None:
+        yield
+        return
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def speechify_url(api_base_url, path):
+    return f"{api_base_url.rstrip('/')}{path}"
+
+
+def request_json(api_base_url, path, method, api_key, timeout, payload=None):
+    data = None
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+    }
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(
+        speechify_url(api_base_url, path),
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def parse_retry_after(value):
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (parsed - datetime.now(timezone.utc)).total_seconds())
+
+
+def header_lookup(headers, name):
+    if not headers:
+        return None
+    value = headers.get(name)
+    if value is not None:
+        return value
+    lower = name.lower()
+    for header, header_value in headers.items():
+        if header.lower() == lower:
+            return header_value
+    return None
+
+
+def safe_headers(headers):
+    result = {}
+    for name in SAFE_HEADER_NAMES:
+        value = header_lookup(headers, name)
+        if value is not None:
+            result[name] = value
+    return result
+
+
+def parse_http_error(error):
+    body = error.read().decode("utf-8", errors="replace")
+    parsed = None
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        pass
+
+    error_code = None
+    message = None
+    request_id = None
+    if isinstance(parsed, dict):
+        detail = parsed.get("error")
+        if isinstance(detail, dict):
+            error_code = detail.get("code")
+            message = detail.get("message")
+        request_id = parsed.get("request_id")
+
+    headers = safe_headers(error.headers)
+    if "X-Request-ID" in headers and not request_id:
+        request_id = headers["X-Request-ID"]
+
+    return {
+        "status": error.code,
+        "body": body,
+        "code": error_code,
+        "message": message,
+        "request_id": request_id,
+        "headers": headers,
+    }
+
+
+def retry_delay(details, attempt, base_delay, max_delay):
+    retry_after = parse_retry_after(details["headers"].get("Retry-After"))
+    if retry_after is not None:
+        return min(retry_after, max_delay)
+
+    delay = base_delay * (2 ** attempt)
+    if details.get("code") == "concurrency_limit_reached":
+        delay = max(delay, 2.0)
+    return min(delay, max_delay)
+
+
+def diagnostic_suffix(details):
+    fields = []
+    if details.get("code"):
+        fields.append(f"code={details['code']}")
+    if details.get("message"):
+        fields.append(f"message={details['message']}")
+    if details.get("request_id"):
+        fields.append(f"request_id={details['request_id']}")
+    if details.get("headers"):
+        header_text = json.dumps(details["headers"], sort_keys=True, separators=(",", ":"))
+        fields.append(f"headers={header_text}")
+    return " ".join(fields)
+
+
+def request_json_with_retry(api_base_url, path, method, api_key, timeout, payload, max_retries, base_delay, max_delay, label):
+    last_details = None
+    for attempt in range(max_retries + 1):
+        try:
+            return request_json(api_base_url, path, method, api_key, timeout, payload)
+        except urllib.error.HTTPError as error:
+            details = parse_http_error(error)
+            last_details = details
+            if error.code == 429 and attempt < max_retries:
+                delay = retry_delay(details, attempt, base_delay, max_delay)
+                suffix = diagnostic_suffix(details)
+                print(f"{label} hit HTTP 429; retrying in {delay:g}s. {suffix}".strip(), file=sys.stderr)
+                time.sleep(delay)
+                continue
+
+            suffix = diagnostic_suffix(details)
+            body = details["body"].strip()
+            detail = suffix or body
+            raise SpeechifyHTTPFailure(f"{label} failed: HTTP {error.code} {detail}".strip(), status=error.code, code=details.get("code"))
+
+    detail = diagnostic_suffix(last_details or {})
+    raise SpeechifyHTTPFailure(f"{label} failed after retries {detail}".strip())
+
+
+def add_shared_api_arguments(parser):
+    parser.add_argument("--keychain-service")
+    parser.add_argument("--api-base-url", default=os.environ.get("TSRS_SPEECHIFY_API_BASE_URL", DEFAULT_API_BASE_URL))
+    parser.add_argument("--timeout", type=float, default=float_from_env("TSRS_SPEECHIFY_TIMEOUT", 60.0))
+    parser.add_argument("--max-retries", type=int, default=int_from_env("TSRS_SPEECHIFY_MAX_RETRIES", DEFAULT_MAX_RETRIES))
+    parser.add_argument("--base-retry-delay", type=float, default=float_from_env("TSRS_SPEECHIFY_BASE_RETRY_DELAY", DEFAULT_BASE_RETRY_DELAY))
+    parser.add_argument("--max-retry-delay", type=float, default=float_from_env("TSRS_SPEECHIFY_MAX_RETRY_DELAY", DEFAULT_MAX_RETRY_DELAY))
 
 
 def run_voices(argv) -> int:
     parser = argparse.ArgumentParser(
         description="List Speechify voice ids for TSRS line-voice assignment."
     )
-    parser.add_argument("--keychain-service")
+    add_shared_api_arguments(parser)
+    parser.add_argument("--cache-ttl-seconds", type=int, default=int_from_env("TSRS_SPEECHIFY_VOICE_CACHE_TTL_SECONDS", DEFAULT_CACHE_TTL_SECONDS))
+    parser.add_argument("--refresh-cache", action="store_true")
+    parser.add_argument("--no-cache", action="store_true")
     args = parser.parse_args(argv)
 
-    api_key = os.environ.get("SPEECHIFY_API_KEY") or keychain_password(args.keychain_service)
-    if not api_key:
-        print("SPEECHIFY_API_KEY is not set and --keychain-service did not return a secret", file=sys.stderr)
+    try:
+        api_key = api_key_from_args(args)
+    except ValueError as error:
+        print(error, file=sys.stderr)
         return 2
 
-    request = urllib.request.Request(
-        "https://api.speechify.ai/v1/voices",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="GET",
-    )
+    cache_path = voice_cache_path(args.keychain_service, args.api_base_url)
+    cached_ids = None
+    if not args.no_cache:
+        cached_ids, fresh = load_voice_cache(cache_path, args.cache_ttl_seconds)
+        if cached_ids and fresh and not args.refresh_cache:
+            print(json.dumps(cached_ids))
+            return 0
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        print(f"Speechify voices request failed: HTTP {error.code} {detail}", file=sys.stderr)
+        data = request_json_with_retry(
+            args.api_base_url,
+            "/v1/voices",
+            "GET",
+            api_key,
+            args.timeout,
+            None,
+            args.max_retries,
+            args.base_retry_delay,
+            args.max_retry_delay,
+            "Speechify voices request",
+        )
+    except SpeechifyHTTPFailure as error:
+        stale_ids, _ = load_voice_cache(cache_path, None)
+        if stale_ids and not args.no_cache:
+            print(f"{error}; using stale cached voice ids", file=sys.stderr)
+            print(json.dumps(stale_ids))
+            return 0
+        print(error, file=sys.stderr)
         return 1
     except Exception as error:
+        stale_ids, _ = load_voice_cache(cache_path, None)
+        if stale_ids and not args.no_cache:
+            print(f"Speechify voices request failed: {error}; using stale cached voice ids", file=sys.stderr)
+            print(json.dumps(stale_ids))
+            return 0
         print(f"Speechify voices request failed: {error}", file=sys.stderr)
         return 1
 
-    print(json.dumps(voice_ids(data)))
+    ids = voice_ids(data)
+    if not args.no_cache:
+        write_voice_cache(cache_path, ids)
+    print(json.dumps(ids))
     return 0
 
 
-def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] == "voices":
-        return run_voices(sys.argv[2:])
-
+def run_speech(argv) -> int:
     parser = argparse.ArgumentParser(
         description="Generate a TSRS voice-command audio file with Speechify."
     )
@@ -95,42 +427,45 @@ def main() -> int:
     parser.add_argument("--voice-id", default="george")
     parser.add_argument("--model", default="simba-english")
     parser.add_argument("--audio-format", default="mp3")
-    parser.add_argument("--keychain-service")
-    args = parser.parse_args()
+    parser.add_argument("--no-serialize", action="store_true")
+    add_shared_api_arguments(parser)
+    args = parser.parse_args(argv)
 
-    api_key = os.environ.get("SPEECHIFY_API_KEY") or keychain_password(args.keychain_service)
-    if not api_key:
-        print("SPEECHIFY_API_KEY is not set and --keychain-service did not return a secret", file=sys.stderr)
+    try:
+        api_key = api_key_from_args(args)
+    except ValueError as error:
+        print(error, file=sys.stderr)
         return 2
 
     with open(args.text_file, "r", encoding="utf-8") as file:
         text = file.read()
 
-    payload = json.dumps(
-        {
-            "input": text,
-            "voice_id": args.voice_id,
-            "audio_format": args.audio_format,
-            "model": args.model,
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        "https://api.speechify.ai/v1/audio/speech",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    payload = {
+        "input": text,
+        "voice_id": args.voice_id,
+        "audio_format": args.audio_format,
+        "model": args.model,
+    }
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        print(f"Speechify request failed: HTTP {error.code} {detail}", file=sys.stderr)
+        lock = contextlib.nullcontext()
+        if not args.no_serialize:
+            lock = exclusive_lock(synth_lock_path(args.keychain_service, args.api_base_url))
+        with lock:
+            data = request_json_with_retry(
+                args.api_base_url,
+                "/v1/audio/speech",
+                "POST",
+                api_key,
+                args.timeout,
+                payload,
+                args.max_retries,
+                args.base_retry_delay,
+                args.max_retry_delay,
+                "Speechify request",
+            )
+    except SpeechifyHTTPFailure as error:
+        print(error, file=sys.stderr)
         return 1
     except Exception as error:
         print(f"Speechify request failed: {error}", file=sys.stderr)
@@ -145,6 +480,117 @@ def main() -> int:
         file.write(base64.b64decode(audio_data))
 
     return 0
+
+
+def run_self_test() -> int:
+    import io
+    import unittest
+    from unittest import mock
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = json.dumps(payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self.payload
+
+    def http_error(status, payload, headers=None):
+        return urllib.error.HTTPError(
+            url="https://api.speechify.ai/test",
+            code=status,
+            msg="error",
+            hdrs=headers or {},
+            fp=io.BytesIO(json.dumps(payload).encode("utf-8")),
+        )
+
+    class SpeechifyWrapperTests(unittest.TestCase):
+        def setUp(self):
+            self.tempdir = tempfile.TemporaryDirectory()
+            self.addCleanup(self.tempdir.cleanup)
+            self.env = mock.patch.dict(
+                os.environ,
+                {
+                    "SPEECHIFY_API_KEY": "test-key",
+                    "TSRS_SPEECHIFY_CACHE_DIR": self.tempdir.name,
+                },
+                clear=False,
+            )
+            self.env.start()
+            self.addCleanup(self.env.stop)
+
+        def test_voices_uses_fresh_cache_without_network(self):
+            path = voice_cache_path(None, DEFAULT_API_BASE_URL)
+            write_voice_cache(path, ["george", "henry"])
+            with mock.patch("urllib.request.urlopen", side_effect=AssertionError("network should not run")):
+                with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                    self.assertEqual(run_voices([]), 0)
+            self.assertEqual(json.loads(stdout.getvalue()), ["george", "henry"])
+
+        def test_voices_uses_stale_cache_when_rate_limited(self):
+            path = voice_cache_path(None, DEFAULT_API_BASE_URL)
+            write_voice_cache(path, ["george"])
+            old = time.time() - 7200
+            with open(path, "r+", encoding="utf-8") as file:
+                data = json.load(file)
+                data["created_at"] = old
+                file.seek(0)
+                json.dump(data, file)
+                file.truncate()
+            error = http_error(
+                429,
+                {"error": {"code": "rate_limited", "message": "Too Many Requests"}, "request_id": "req-body"},
+                {"Retry-After": "0", "X-Request-ID": "req-header"},
+            )
+            with mock.patch("urllib.request.urlopen", side_effect=error), mock.patch("time.sleep"):
+                with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                    self.assertEqual(run_voices(["--cache-ttl-seconds", "1", "--max-retries", "0"]), 0)
+            self.assertEqual(json.loads(stdout.getvalue()), ["george"])
+
+        def test_speech_retries_429_and_writes_audio(self):
+            text = os.path.join(self.tempdir.name, "input.txt")
+            output = os.path.join(self.tempdir.name, "output.mp3")
+            with open(text, "w", encoding="utf-8") as file:
+                file.write("hello")
+            error = http_error(
+                429,
+                {"error": {"code": "concurrency_limit_reached", "message": "Too Many Requests"}, "request_id": "req-body"},
+                {"Retry-After": "0", "RateLimit-Remaining-Calls": "0"},
+            )
+            success = FakeResponse({"audio_data": base64.b64encode(b"audio").decode("ascii")})
+            with mock.patch("urllib.request.urlopen", side_effect=[error, success]), mock.patch("time.sleep") as sleep:
+                result = run_speech(["--text-file", text, "--output-file", output, "--max-retries", "1"])
+            self.assertEqual(result, 0)
+            sleep.assert_called_once()
+            with open(output, "rb") as file:
+                self.assertEqual(file.read(), b"audio")
+
+        def test_http_diagnostic_keeps_safe_rate_limit_headers(self):
+            error = http_error(
+                429,
+                {"error": {"code": "rate_limited", "message": "Too Many Requests"}, "request_id": "req-body"},
+                {"Retry-After": "3", "Authorization": "secret", "X-Request-ID": "req-header"},
+            )
+            details = parse_http_error(error)
+            self.assertEqual(details["headers"], {"Retry-After": "3", "X-Request-ID": "req-header"})
+            self.assertIn("code=rate_limited", diagnostic_suffix(details))
+            self.assertNotIn("Authorization", diagnostic_suffix(details))
+
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(SpeechifyWrapperTests)
+    return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
+
+
+def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        return run_self_test()
+    if len(sys.argv) > 1 and sys.argv[1] == "voices":
+        return run_voices(sys.argv[2:])
+    return run_speech(sys.argv[1:])
 
 
 if __name__ == "__main__":
