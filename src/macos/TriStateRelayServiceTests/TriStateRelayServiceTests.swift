@@ -230,7 +230,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, providerLabel, voiceProviderSummaryView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
+        XCTAssertTrue(source.contains("views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView, saveCombinerCommandButton])"))
     }
 
@@ -247,9 +247,8 @@ final class TriStateRelayServiceTests: XCTestCase {
 
         XCTAssertTrue(source.contains("private let voiceCommandTextView = NSTextView()"))
         XCTAssertTrue(source.contains("voiceCommandTextView.string = settings.voiceCommand"))
-        XCTAssertTrue(source.contains("voiceProviderSummaryView.stringValue = settings.voiceProviderSummary"))
         XCTAssertTrue(source.contains("let commandLabel = NSTextField(labelWithString: \"Voice command\")"))
-        XCTAssertTrue(source.contains("let providerLabel = NSTextField(labelWithString: \"Provider line voices\")"))
+        XCTAssertFalse(source.contains("Provider line voices"))
         XCTAssertTrue(source.contains("The active command writes an audio file. TSRS still owns playback"))
         XCTAssertTrue(source.contains("commandScrollView.heightAnchor.constraint(equalToConstant: 96)"))
         XCTAssertTrue(source.contains("saveVoiceCommandButton.widthAnchor.constraint(equalToConstant: 160)"))

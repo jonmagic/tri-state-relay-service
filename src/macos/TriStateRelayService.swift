@@ -1164,7 +1164,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let copyBundledCliPathButton = NSButton(title: "Copy bundled CLI path", target: nil, action: nil)
     private let combinerTextView = NSTextView()
     private let voiceCommandTextView = NSTextView()
-    private let voiceProviderSummaryView = NSTextField(labelWithString: "")
     private let voiceCommandStatusView = NSTextField(labelWithString: "")
     private let saveVoiceCommandButton = NSButton(title: "Save voice command", target: nil, action: nil)
     private let saveCombinerCommandButton = NSButton(title: "Save combiner", target: nil, action: nil)
@@ -1468,7 +1467,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         voiceCommandTextView.string = settings.voiceCommand
-        voiceProviderSummaryView.stringValue = settings.voiceProviderSummary
         resetVoiceCommandTextViewScroll()
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
         configPathView.stringValue = settings.configPath
@@ -1553,10 +1551,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         voiceCommandStatusView.font = NSFont.systemFont(ofSize: 12)
         voiceCommandStatusView.lineBreakMode = .byWordWrapping
         voiceCommandStatusView.maximumNumberOfLines = 0
-        voiceProviderSummaryView.textColor = .secondaryLabelColor
-        voiceProviderSummaryView.font = NSFont.systemFont(ofSize: 12)
-        voiceProviderSummaryView.lineBreakMode = .byWordWrapping
-        voiceProviderSummaryView.maximumNumberOfLines = 0
         configPathView.textColor = .secondaryLabelColor
         configPathView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         configPathView.lineBreakMode = .byTruncatingMiddle
@@ -1586,7 +1580,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureAccessibility(openAtLoginCheckbox, identifier: "tsrs.settings.setup.open-at-login", label: "Open Tri-State Relay Service at login")
         configureAccessibility(openAtLoginStatusView, identifier: "tsrs.settings.setup.open-at-login-status", label: "Open at Login status")
         configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
-        configureAccessibility(voiceProviderSummaryView, identifier: "tsrs.settings.voice.provider-summary", label: "Voice provider summary")
         configureAccessibility(saveVoiceCommandButton, identifier: "tsrs.settings.voice.save-command", label: "Save voice command")
         configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
         configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
@@ -1868,14 +1861,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandNote.lineBreakMode = .byWordWrapping
         commandNote.maximumNumberOfLines = 0
 
-        let providerLabel = NSTextField(labelWithString: "Provider line voices")
-        providerLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-
         let commandScrollView = Self.configuredTextViewScrollView(voiceCommandTextView, wrapsLines: true)
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, providerLabel, voiceProviderSummaryView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
+        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
 #endif
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1891,7 +1881,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         commandScrollView.heightAnchor.constraint(equalToConstant: 96).isActive = true
         saveVoiceCommandButton.widthAnchor.constraint(equalToConstant: 160).isActive = true
         voiceCommandStatusView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
-        voiceProviderSummaryView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         configErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         voiceCommandErrorView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
 #endif
@@ -1900,12 +1889,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(18, after: configSection)
         stack.setCustomSpacing(9, after: commandNote)
         stack.setCustomSpacing(14, after: voiceCommandStatusView)
-        stack.setCustomSpacing(14, after: voiceProviderSummaryView)
         stack.setCustomSpacing(8, after: configErrorView)
         stack.setCustomSpacing(18, after: voiceCommandErrorView)
 #endif
 
-        let container = FlippedSettingsView(frame: NSRect(x: 0, y: 0, width: 560, height: 440))
+        let container = FlippedSettingsView(frame: NSRect(x: 0, y: 0, width: 560, height: 360))
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -4283,7 +4271,6 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
-    let voiceProviderSummary: String
     let voiceCommandLastError: String?
     let configError: String?
     let configPath: String
@@ -4405,7 +4392,6 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
-                voiceProviderSummary: voiceProviderSummary(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
                 configError: configError(settings),
                 configPath: relayConfigPath(),
@@ -5660,33 +5646,6 @@ final class NativeRelayStore {
         return validRelayConfig(settings: settings)?.voiceCommand ?? ""
     }
 
-    private func voiceProviderSummary(_ settings: [String: String]) -> String {
-        if profile == "app-store" {
-            return "External voice providers are unavailable in the App Store-safe profile."
-        }
-
-        guard let config = validRelayConfig(settings: settings) else {
-            return "Config is invalid. Playback stays quiet until config.toml validates."
-        }
-        guard let providerName = config.voiceProvider, let provider = config.voiceProviders[providerName] else {
-            return "No active voice provider. The default say path keeps using System Default."
-        }
-
-        var lines = ["Active provider: \(providerName)"]
-        lines.append("Default voice id: \(provider.defaultVoiceId ?? "none")")
-        lines.append("Automatic line assignment: \(provider.autoAssignLineVoices ? "on" : "off")")
-        if provider.lineVoices.isEmpty {
-            lines.append("Line mappings: none")
-        } else {
-            let mappings = provider.lineVoices
-                .sorted { $0.key < $1.key }
-                .map { "\($0.key)=\($0.value)" }
-                .joined(separator: ", ")
-            lines.append("Line mappings: \(mappings)")
-        }
-        return lines.joined(separator: "\n")
-    }
-
     private func voiceCommandLastError(_ settings: [String: String]) -> String? {
         let value = settings["voice_command_last_error"] ?? ""
         return value.isEmpty ? nil : value
@@ -5764,7 +5723,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceProviderSummary: "No active voice provider. The default say path keeps using System Default.", voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -308,6 +308,8 @@ final class RelayCliTests: XCTestCase {
         XCTAssertTrue(show.stdout.contains("\"Agent=One\" = \"simba\""))
         XCTAssertTrue(show.stdout.contains("Brain = \"george\""))
         XCTAssertTrue(show.stdout.contains("\"Tri-State Relay Service\" = \"henry\""))
+        XCTAssertFalse(show.stdout.contains("[voice.variables]"))
+        XCTAssertFalse(show.stdout.contains("[combiner.variables]"))
 
         try show.stdout.write(toFile: relayConfigPath(), atomically: true, encoding: .utf8)
         XCTAssertEqual(runRelayCli(["config", "validate"]).exitCode, 0)

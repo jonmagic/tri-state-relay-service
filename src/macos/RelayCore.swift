@@ -324,10 +324,14 @@ struct RelayConfig {
         }
         lines += [
             "command = \(tomlQuotedString(voiceCommand))",
-            "",
-            "[voice.variables]",
         ]
-        lines += voiceVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        if !voiceVariables.isEmpty {
+            lines += [
+                "",
+                "[voice.variables]",
+            ]
+            lines += voiceVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        }
         for providerName in voiceProviderSerializationOrder() {
             guard let provider = voiceProviders[providerName] else {
                 continue
@@ -356,10 +360,14 @@ struct RelayConfig {
             "",
             "[combiner]",
             "command = \(tomlQuotedString(combinerCommand))",
-            "",
-            "[combiner.variables]",
         ]
-        lines += combinerVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        if !combinerVariables.isEmpty {
+            lines += [
+                "",
+                "[combiner.variables]",
+            ]
+            lines += combinerVariables.sorted { $0.key < $1.key }.map { "\(tomlBareKey($0.key)) = \(tomlQuotedString($0.value))" }
+        }
         lines += [
             "",
             "[retention]",
@@ -1931,7 +1939,7 @@ private final class RelayCliStore {
             throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
         }
 
-        let config = try updateRelayConfig { config in
+        _ = try updateRelayConfig { config in
             config.cleanupRetentionMinutes = minutes
         }
         try clearConfigError()
@@ -1939,7 +1947,6 @@ private final class RelayCliStore {
     }
 
     func setAdvancedConfig(voiceCommand: String?, combinerCommand: String?, cleanupRetentionMinutes: String?) throws -> RelayConfig {
-        var voiceCommandForSettings: String?
         let normalizedVoiceCommand = voiceCommand.map { command -> String in
             command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         }
@@ -1948,7 +1955,6 @@ private final class RelayCliStore {
             guard enabledCommandLineCount(normalized) == 1 else {
                 throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
             }
-            voiceCommandForSettings = normalized
         }
 
         let cleanupMinutes = try cleanupRetentionMinutes.map { value in
@@ -1971,7 +1977,7 @@ private final class RelayCliStore {
         }
         try clearConfigError()
 
-        if let voiceCommandForSettings {
+        if normalizedVoiceCommand != nil {
             try setSetting(key: "voice_command", value: config.voiceCommand)
             try setSetting(key: "voice_command_last_error", value: "")
         }
