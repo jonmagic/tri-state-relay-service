@@ -7,7 +7,7 @@
 - Removed the duplicate `relay settings` command and made `relay combiner` read-only; use `relay config set --combiner-command` to change the combiner.
 - Preserved 1.1.2 upgrade migration from SQLite settings into `config.toml`.
 - Added BYO voice command playback while keeping app-owned speech, mute, Focus, Ready, and Live safeguards.
-- Added Speechify-compatible voice synthesis support for direct builds, including Keychain-based API-key lookup and rate-limit handling.
+- Added Speechify-compatible voice synthesis support for the direct-download app, including Keychain-based API-key lookup and rate-limit handling.
 - Added provider voice configuration with sticky per-line voice IDs and optional stable assignment for new lines.
 - Added local spoken-usage counters by provider, model, voice, and line so custom voice cost can be estimated without storing another copy of relay text.
 - Added cleanup controls for old relay rows, spoken-usage buckets, and temporary voice audio files.
@@ -22,7 +22,7 @@
 
 ## 1.1.1 - Inactive-line combiner fix
 
-- Fixed configured inactive-line combiners so direct builds execute the configured command instead of always using latest-only replacement.
+- Fixed configured inactive-line combiners so the direct-download app executes the configured command instead of always using latest-only replacement.
 - Kept combiner execution shell-free, bounded by timeout, and validated through JSON output before queuing the combined relay.
 - Preserved latest-only fallback when no combiner is configured, when native combiner execution fails, or in the App Store-safe profile.
 - Added regression coverage for CLI and native app enqueue paths, placeholder handling, and active-line changes while combining.
