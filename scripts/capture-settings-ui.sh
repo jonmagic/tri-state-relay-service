@@ -161,7 +161,7 @@ if [[ "${TSRS_SETTINGS_UI_ROUNDTRIP:-0}" == "1" ]]; then
   if "$relay_cli" debug settings-roundtrip --voice-command "$voice_command" --combiner-command "$combiner_command" --cleanup-retention-minutes "$retention_minutes" >"$roundtrip_report" 2>&1
   then
     for _ in {1..40}; do
-      "$relay_cli" settings >"$artifact_root/settings-after-modify.json"
+      "$relay_cli" status >"$artifact_root/settings-after-modify.json"
       if python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
 import json
 import sys
@@ -181,7 +181,7 @@ PY
       fi
       sleep 0.25
     done
-    "$relay_cli" settings >"$artifact_root/settings-after-modify.json"
+    "$relay_cli" status >"$artifact_root/settings-after-modify.json"
     python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
 import json
 import sys
@@ -199,7 +199,7 @@ for key, value in expected.items():
 PY
     cp "$config_backup" "$config_path"
     "$relay_cli" config reload >/dev/null
-    "$relay_cli" settings >"$artifact_root/settings-after-restore.json"
+    "$relay_cli" status >"$artifact_root/settings-after-restore.json"
     python3 - "$artifact_root/settings-after-restore.json" "$config_backup" <<'PY'
 import json
 import subprocess

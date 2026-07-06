@@ -1,11 +1,17 @@
 # Changelog
 
-## 2.0.0 - Unreleased
+## 2.0.0 - Advanced config and custom voices
 
 - Made `relay config` the single CLI surface for TOML-backed advanced configuration.
 - Added `relay config set --voice-command`, `--combiner-command`, and `--cleanup-retention-minutes`.
 - Removed the duplicate `relay settings` command and made `relay combiner` read-only; use `relay config set --combiner-command` to change the combiner.
 - Preserved 1.1.2 upgrade migration from SQLite settings into `config.toml`.
+- Added BYO voice command playback while keeping app-owned speech, mute, Focus, Ready, and Live safeguards.
+- Added Speechify-compatible voice synthesis support for direct builds, including Keychain-based API-key lookup and rate-limit handling.
+- Added provider voice configuration with sticky per-line voice IDs and optional stable assignment for new lines.
+- Added local spoken-usage counters by provider, model, voice, and line so custom voice cost can be estimated without storing another copy of relay text.
+- Added cleanup controls for old relay rows, spoken-usage buckets, and temporary voice audio files.
+- Added Settings UI capture and roundtrip verification for release-quality Settings changes.
 
 ## 1.1.2 - App wake and status refresh
 
