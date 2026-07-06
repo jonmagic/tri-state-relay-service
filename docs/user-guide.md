@@ -164,7 +164,7 @@ Open Settings whenever you want to change the CLI install, keyboard shortcut, Op
 
 Changing the voice is quiet. Use Preview only when you explicitly want to hear a sample. To add more macOS voices, open System Settings > Accessibility > Spoken Content.
 
-Direct-download builds use app-owned playback and can use installed macOS voices that work with the system speech engine. Natural voices are favored when available, and System Default remains available.
+The direct-download app uses app-owned playback and can use installed macOS voices that work with the system speech engine. Natural voices are favored when available, and System Default remains available.
 
 ## When many updates pile up
 
@@ -190,7 +190,7 @@ Combiner output should follow the same rules as any other relay: no secrets, no 
 
 ## Advanced: BYO voice command
 
-Direct builds can use a configured voice command to generate an audio file for TSRS to play. This is modeled after `say -o`: the command must write audio to an output path and must not speak directly. TSRS still owns playback, mute/focus/live safety checks, and delivered-state marking.
+The direct-download app can use a configured voice command to generate an audio file for TSRS to play. This is modeled after `say -o`: the command must write audio to an output path and must not speak directly. TSRS still owns playback, mute/focus/live safety checks, and delivered-state marking.
 
 Advanced voice, inactive-line combiner, and cleanup retention settings live in `~/Library/Application Support/Tri-State Relay Service/config.toml`. On upgrade, TSRS creates this file once from existing 1.1.2 SQLite settings. If the file already exists, TSRS preserves it and treats it as the source of truth for those advanced settings.
 
@@ -220,7 +220,7 @@ The default `/usr/bin/say` path does not use provider line voices. It keeps usin
 
 ### Speechify example
 
-Direct builds include a Speechify-compatible wrapper at `<app-bin>/speechify`. Store your API key in Keychain yourself:
+The direct-download app includes a Speechify-compatible wrapper at `<app-bin>/speechify`. Store your API key in Keychain yourself:
 
 ```sh
 security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
