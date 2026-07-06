@@ -220,7 +220,7 @@ The default `/usr/bin/say` path does not use provider line voices. It keeps usin
 
 ### Speechify example
 
-The direct-download app includes a Speechify-compatible wrapper at `<app-bin>/speechify`. Store your API key in Keychain yourself:
+The direct-download app includes a Speechify-compatible wrapper at `<app-bin>/speechify`. Start with the [Speechify API docs](https://docs.speechify.ai/) to understand the API, and use the [Speechify dashboard](https://platform.speechify.ai/) to sign up and manage API keys. Store your API key in Keychain yourself:
 
 ```sh
 security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
