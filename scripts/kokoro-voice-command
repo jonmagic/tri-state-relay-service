@@ -3,16 +3,21 @@ import argparse
 import contextlib
 import io
 import json
+import signal
+import socket
 import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 
 DEFAULT_VENV = "~/.local/share/tsrs-kokoro/venv"
 DEFAULT_VOICE_ID = "af_heart"
+DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS = 1800
+SERVER_PROTOCOL_VERSION = 1
 VOICE_IDS = [
     "af_alloy",
     "af_aoede",
@@ -83,6 +88,35 @@ def default_venv():
     return os.environ.get("TSRS_KOKORO_VENV") or DEFAULT_VENV
 
 
+def state_dir():
+    return expanded_path(
+        os.environ.get("TSRS_KOKORO_STATE_DIR")
+        or "~/Library/Application Support/Tri-State Relay Service/kokoro"
+    )
+
+
+def socket_path():
+    return state_dir() / "kokoro.sock"
+
+
+def pid_path():
+    return state_dir() / "kokoro.pid"
+
+
+def log_path():
+    return state_dir() / "kokoro.log"
+
+
+def ensure_state_dir():
+    directory = state_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stat = directory.stat()
+    if stat.st_uid != os.getuid():
+        raise RuntimeError(f"Kokoro state directory is not owned by the current user: {directory}")
+    directory.chmod(0o700)
+    return directory
+
+
 def infer_venv_from_python(python):
     path = expanded_path(python)
     if path.name != "python":
@@ -127,7 +161,7 @@ def kokoro_environment(venv, enable_mps):
 def install_hint():
     return (
         "Install Kokoro in an isolated venv, then rerun this command:\n"
-        "  brew install espeak-ng\n"
+        "  brew install uv espeak-ng\n"
         f"  uv venv --python 3.11 {DEFAULT_VENV}\n"
         f"  uv pip install --python {DEFAULT_VENV}/bin/python kokoro==0.9.4\n"
         "The first synthesis may download Kokoro-82M weights and the spaCy English model."
@@ -180,6 +214,273 @@ def publish_synthesized_audio(synthesis_file, output_file):
     return True
 
 
+def read_pid():
+    try:
+        return int(pid_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def process_is_running(pid):
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def pid_looks_like_kokoro_server(pid):
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "command="],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+
+    command = result.stdout
+    return result.returncode == 0 and "kokoro-voice-command" in command and "server" in command and "run" in command
+
+
+def socket_request(payload, timeout=30.0):
+    path = socket_path()
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(timeout)
+    try:
+        client.connect(str(path))
+        client.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        chunks = []
+        while True:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    finally:
+        client.close()
+
+    data = b"".join(chunks).split(b"\n", 1)[0]
+    if not data:
+        raise RuntimeError("Kokoro server returned no response")
+    response = json.loads(data.decode("utf-8"))
+    if not response.get("ok"):
+        raise RuntimeError(response.get("error") or "Kokoro server request failed")
+    return response
+
+
+def server_is_responsive():
+    try:
+        response = socket_request({"action": "status", "version": SERVER_PROTOCOL_VERSION}, timeout=1.0)
+    except Exception:
+        return False
+    return response.get("status") == "ready"
+
+
+def start_server(args, python, venv, env):
+    ensure_state_dir()
+    if process_is_running(read_pid()) and server_is_responsive():
+        return
+
+    stale_socket = socket_path()
+    if stale_socket.exists():
+        stale_socket.unlink()
+
+    command = [
+        python,
+        str(Path(__file__).resolve()),
+        "server",
+        "run",
+        "--idle-timeout",
+        str(args.server_idle_timeout),
+    ]
+    if venv:
+        command += ["--venv", venv]
+    if args.mps:
+        command.append("--mps")
+
+    with open(log_path(), "ab") as log:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            env=env,
+            start_new_session=True,
+            close_fds=True,
+        )
+
+    deadline = time.time() + float(args.server_start_timeout)
+    last_error = None
+    while time.time() < deadline:
+        try:
+            if server_is_responsive():
+                return
+        except Exception as error:
+            last_error = error
+        time.sleep(0.1)
+
+    raise RuntimeError(f"Kokoro server did not become ready; see {log_path()}" + (f": {last_error}" if last_error else ""))
+
+
+def stop_server(timeout=1.0):
+    try:
+        socket_request({"action": "shutdown", "version": SERVER_PROTOCOL_VERSION}, timeout=1.0)
+    except Exception:
+        pass
+
+    deadline = time.time() + timeout
+    pid = read_pid()
+    while pid and process_is_running(pid) and time.time() < deadline:
+        time.sleep(0.1)
+
+    if pid and process_is_running(pid) and pid_looks_like_kokoro_server(pid):
+        os.kill(pid, signal.SIGTERM)
+
+    for path in [socket_path(), pid_path()]:
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            pass
+
+
+def server_status():
+    pid = read_pid()
+    responsive = server_is_responsive() if pid and process_is_running(pid) else False
+    return {
+        "running": bool(pid and process_is_running(pid)),
+        "responsive": responsive,
+        "pid": pid,
+        "socket": str(socket_path()),
+        "log": str(log_path()),
+    }
+
+
+def write_wav_with_kokoro(text, output_file, voice_id, language=None, speed=1.0):
+    import wave
+    import numpy as np
+    from kokoro import KPipeline
+
+    lang = language or voice_id[0]
+    pipeline = write_wav_with_kokoro.pipelines.get(lang)
+    if pipeline is None:
+        pipeline = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M")
+        write_wav_with_kokoro.pipelines[lang] = pipeline
+
+    with wave.open(str(output_file), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24000)
+        for result in pipeline(text, voice=voice_id, speed=speed, split_pattern=r"\n+"):
+            if result.audio is None:
+                continue
+            wav_file.writeframes((result.audio.numpy() * 32767).astype(np.int16).tobytes())
+
+
+write_wav_with_kokoro.pipelines = {}
+
+
+def server_loop(idle_timeout):
+    ensure_state_dir()
+    path = socket_path()
+    if path.exists():
+        path.unlink()
+
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    path.chmod(0o600)
+    server.listen(8)
+    server.settimeout(0.5)
+    pid_path().write_text(str(os.getpid()), encoding="utf-8")
+
+    shutting_down = False
+    last_request_at = time.time()
+    try:
+        while not shutting_down:
+            if idle_timeout > 0 and time.time() - last_request_at > idle_timeout:
+                break
+
+            try:
+                connection, _ = server.accept()
+            except socket.timeout:
+                continue
+
+            with connection:
+                last_request_at = time.time()
+                request = connection.recv(1024 * 1024)
+                try:
+                    payload = json.loads(request.split(b"\n", 1)[0].decode("utf-8"))
+                    action = payload.get("action")
+                    if action == "status":
+                        response = {"ok": True, "status": "ready", "pid": os.getpid()}
+                    elif action == "shutdown":
+                        response = {"ok": True, "status": "stopping", "pid": os.getpid()}
+                        shutting_down = True
+                    elif action == "synthesize":
+                        text_file = expanded_path(payload["text_file"])
+                        output_file = expanded_path(payload["output_file"])
+                        voice_id = payload.get("voice_id") or DEFAULT_VOICE_ID
+                        language = payload.get("language")
+                        speed = float(payload.get("speed") or 1.0)
+                        output_file.parent.mkdir(parents=True, exist_ok=True)
+                        synthesis_file, temporary_wav = synthesis_output_path(output_file)
+                        write_wav_with_kokoro(text_file.read_text(encoding="utf-8"), synthesis_file, voice_id, language=language, speed=speed)
+                        publish_synthesized_audio(synthesis_file, output_file)
+                        if temporary_wav and temporary_wav.exists():
+                            temporary_wav.unlink()
+                        response = {"ok": True, "status": "synthesized", "output_file": str(output_file)}
+                    else:
+                        response = {"ok": False, "error": f"unsupported Kokoro server action: {action}"}
+                except Exception as error:
+                    response = {"ok": False, "error": str(error)}
+                connection.sendall(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+    finally:
+        server.close()
+        for cleanup_path in [path, pid_path()]:
+            try:
+                if cleanup_path.exists():
+                    cleanup_path.unlink()
+            except OSError:
+                pass
+
+
+def run_server(argv):
+    parser = argparse.ArgumentParser(description="Manage the local TSRS Kokoro helper server.")
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("--venv", default=None)
+    run_parser.add_argument("--mps", action="store_true")
+    run_parser.add_argument("--idle-timeout", type=float, default=float(os.environ.get("TSRS_KOKORO_SERVER_IDLE_TIMEOUT", DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS)))
+
+    stop_parser = subparsers.add_parser("stop")
+    stop_parser.add_argument("--timeout", type=float, default=1.0)
+    subparsers.add_parser("status")
+
+    args = parser.parse_args(argv)
+    if args.command == "run":
+        server_loop(args.idle_timeout)
+        return 0
+    if args.command == "stop":
+        ensure_state_dir()
+        stop_server(timeout=args.timeout)
+        print(json.dumps(server_status(), separators=(",", ":")))
+        return 0
+    if args.command == "status":
+        ensure_state_dir()
+        print(json.dumps(server_status(), separators=(",", ":")))
+        return 0
+    parser.print_help()
+    return 2
+
+
 def run_voices(argv):
     parser = argparse.ArgumentParser(description="List Kokoro voice ids for TSRS line-voice assignment.")
     parser.add_argument("--language", choices=sorted({voice[0] for voice in VOICE_IDS}))
@@ -202,6 +503,9 @@ def run_speech(argv):
     parser.add_argument("--venv", default=None)
     parser.add_argument("--python", default=None)
     parser.add_argument("--mps", action="store_true", help="Enable PyTorch MPS fallback for Apple Silicon.")
+    parser.add_argument("--no-server", action="store_true")
+    parser.add_argument("--server-start-timeout", type=float, default=float(os.environ.get("TSRS_KOKORO_SERVER_START_TIMEOUT", 30)))
+    parser.add_argument("--server-idle-timeout", type=float, default=float(os.environ.get("TSRS_KOKORO_SERVER_IDLE_TIMEOUT", DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS)))
     args = parser.parse_args(argv)
 
     text_file = expanded_path(args.text_file)
@@ -219,6 +523,25 @@ def run_speech(argv):
         print(error, file=sys.stderr)
         print(install_hint(), file=sys.stderr)
         return 2
+
+    if not args.no_server and os.environ.get("TSRS_KOKORO_DISABLE_SERVER") != "1":
+        try:
+            start_server(args, python, venv, env)
+            socket_request(
+                {
+                    "action": "synthesize",
+                    "version": SERVER_PROTOCOL_VERSION,
+                    "text_file": str(text_file),
+                    "output_file": str(output_file),
+                    "voice_id": args.voice_id,
+                    "language": args.language,
+                    "speed": args.speed,
+                },
+                timeout=max(30.0, args.server_start_timeout),
+            )
+            return 0
+        except Exception as error:
+            print(f"Kokoro server unavailable; falling back to one-shot synthesis: {error}", file=sys.stderr)
 
     synthesis_file, temporary_wav = synthesis_output_path(output_file)
     command = [
@@ -319,6 +642,12 @@ def run_self_test():
                 self.assertFalse(synthesis.exists())
                 self.assertEqual(output.read_bytes(), b"RIFF-test")
 
+        def test_install_hint_has_complete_setup_path(self):
+            hint = install_hint()
+            self.assertIn("brew install uv espeak-ng", hint)
+            self.assertIn("uv venv --python 3.11", hint)
+            self.assertIn("kokoro==0.9.4", hint)
+
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(KokoroWrapperTests)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
@@ -326,6 +655,8 @@ def run_self_test():
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         return run_self_test()
+    if len(sys.argv) > 1 and sys.argv[1] == "server":
+        return run_server(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "voices":
         return run_voices(sys.argv[2:])
     return run_speech(sys.argv[1:])

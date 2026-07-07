@@ -255,7 +255,7 @@ The direct-download app includes a Kokoro-compatible wrapper at `<app-bin>/kokor
 One tested macOS setup uses `uv`, Python 3.11, Homebrew `espeak-ng`, and Kokoro 0.9.4:
 
 ```sh
-brew install espeak-ng
+brew install uv espeak-ng
 uv venv --python 3.11 ~/.local/share/tsrs-kokoro/venv
 uv pip install --python ~/.local/share/tsrs-kokoro/venv/bin/python kokoro==0.9.4
 ```
@@ -285,7 +285,11 @@ Brain = "af_heart"
 "Tri-State Relay Service" = "am_puck"
 ```
 
-`<app-bin>/kokoro voices --language a` returns American English Kokoro voice ids as JSON, so TSRS can assign sticky per-line voices without importing Kokoro or downloading model files. The synthesis command reads `<text-file>`, asks Kokoro to synthesize a temporary WAV file, moves it to the audio path TSRS asked for, and exits nonzero if Kokoro is missing or synthesis fails. It never speaks directly, installs Python packages, stores relay audio, or modifies TSRS queue state.
+`<app-bin>/kokoro voices --language a` returns American English Kokoro voice ids as JSON, so TSRS can assign sticky per-line voices without importing Kokoro or downloading model files. The synthesis command reads `<text-file>`, invisibly starts a same-user local Kokoro server when needed, asks that server to keep `KPipeline` loaded across relays, and writes WAV bytes to the audio path TSRS asked for. If Kokoro is not installed, the command exits nonzero with the setup commands above instead of downloading packages itself.
+
+The helper never speaks directly, installs Python packages, stores relay audio, or modifies TSRS queue state. It keeps only runtime files under `~/Library/Application Support/Tri-State Relay Service/kokoro/` for the local Unix socket, PID file, and helper log. When TSRS reloads a config whose active `[voice] provider` is no longer `kokoro`, the app asks the bundled helper to stop that local server. The server also exits after an idle timeout.
+
+TSRS does not bundle Kokoro source, Kokoro Python packages, the Kokoro-82M model weights, voice files, spaCy models, or dependency caches. The Kokoro Python package is Apache-2.0, and the Kokoro-82M Hugging Face model card declares `license: apache-2.0` for the model weights. If you redistribute a prebuilt Kokoro environment, model cache, or voice assets yourself, carry the Kokoro Apache-2.0 license and the notices/licenses for its dependencies and model assets with that redistributed bundle. The stock TSRS direct app only ships the integration helper shown here.
 
 ## Advanced: local cleanup retention
 

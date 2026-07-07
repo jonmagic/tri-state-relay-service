@@ -3566,6 +3566,7 @@ private extension SpeechVoiceOption {
 final class MenuBarModel {
     private(set) var status = QueueStatus(mode: "focus", muted: false, queued: 0, speaking: 0, heard: 0, inactiveLineCombiner: "none", activeLine: nil, lines: [], lineSources: [:])
     private let store = NativeRelayStore(profile: distributionProfile)
+    private var didStopKokoroServerForCurrentNonKokoroConfig = false
 
     init() {
         refresh()
@@ -3723,7 +3724,11 @@ final class MenuBarModel {
     }
 
     func loadSettings() -> SettingsSnapshot {
-        store.loadSettings()
+        let settings = store.loadSettings()
+#if !APP_STORE
+        stopKokoroServerIfNeeded(voiceProvider: settings.voiceProvider)
+#endif
+        return settings
     }
 
     func consumeDebugOpenSettingsPanel() -> String? {
@@ -4013,9 +4018,57 @@ final class MenuBarModel {
             stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         )
     }
+
+    private func stopKokoroServerIfNeeded(voiceProvider: String?) {
+        guard distributionProfile != "app-store" else {
+            return
+        }
+        if voiceProvider == "kokoro" {
+            didStopKokoroServerForCurrentNonKokoroConfig = false
+            return
+        }
+        guard !didStopKokoroServerForCurrentNonKokoroConfig else {
+            return
+        }
+        didStopKokoroServerForCurrentNonKokoroConfig = true
+        _ = runBundledKokoro(arguments: ["server", "stop", "--timeout", "1"])
+    }
+
+    private func runBundledKokoro(arguments: [String]) -> RelayCliCommandResult {
+        guard let executableURL = Bundle.main.executableURL else {
+            return RelayCliCommandResult(status: 1, stdout: "", stderr: "could not locate app executable")
+        }
+
+        let kokoroURL = executableURL.deletingLastPathComponent().appendingPathComponent("kokoro")
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = kokoroURL
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return RelayCliCommandResult(status: 1, stdout: "", stderr: error.localizedDescription)
+        }
+
+        return RelayCliCommandResult(
+            status: Int(process.terminationStatus),
+            stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+            stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        )
+    }
 #endif
 
     func refresh() {
+        let settings = store.loadSettings()
+#if !APP_STORE
+        stopKokoroServerIfNeeded(voiceProvider: settings.voiceProvider)
+#endif
         status = loadStatus()
     }
 
@@ -4271,6 +4324,7 @@ struct LineSource {
 struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
+    let voiceProvider: String?
     let voiceCommandLastError: String?
     let configError: String?
     let configPath: String
@@ -4392,6 +4446,7 @@ final class NativeRelayStore {
             return SettingsSnapshot(
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
+                voiceProvider: voiceProvider(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
                 configError: configError(settings),
                 configPath: relayConfigPath(),
@@ -5646,6 +5701,14 @@ final class NativeRelayStore {
         return validRelayConfig(settings: settings)?.voiceCommand ?? ""
     }
 
+    private func voiceProvider(_ settings: [String: String]) -> String? {
+        if profile == "app-store" {
+            return nil
+        }
+
+        return validRelayConfig(settings: settings)?.voiceProvider
+    }
+
     private func voiceCommandLastError(_ settings: [String: String]) -> String? {
         let value = settings["voice_command_last_error"] ?? ""
         return value.isEmpty ? nil : value
@@ -5723,7 +5786,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceProvider: nil, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

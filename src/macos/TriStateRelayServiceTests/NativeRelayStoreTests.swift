@@ -85,6 +85,36 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().commandPaletteShortcut.identifier, "control-shift-command-y")
     }
 
+    func testLoadSettingsExposesActiveVoiceProvider() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        setenv("TSRS_CONFIG_PATH", configPath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        provider = "kokoro"
+        command = "<app-bin>/kokoro --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [kokoro]
+        default_voice_id = "af_heart"
+        auto_assign_line_voices = false
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().voiceProvider, "kokoro")
+    }
+
     func testStartupCleanupPrunesOldTerminalRowsAndUsageBuckets() throws {
         let directory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

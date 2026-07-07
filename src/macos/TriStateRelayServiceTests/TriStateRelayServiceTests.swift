@@ -256,6 +256,15 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("resetVoiceCommandTextViewScroll()"))
     }
 
+    func testKokoroServerStopsWhenConfigLeavesKokoro() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("stopKokoroServerIfNeeded(voiceProvider: settings.voiceProvider)"))
+        XCTAssertTrue(source.contains("if voiceProvider == \"kokoro\""))
+        XCTAssertTrue(source.contains("runBundledKokoro(arguments: [\"server\", \"stop\", \"--timeout\", \"1\"])"))
+        XCTAssertTrue(source.contains("let kokoroURL = executableURL.deletingLastPathComponent().appendingPathComponent(\"kokoro\")"))
+    }
+
     func testSettingsWindowKeepsEditingShortcutsForTextViews() throws {
         let source = try triStateRelayServiceSource()
 
