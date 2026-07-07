@@ -185,6 +185,13 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("voiceID: resolution.voiceIdentifier"))
     }
 
+    func testVoiceCommandOutputPathUsesCoreAudioFriendlyExtension() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("appendingPathComponent(\"relay.m4a\")"))
+        XCTAssertFalse(source.contains("appendingPathComponent(\"relay.mp3\")"))
+    }
+
     func testStaleVoiceCommandDirectoriesAreCleanedUp() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tsrs-cleanup-test-\(UUID().uuidString)", isDirectory: true)
