@@ -6,6 +6,7 @@ app_path="dist/macos/$app_name"
 app_executable="$app_path/Contents/MacOS/Tri-State Relay Service"
 relay_executable="$app_path/Contents/MacOS/relay"
 speechify_executable="$app_path/Contents/MacOS/speechify"
+kokoro_executable="$app_path/Contents/MacOS/kokoro"
 info_plist="$app_path/Contents/Info.plist"
 releases_dir="dist/releases"
 submission_zip="$releases_dir/notary-submission.zip"
@@ -83,7 +84,7 @@ assert_relay_processor_not_bundled() {
 }
 
 assert_built_bundle() {
-  for path in "$app_path" "$app_executable" "$relay_executable" "$speechify_executable" "$info_plist"; do
+  for path in "$app_path" "$app_executable" "$relay_executable" "$speechify_executable" "$kokoro_executable" "$info_plist"; do
     if [[ ! -e "$path" ]]; then
       echo "expected build output is missing: $path" >&2
       exit 1
@@ -145,6 +146,7 @@ rm -f "$submission_zip" "$release_zip"
 
 sign_path "$relay_executable"
 sign_path "$speechify_executable"
+sign_path "$kokoro_executable"
 "$relay_executable" status
 sign_path "$app_path"
 verify_signed_bundle

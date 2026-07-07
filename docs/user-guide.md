@@ -248,6 +248,45 @@ When a line has an explicit mapping, TSRS substitutes that id into `<voice-id>`.
 
 The wrapper calls `POST https://api.speechify.ai/v1/audio/speech`, decodes the returned audio, and writes it to `<output-file>`. It serializes synthesis requests for the configured account, retries 429 responses with Speechify's `Retry-After` guidance when present, and reports safe rate-limit diagnostics such as request ids and rate-limit headers. Its `voices` subcommand calls `GET https://api.speechify.ai/v1/voices`, caches voice ids locally for a short TTL, and prints voice ids only. It never speaks directly, stores API keys in TOML, or caches generated relay audio.
 
+### Kokoro example
+
+The direct-download app includes a Kokoro-compatible wrapper at `<app-bin>/kokoro`, but it does not bundle Kokoro, Python packages, model weights, or voices. Kokoro is a local open-weight TTS stack with a large ML dependency tree, so TSRS only provides the wrapper and leaves installation as an explicit local choice.
+
+One tested macOS setup uses `uv`, Python 3.11, Homebrew `espeak-ng`, and Kokoro 0.9.4:
+
+```sh
+brew install espeak-ng
+uv venv --python 3.11 ~/.local/share/tsrs-kokoro/venv
+uv pip install --python ~/.local/share/tsrs-kokoro/venv/bin/python kokoro==0.9.4
+```
+
+If you want to test synthesis before changing TSRS config:
+
+```sh
+echo "Tri-State Relay Service can use Kokoro as an optional local voice." >/tmp/tsrs-kokoro-test.txt
+~/.local/share/tsrs-kokoro/venv/bin/python -m kokoro --input-file /tmp/tsrs-kokoro-test.txt --output-file /tmp/tsrs-kokoro-test.wav --voice af_heart
+```
+
+The first run may download Kokoro-82M model files from Hugging Face and the spaCy English model. If you use the TSRS wrapper with a venv, pass `--venv` so the wrapper sets `VIRTUAL_ENV` for first-run model setup:
+
+```toml
+[voice]
+provider = "kokoro"
+command = "<app-bin>/kokoro --venv ~/.local/share/tsrs-kokoro/venv --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+
+[kokoro]
+default_voice_id = "af_heart"
+auto_assign_line_voices = true
+catalog_command = "<app-bin>/kokoro voices --language a"
+assignment_strategy = "stable-hash"
+
+[kokoro.line_voices]
+Brain = "af_heart"
+"Tri-State Relay Service" = "am_puck"
+```
+
+`<app-bin>/kokoro voices --language a` returns American English Kokoro voice ids as JSON, so TSRS can assign sticky per-line voices without importing Kokoro or downloading model files. The synthesis command reads `<text-file>`, asks Kokoro to write a WAV file to `<output-file>`, and exits nonzero if Kokoro is missing or synthesis fails. It never speaks directly, installs Python packages, stores relay audio, or modifies TSRS queue state.
+
 ## Advanced: local cleanup retention
 
 Settings includes an Advanced panel for local cleanup retention. The value is stored in minutes and defaults to `525600`, which is 365 days.

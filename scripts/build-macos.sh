@@ -119,9 +119,15 @@ verify_bundle() {
     exit 1
   fi
 
-  if [[ "$profile" == "direct" && ! -f "$app_path/Contents/MacOS/speechify" ]]; then
-    echo "speechify helper missing from direct bundle" >&2
-    exit 1
+  if [[ "$profile" == "direct" ]]; then
+    if [[ ! -f "$app_path/Contents/MacOS/speechify" ]]; then
+      echo "speechify helper missing from direct bundle" >&2
+      exit 1
+    fi
+    if [[ ! -f "$app_path/Contents/MacOS/kokoro" ]]; then
+      echo "kokoro helper missing from direct bundle" >&2
+      exit 1
+    fi
   fi
 
   if [[ "$(plist_value "$info_plist" CFBundleIconFile)" != "AppIcon" ]]; then
@@ -177,7 +183,9 @@ cp -R "$built_app" "$dist_root"
 cp "$relay_native" "$output_macos/relay"
 if [[ "$profile" == "direct" ]]; then
   cp scripts/speechify-voice-command "$output_macos/speechify"
+  cp scripts/kokoro-voice-command "$output_macos/kokoro"
   chmod +x "$output_macos/speechify"
+  chmod +x "$output_macos/kokoro"
 fi
 install_app_icon
 verify_bundle "$output_app"

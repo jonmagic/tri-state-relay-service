@@ -3252,6 +3252,11 @@ let defaultVoiceCommand = """
 #    security add-generic-password -a "$USER" -s TSRS_SPEECHIFY_API_KEY -w "paste-api-key-here" -U
 # 2. Set [voice] provider = "speechify", add [speechify] settings, then uncomment this command:
 # <app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id> --keychain-service TSRS_SPEECHIFY_API_KEY
+#
+# Kokoro example using the bundled kokoro helper and a local Python venv:
+# 1. Install Kokoro yourself; see docs/user-guide.md for the optional setup.
+# 2. Set [voice] provider = "kokoro", add [kokoro] settings, then uncomment this command:
+# <app-bin>/kokoro --venv ~/.local/share/tsrs-kokoro/venv --text-file <text-file> --output-file <output-file> --voice-id <voice-id>
 """
 
 let legacyCommentedVoiceCommand = """
