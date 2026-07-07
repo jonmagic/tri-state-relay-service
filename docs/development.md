@@ -46,7 +46,7 @@ scripts/release-macos.sh
 
 Before cutting a release, increment both `CFBundleShortVersionString` in `src/macos/Info.plist` and `relayCliVersion` in `src/macos/RelayCore.swift`. The release script uses the `tsrs` notarytool profile by default, requires a `Developer ID Application` certificate, writes the notarized zip to `dist/releases/`, and can copy it to a configured downloads directory. It refuses to overwrite an existing download zip for the same version. Set `TSRS_CODESIGN_IDENTITY` if more than one certificate is installed. Apple Development certificates are not enough for friends to open the app through Gatekeeper.
 
-Signing/notarization should copy and sign the bundled `relay` helper before sealing the app bundle.
+Signing/notarization should copy and sign the bundled `relay`, `speechify`, and `kokoro` helpers before sealing the app bundle.
 
 ## Local validation
 

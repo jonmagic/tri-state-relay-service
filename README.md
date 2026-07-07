@@ -74,6 +74,8 @@ The first accepted relay becomes the active line when no active line is set. Mes
 
 For the full walkthrough, see [the user guide](docs/user-guide.md).
 
+TSRS direct builds also support optional BYO voice providers. The bundled Speechify helper can use a Speechify API key from Keychain, and the bundled Kokoro helper can use a user-installed local Kokoro venv with a warm same-user helper server. TSRS does not bundle Kokoro packages, model weights, voices, spaCy models, or caches; see the [Kokoro example](docs/user-guide.md#kokoro-example) for setup and license notes.
+
 ## More
 
 - [Development guide](docs/development.md)

@@ -65,10 +65,11 @@ If more than one Developer ID Application identity is installed, set
 certificates are useful for local debugging but are not sufficient for a
 Gatekeeper-friendly build friends can open.
 
-The script signs the bundled `relay` helper first, smoke-tests it under the
-hardened runtime, signs the app, submits a temporary zip to Apple notarization,
-staples the ticket to the `.app`, validates the stapled app, and only then
-writes `dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`.
+The script signs the bundled `relay`, `speechify`, and `kokoro` helpers first,
+smoke-tests the bundled `relay` under the hardened runtime, signs the app,
+submits a temporary zip to Apple notarization, staples the ticket to the `.app`,
+validates the stapled app, and only then writes
+`dist/releases/Tri-State Relay Service-<version>-macos-<arch>.zip`.
 
 Direct-download builds are arm64-only by default to keep app and release size
 small. The build wrapper verifies that both the app executable and bundled
