@@ -19,9 +19,9 @@ The goal is not to make agents chatty. The goal is to make important state chang
 
 Different voices per line would make TSRS easier to understand at a glance: your ear could learn which work stream is speaking before the message even finishes.
 
-The local-first version should wait for better local voice technology or improved Apple system voices. TSRS should not require a cloud voice provider for the core product.
+TSRS 2.1 adds optional provider line voices without making them part of the core product. Speechify can be configured with a user-owned API key, and Kokoro can be configured with a user-installed local venv and warm helper server. TSRS should still work well with the built-in macOS voice path and should not require a cloud or local model provider for normal use.
 
-A future paid or Pro version could optionally integrate a provider such as ElevenLabs for people who want richer per-line voices and are comfortable with the privacy and cost tradeoff.
+Future work could make provider setup easier, improve local voice quality, or add another optional provider for people who want richer per-line voices and are comfortable with the privacy, cost, and license tradeoffs.
 
 ## Backlog recovery
 
@@ -45,4 +45,3 @@ Any source action should stay user-initiated and line-scoped so TSRS does not ac
 The active distribution direction is signed direct download with a standard installable `relay` CLI.
 
 Future polish could include clearer update checks, better first-run diagnostics, and release notes that explain compatibility, voice behavior, and any Pro/customization features.
-

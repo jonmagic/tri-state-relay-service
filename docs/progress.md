@@ -34,11 +34,13 @@ Current state:
 26. The direct app prompts to install or update the bundled `relay` CLI, exposes the same action in the menu and command palette, and copies it to `/usr/local/bin/relay` without overwriting foreign binaries.
 27. The app records local daily spoken-usage buckets by provider, model, voice, and line, and `relay status` exposes aggregate relay and character counts without storing another copy of message text.
 28. Settings includes an Advanced panel for local cleanup retention in minutes. Startup cleanup prunes old terminal relay rows, old spoken-usage buckets, and stale BYO voice temp directories while leaving queued relays alone.
+29. Direct builds bundle optional Speechify and Kokoro provider helpers. The Kokoro helper uses a user-installed local venv, does not bundle Kokoro packages or model assets, and keeps a same-user Unix-socket server warm for faster follow-up relays.
+30. BYO voice output uses a Core Audio-friendly `relay.audio` path so local helpers can return WAV bytes without conversion while the app still owns playback.
 
 Roadmap gaps from the latest feature review:
 
 1. The roadmap should include safe aggregate queue views for producer/line/priority/staleness patterns without exposing message text.
-2. Shell-out app actions should eventually move behind a native library boundary or direct Swift boundary.
+2. Shell-out app actions should eventually move behind a native library boundary or direct Swift boundary when a provider or combiner path becomes common enough to justify it.
 
 Then-recommended next slice: safe aggregate queue views.
 

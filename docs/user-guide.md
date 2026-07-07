@@ -218,6 +218,8 @@ This makes cloud or local model wrappers possible later, including an ElevenLabs
 
 The default `/usr/bin/say` path does not use provider line voices. It keeps using System Default unless you deliberately replace the voice command with a provider wrapper.
 
+The direct-download app includes two optional provider helpers. The Speechify helper talks to the Speechify API when you provide an API key. The Kokoro helper talks to a user-installed local Kokoro environment and keeps a same-user local helper server warm for faster follow-up relays. Neither helper is required for normal TSRS usage.
+
 ### Speechify example
 
 The direct-download app includes a Speechify-compatible wrapper at `<app-bin>/speechify`. Start with the [Speechify API docs](https://docs.speechify.ai/) to understand the API, and use the [Speechify dashboard](https://platform.speechify.ai/) to sign up and manage API keys. Store your API key in Keychain yourself:
@@ -291,6 +293,16 @@ The helper never speaks directly, installs Python packages, stores relay audio, 
 
 TSRS does not bundle Kokoro source, Kokoro Python packages, the Kokoro-82M model weights, voice files, spaCy models, or dependency caches. The Kokoro Python package is Apache-2.0, and the Kokoro-82M Hugging Face model card declares `license: apache-2.0` for the model weights. If you redistribute a prebuilt Kokoro environment, model cache, or voice assets yourself, carry the Kokoro Apache-2.0 license and the notices/licenses for its dependencies and model assets with that redistributed bundle. The stock TSRS direct app only ships the integration helper shown here.
 
+Useful Kokoro diagnostics:
+
+```sh
+<app-bin>/kokoro server status
+<app-bin>/kokoro server stop
+<app-bin>/kokoro --self-test
+```
+
+The first Kokoro relay after starting the helper may take several seconds while Python imports Kokoro and loads the model. Follow-up relays should be much faster while the helper server is warm. If synthesis fails, check `relay status` for `voiceCommandLastError` and inspect `~/Library/Application Support/Tri-State Relay Service/kokoro/kokoro.log`.
+
 ## Advanced: local cleanup retention
 
 Settings includes an Advanced panel for local cleanup retention. The value is stored in minutes and defaults to `525600`, which is 365 days.
@@ -302,6 +314,8 @@ On app startup, TSRS removes old terminal relay rows and spoken-usage buckets ol
 If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
 
 If relays queue but do not speak, check whether TSRS is focused, muted, not in Live mode, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
+
+If Kokoro is configured but nothing speaks, run `relay status` and look at `voiceCommandLastError`. If Kokoro is not installed, the helper reports the local setup commands instead of trying to install packages. If the helper server looks stale, run `<app-bin>/kokoro server stop`; the next Kokoro relay starts it again.
 
 The local queue lives on your Mac at:
 

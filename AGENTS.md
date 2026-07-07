@@ -158,6 +158,8 @@ Completed milestone: `scripts/test-112-upgrade.sh` is the release-upgrade gate f
 
 Completed milestone: Settings has a TOML-oriented Voice panel with Open/Reveal/Validate/Reload controls and explicit Save buttons. Use `TSRS_SETTINGS_UI_ROUNDTRIP=1 TSRS_SETTINGS_UI_REQUIRE_INTERACTIONS=1 scripts/capture-settings-ui.sh` for release-quality Settings persistence checks; it modifies values through the real Settings controller, verifies via the bundled CLI, restores the original TOML, and captures screenshots.
 
+Completed milestone: direct builds include an optional Kokoro helper. The helper uses a user-installed Kokoro venv, keeps a same-user Unix-socket server warm, writes WAV bytes to TSRS's `relay.audio` path, and does not bundle Kokoro packages, model weights, voices, spaCy models, or caches. If active config is no longer `provider = "kokoro"`, the app asks the helper to stop its local server.
+
 ## Task exit criteria
 
 Every implementation task should end with:
