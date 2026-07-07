@@ -188,7 +188,7 @@ final class PlaybackProfileTests: XCTestCase {
     func testVoiceCommandOutputPathUsesCoreAudioFriendlyExtension() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("appendingPathComponent(\"relay.m4a\")"))
+        XCTAssertTrue(source.contains("appendingPathComponent(\"relay.audio\")"))
         XCTAssertFalse(source.contains("appendingPathComponent(\"relay.mp3\")"))
     }
 

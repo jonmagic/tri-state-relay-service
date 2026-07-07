@@ -285,7 +285,7 @@ Brain = "af_heart"
 "Tri-State Relay Service" = "am_puck"
 ```
 
-`<app-bin>/kokoro voices --language a` returns American English Kokoro voice ids as JSON, so TSRS can assign sticky per-line voices without importing Kokoro or downloading model files. The synthesis command reads `<text-file>`, asks Kokoro to synthesize a temporary WAV file, converts it to the audio path TSRS asked for when needed, and exits nonzero if Kokoro is missing or synthesis fails. It never speaks directly, installs Python packages, stores relay audio, or modifies TSRS queue state.
+`<app-bin>/kokoro voices --language a` returns American English Kokoro voice ids as JSON, so TSRS can assign sticky per-line voices without importing Kokoro or downloading model files. The synthesis command reads `<text-file>`, asks Kokoro to synthesize a temporary WAV file, moves it to the audio path TSRS asked for, and exits nonzero if Kokoro is missing or synthesis fails. It never speaks directly, installs Python packages, stores relay audio, or modifies TSRS queue state.
 
 ## Advanced: local cleanup retention
 

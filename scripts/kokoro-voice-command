@@ -137,7 +137,11 @@ def install_hint():
 def preflight_python(python, env):
     try:
         result = subprocess.run(
-            [python, "-c", "import kokoro"],
+            [
+                python,
+                "-c",
+                "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('kokoro') else 1)",
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -168,28 +172,11 @@ def synthesis_output_path(output_file):
     return Path(handle.name), Path(handle.name)
 
 
-def convert_wav_to_playable_output(wav_file, output_file):
-    if wav_file == output_file:
+def publish_synthesized_audio(synthesis_file, output_file):
+    if synthesis_file == output_file:
         return True
 
-    temp_output = output_file.parent / f".{output_file.name}.tmp{output_file.suffix or '.m4a'}"
-    if temp_output.exists():
-        temp_output.unlink()
-
-    result = subprocess.run(
-        ["/usr/bin/afconvert", "-f", "m4af", "-d", "aac", str(wav_file), str(temp_output)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        print(f"could not convert Kokoro WAV output for TSRS playback: {detail}", file=sys.stderr)
-        if temp_output.exists():
-            temp_output.unlink()
-        return False
-
-    os.replace(temp_output, output_file)
+    os.replace(synthesis_file, output_file)
     return True
 
 
@@ -262,7 +249,7 @@ def run_speech(argv):
         if not synthesis_file.exists() or synthesis_file.stat().st_size == 0:
             print(f"Kokoro did not write audio output: {synthesis_file}", file=sys.stderr)
             return 1
-        if not convert_wav_to_playable_output(synthesis_file, output_file):
+        if not publish_synthesized_audio(synthesis_file, output_file):
             return 1
         if not output_file.exists() or output_file.stat().st_size == 0:
             print(f"Kokoro did not write audio output: {output_file}", file=sys.stderr)
@@ -309,7 +296,7 @@ def run_self_test():
 
         def test_non_wav_output_uses_temporary_wav(self):
             with tempfile.TemporaryDirectory() as directory:
-                output = Path(directory) / "relay.mp3"
+                output = Path(directory) / "relay.audio"
                 synthesis_file, temporary_wav = synthesis_output_path(output)
                 self.assertNotEqual(synthesis_file, output)
                 self.assertEqual(synthesis_file.suffix, ".wav")
@@ -321,6 +308,16 @@ def run_self_test():
                 synthesis_file, temporary_wav = synthesis_output_path(output)
                 self.assertEqual(synthesis_file, output)
                 self.assertIsNone(temporary_wav)
+
+        def test_publish_synthesized_audio_renames_temporary_wav(self):
+            with tempfile.TemporaryDirectory() as directory:
+                synthesis = Path(directory) / ".kokoro-test.wav"
+                output = Path(directory) / "relay.audio"
+                synthesis.write_bytes(b"RIFF-test")
+
+                self.assertTrue(publish_synthesized_audio(synthesis, output))
+                self.assertFalse(synthesis.exists())
+                self.assertEqual(output.read_bytes(), b"RIFF-test")
 
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(KokoroWrapperTests)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1

@@ -2953,7 +2953,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tsrs-voice-\(UUID().uuidString)", isDirectory: true)
         let textURL = directory.appendingPathComponent("relay.txt")
-        let outputURL = directory.appendingPathComponent("relay.m4a")
+        let outputURL = directory.appendingPathComponent("relay.audio")
         let token = UUID()
 
         do {
