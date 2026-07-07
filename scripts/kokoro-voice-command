@@ -363,6 +363,13 @@ def server_status():
     }
 
 
+def send_server_response(connection, response):
+    try:
+        connection.sendall(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+    except BrokenPipeError:
+        return
+
+
 def write_wav_with_kokoro(text, output_file, voice_id, language=None, speed=1.0):
     import wave
     import numpy as np
@@ -440,7 +447,7 @@ def server_loop(idle_timeout):
                         response = {"ok": False, "error": f"unsupported Kokoro server action: {action}"}
                 except Exception as error:
                     response = {"ok": False, "error": str(error)}
-                connection.sendall(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+                send_server_response(connection, response)
     finally:
         server.close()
         for cleanup_path in [path, pid_path()]:
@@ -647,6 +654,13 @@ def run_self_test():
             self.assertIn("brew install uv espeak-ng", hint)
             self.assertIn("uv venv --python 3.11", hint)
             self.assertIn("kokoro==0.9.4", hint)
+
+        def test_broken_pipe_does_not_crash_server_response(self):
+            class BrokenConnection:
+                def sendall(self, data):
+                    raise BrokenPipeError()
+
+            send_server_response(BrokenConnection(), {"ok": True})
 
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(KokoroWrapperTests)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1

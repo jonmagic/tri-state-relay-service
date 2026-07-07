@@ -4,6 +4,7 @@
 
 - Added a Kokoro-compatible voice helper for direct-download builds that can use a user-installed local Kokoro venv without bundling Kokoro packages, model weights, voices, spaCy models, or caches.
 - Added an invisible same-user Kokoro helper server that keeps `KPipeline` warm across relays and automatically shuts down when the active voice provider is no longer `kokoro`.
+- Kept the Kokoro helper server alive when a client disconnects before reading its response.
 - Changed BYO voice output to a Core Audio-friendly `relay.audio` path so Kokoro can return WAV bytes without conversion.
 - Documented the optional Kokoro install path, missing-install failure mode, provider TOML example, local helper lifecycle, and Apache-2.0 Kokoro package/model license boundary.
 - Updated the app and CLI version to 2.1.0.
