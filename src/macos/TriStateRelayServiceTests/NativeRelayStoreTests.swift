@@ -490,6 +490,54 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(store.recentMessages(line: "Other").map(\.message), ["first inactive"])
     }
 
+    func testFastForwardWhileCombiningDoesNotRequeueTheSkippedRelay() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let startedPath = directory.appendingPathComponent("started").path
+        let releasePath = directory.appendingPathComponent("release").path
+        let script = try blockingInactiveCombinerScript(outputMessage: "Skipped backlog should not come back.", startedPath: startedPath, releasePath: releasePath)
+        let store = NativeRelayStore(profile: "direct")
+        _ = try store.enqueue(NewRelayInput(line: "Brain", message: "active", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+
+        // Queue the backlog relay while its own line is active so it is stored without combining.
+        store.setActiveLine("Other")
+        _ = try store.enqueue(NewRelayInput(line: "Other", message: "first inactive", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+        store.setActiveLine("Brain")
+        store.saveSettings(inactiveLineCombinerCommand: "\(script) <input> <system>", voiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette)
+
+        let done = DispatchSemaphore(value: 0)
+        var enqueued: NativeRelay?
+        var enqueueError: Error?
+        DispatchQueue.global().async {
+            do {
+                enqueued = try store.enqueue(NewRelayInput(line: "Other", message: "second inactive", type: "update", priority: "normal", session: nil, app: nil, cwd: nil, url: nil))
+            } catch {
+                enqueueError = error
+            }
+            done.signal()
+        }
+
+        try waitForFile(atPath: startedPath)
+
+        // Stand in for `relay ff` running from the CLI while the combiner is still working.
+        let snapshot = try DatabaseSnapshot(path: databasePath)
+        snapshot.execute("UPDATE relays SET status = 'skipped' WHERE status = 'queued' AND line = 'Other'")
+
+        FileManager.default.createFile(atPath: releasePath, contents: Data())
+        XCTAssertEqual(done.wait(timeout: .now() + 5), .success)
+        XCTAssertNil(enqueueError)
+        XCTAssertEqual(enqueued?.message, "second inactive")
+        XCTAssertEqual(store.recentMessages(line: "Other").map(\.message), ["second inactive"])
+    }
+
     private func testArtifactDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

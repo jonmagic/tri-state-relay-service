@@ -3,6 +3,133 @@ import Carbon.HIToolbox
 @testable import Tri_State_Relay_Service
 
 final class PlaybackProfileTests: XCTestCase {
+    func testStallDeadlineScalesWithMessageLength() {
+        XCTAssertEqual(playbackStallMinimumTimeoutSeconds, 60)
+        XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: 0), 60)
+        XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: -10), 60)
+        XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: 600), 160)
+        XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: 1_200), 260)
+    }
+
+    func testHealthyLongPlaybackIsNotTreatedAsStalled() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        var watch = PlaybackStallWatch()
+        let timeout = playbackStallTimeoutSeconds(forCharacterCount: 600)
+
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: timeout, now: start))
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: timeout, now: start.addingTimeInterval(90)))
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: timeout, now: start.addingTimeInterval(159)))
+        XCTAssertTrue(watch.observe(isBusy: true, generation: 1, timeoutSeconds: timeout, now: start.addingTimeInterval(160)))
+    }
+
+    func testNewPlaybackGenerationResetsTheStallClock() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        var watch = PlaybackStallWatch()
+
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: 60, now: start))
+
+        // A new attempt started without the watch ever observing an idle tick. It must not
+        // inherit the previous attempt's deadline and be killed the moment it starts.
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 2, timeoutSeconds: 60, now: start.addingTimeInterval(600)))
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 2, timeoutSeconds: 60, now: start.addingTimeInterval(659)))
+        XCTAssertTrue(watch.observe(isBusy: true, generation: 2, timeoutSeconds: 60, now: start.addingTimeInterval(660)))
+    }
+
+    func testIdlePlaybackClearsTheStallClock() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        var watch = PlaybackStallWatch()
+
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: 60, now: start))
+        XCTAssertFalse(watch.observe(isBusy: false, generation: 1, timeoutSeconds: 60, now: start.addingTimeInterval(30)))
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 1, timeoutSeconds: 60, now: start.addingTimeInterval(600)))
+        XCTAssertTrue(watch.observe(isBusy: true, generation: 1, timeoutSeconds: 60, now: start.addingTimeInterval(660)))
+    }
+
+    func testStallWatchBackfillsWhenPlaybackStartsWithoutTheWatchSeeingIt() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        var watch = PlaybackStallWatch()
+
+        XCTAssertFalse(watch.observe(isBusy: true, generation: 7, timeoutSeconds: 60, now: start))
+        XCTAssertTrue(watch.observe(isBusy: true, generation: 7, timeoutSeconds: 60, now: start.addingTimeInterval(60)))
+    }
+
+    func testStalledPlaybackWaitsForTheOldProcessBeforeAdvancing() throws {
+        let source = try triStateRelayServiceSource()
+
+        // terminate() is asynchronous, so advancing immediately can overlap the next relay with
+        // audio from the one being cancelled.
+        XCTAssertTrue(source.contains("private func cancelActivePlayback(completion: (() -> Void)? = nil)"), source)
+        XCTAssertTrue(source.contains("process.waitUntilExit()"), source)
+        XCTAssertTrue(source.contains("self.playbackGeneration == cancelledGeneration"), source)
+    }
+
+    func testStalledPlaybackRecoveryIsWiredIntoTheSafetyTimer() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("func recoverIfStalled("))
+        XCTAssertTrue(source.contains("nativePlayback.recoverIfStalled()"))
+        XCTAssertTrue(source.contains("stallWatch.observe("))
+    }
+
+    func testStalledPlaybackRecoveryResetsEveryBusyComponent() throws {
+        let source = try triStateRelayServiceSource()
+        let recovery = try XCTUnwrap(source.range(of: "func cancelActivePlayback(").map { range in
+            String(source[range.lowerBound...].prefix(2_000))
+        })
+
+        XCTAssertTrue(recovery.contains("terminate()"), recovery)
+        XCTAssertTrue(recovery.contains("resolvingVoiceCommand = false"), recovery)
+        XCTAssertTrue(recovery.contains("currentProcess = nil"), recovery)
+        XCTAssertTrue(recovery.contains("currentAudioPlayer = nil"), recovery)
+        XCTAssertTrue(recovery.contains("stopSpeaking(at: .immediate)"), recovery)
+        XCTAssertTrue(recovery.contains("playbackGeneration += 1"), recovery)
+    }
+
+    func testEveryPlaybackCallbackVerifiesItsOwnIdentity() throws {
+        let source = try triStateRelayServiceSource()
+
+        // Recovery starts the next relay immediately, so a late callback from the killed
+        // attempt must not mark or clear the relay that replaced it.
+        XCTAssertTrue(source.contains("guard self.currentProcess === process else"), source)
+        XCTAssertTrue(source.contains("guard currentProcess === process else"), source)
+        XCTAssertTrue(source.contains("guard player === currentAudioPlayer else"), source)
+        XCTAssertTrue(source.contains("guard utterance === currentUtterance else"), source)
+    }
+
+    func testClearingRelaysCancelsPlaybackInsteadOfLeavingAnOrphan() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("cancelActivePlaybackForClear()"), source)
+    }
+
+    func testClearDetectionUsesRowExistenceRatherThanSpeakingStatus() throws {
+        let source = try triStateRelayServiceSource()
+
+        // The stale-speaking sweep flips a still-playing relay to failed on its own 60s schedule,
+        // so keying cancellation off status = 'speaking' would cancel healthy playback.
+        XCTAssertTrue(source.contains("SELECT COUNT(*) FROM relays WHERE id = ?"), source)
+        XCTAssertTrue(source.contains("func relayExists(id: Int) -> Bool"), source)
+        XCTAssertFalse(source.contains("hasSpeakingRelay"), source)
+    }
+
+    func testReplayedMessagesAreCancellableByClear() throws {
+        let source = try triStateRelayServiceSource()
+
+        // A replay sets no claim, so without the row id a CLI clear cannot stop it.
+        XCTAssertTrue(source.contains("func replayDeliveredMessage(_ text: String, id: Int? = nil)"), source)
+        XCTAssertTrue(source.contains("currentId ?? currentReplayRelayId"), source)
+    }
+
+    func testEachPlaybackPhaseGetsItsOwnDeadline() throws {
+        let source = try triStateRelayServiceSource()
+
+        // Synthesis and playback are separate phases. Without a renewal the audio inherits
+        // whatever budget a slow synthesis left behind and gets cut off early.
+        XCTAssertTrue(source.contains("func renewPlaybackDeadline(seconds: TimeInterval)"), source)
+        XCTAssertTrue(source.contains("renewPlaybackDeadline(seconds: player.duration + playbackStallMinimumTimeoutSeconds)"), source)
+        XCTAssertTrue(source.contains("renewPlaybackDeadline(seconds: playbackStallTimeoutSeconds(forCharacterCount: text.count))"), source)
+    }
+
     func testSpeechPlaybackIsProfileGated() throws {
         let source = try triStateRelayServiceSource()
         XCTAssertTrue(source.contains("#if APP_STORE\n        let utterance = AVSpeechUtterance(string: claim.text)"))

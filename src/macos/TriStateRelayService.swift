@@ -125,6 +125,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clear() {
+        nativePlayback.cancelActivePlaybackForClear()
         model.clear()
         refreshStatusItem()
     }
@@ -452,7 +453,7 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
                         self.model.setActiveLine(message.line)
                         self.nativePlayback.playQueuedMessage(line: message.line, id: message.id)
                     default:
-                        self.nativePlayback.replayDeliveredMessage(message.message)
+                        self.nativePlayback.replayDeliveredMessage(message.message, id: message.id)
                     }
                     self.refreshStatusItem()
                 }
@@ -736,6 +737,8 @@ final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
 
     private func refreshAndPlayIfEligible() {
         model.refresh()
+        nativePlayback.cancelIfActiveRelayWasCleared()
+        nativePlayback.recoverIfStalled()
         if let panel = model.consumeDebugOpenSettingsPanel() {
             showSettingsPanel(panel)
         }
@@ -2732,6 +2735,46 @@ private let secondarySidebarIconName = "text.bubble"
 
 private let defaultStaleRelayAgeMinutes = 30
 
+let playbackStallMinimumTimeoutSeconds: TimeInterval = 60
+
+/// Roughly the slowest sustained speaking rate we expect from any configured voice.
+private let playbackStallCharactersPerSecond: Double = 6
+
+/// Longer relays legitimately take longer to speak, so the stall deadline scales with the
+/// message instead of cutting every voice off at a fixed ceiling.
+func playbackStallTimeoutSeconds(forCharacterCount count: Int) -> TimeInterval {
+    playbackStallMinimumTimeoutSeconds + Double(max(0, count)) / playbackStallCharactersPerSecond
+}
+
+/// Decides when a playback attempt has been busy past its deadline.
+///
+/// The clock is scoped to a playback generation. Every new attempt bumps the generation, so a
+/// fresh relay can never inherit an earlier attempt's elapsed time and be killed as it starts.
+struct PlaybackStallWatch {
+    private var trackedGeneration: Int?
+    private var busySince: Date?
+
+    mutating func observe(isBusy: Bool, generation: Int, timeoutSeconds: TimeInterval, now: Date) -> Bool {
+        guard isBusy else {
+            reset()
+            return false
+        }
+
+        guard let trackedGeneration, let busySince, trackedGeneration == generation else {
+            self.trackedGeneration = generation
+            self.busySince = now
+            return false
+        }
+
+        return now.timeIntervalSince(busySince) >= timeoutSeconds
+    }
+
+    mutating func reset() {
+        trackedGeneration = nil
+        busySince = nil
+    }
+}
+
 final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let model: MenuBarModel
     private let onChange: () -> Void
@@ -2743,6 +2786,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private var resolvingVoiceCommand = false
     private var currentVoiceCommandToken: UUID?
     private var inputCaptureRetryTimer: Timer?
+    private var playbackGeneration = 0
+    private var playbackTimeoutSeconds = playbackStallMinimumTimeoutSeconds
+    private var stallWatch = PlaybackStallWatch()
+    private var currentUtterance: AVSpeechUtterance?
+    private var currentReplayRelayId: Int?
     private let synthesizer = AVSpeechSynthesizer()
 
     var isPlaying: Bool {
@@ -2759,6 +2807,137 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         self.onChange = onChange
         super.init()
         synthesizer.delegate = self
+    }
+
+    func recoverIfStalled(now: Date = Date()) {
+        guard stallWatch.observe(
+            isBusy: isPlaybackBusy,
+            generation: playbackGeneration,
+            timeoutSeconds: playbackTimeoutSeconds,
+            now: now
+        ) else {
+            return
+        }
+
+        let stalledId = currentId
+        cancelActivePlayback { [weak self] in
+            guard let self, self.model.status.mode == "live" else {
+                return
+            }
+
+            self.playNext()
+        }
+
+        if let stalledId {
+            model.markNativeSpeechFailed(id: stalledId)
+        }
+
+        onChange()
+    }
+
+    /// Clearing removes the relay row, so the audio has to stop with it. Otherwise the app keeps
+    /// speaking a relay the user already deleted, and a voice command mid-synthesis still plays
+    /// its output once the subprocess finishes.
+    func cancelActivePlaybackForClear() {
+        guard isPlaybackBusy || currentId != nil else {
+            return
+        }
+
+        cancelActivePlayback()
+        onChange()
+    }
+
+    /// The CLI can delete the relay that is currently playing. When that happens the audio has to
+    /// stop with it, otherwise the app keeps talking about a relay the user already cleared.
+    func cancelIfActiveRelayWasCleared() {
+        guard isPlaybackBusy, let id = currentId ?? currentReplayRelayId, !model.relayExists(id: id) else {
+            return
+        }
+
+        cancelActivePlaybackForClear()
+    }
+
+    /// Tears down every component that can hold playback busy. The generation is bumped first so
+    /// any callback still in flight from the cancelled attempt sees that it no longer owns
+    /// playback and does nothing.
+    /// Tears down every component that can hold playback busy. The generation is bumped first so
+    /// any callback still in flight from the cancelled attempt sees that it no longer owns
+    /// playback and does nothing.
+    ///
+    /// - Parameter completion: runs once the terminated process has actually exited, so the relay
+    ///   that replaces this one can never overlap audio from the one being cancelled.
+    private func cancelActivePlayback(completion: (() -> Void)? = nil) {
+        playbackGeneration += 1
+        stallWatch.reset()
+        let cancelledGeneration = playbackGeneration
+
+        currentId = nil
+        currentUtterance = nil
+        currentReplayRelayId = nil
+        currentVoiceCommandToken = nil
+        resolvingVoiceCommand = false
+
+        let terminating = currentProcess
+        if let process = terminating {
+            process.terminationHandler = nil
+            if process.isRunning {
+                process.terminate()
+                let identifier = process.processIdentifier
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+                    if process.isRunning {
+                        kill(identifier, SIGKILL)
+                    }
+                }
+            }
+        }
+        currentProcess = nil
+
+        currentAudioPlayer?.delegate = nil
+        currentAudioPlayer?.stop()
+        currentAudioPlayer = nil
+
+        synthesizer.stopSpeaking(at: .immediate)
+
+        cleanupVoiceCommandDirectory(currentAudioDirectory)
+        currentAudioDirectory = nil
+
+        guard let completion else {
+            return
+        }
+
+        guard let process = terminating, process.isRunning else {
+            completion()
+            return
+        }
+
+        DispatchQueue.global().async {
+            process.waitUntilExit()
+            DispatchQueue.main.async { [weak self] in
+                // Anything that started playback in the meantime owns it now.
+                guard let self, self.playbackGeneration == cancelledGeneration else {
+                    return
+                }
+
+                completion()
+            }
+        }
+    }
+
+    /// Starts a new playback attempt. Every entry point routes through here so the stall clock and
+    /// the callback generation always move together.
+    private func beginPlaybackAttempt(textLength: Int) {
+        playbackGeneration += 1
+        playbackTimeoutSeconds = playbackStallTimeoutSeconds(forCharacterCount: textLength)
+        currentReplayRelayId = nil
+        stallWatch.reset()
+    }
+
+    /// Reaching a new playback phase is progress, so the next phase starts on a fresh deadline
+    /// instead of inheriting whatever budget the previous phase left behind.
+    private func renewPlaybackDeadline(seconds: TimeInterval) {
+        playbackGeneration += 1
+        playbackTimeoutSeconds = seconds
+        stallWatch.reset()
     }
 
     func playNext(line: String? = nil) {
@@ -2783,7 +2962,6 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         currentId = claim.id
-
         onChange()
         speak(claim)
     }
@@ -2850,7 +3028,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         inputCaptureRetryTimer = nil
     }
 
-    func replayDeliveredMessage(_ text: String) {
+    func replayDeliveredMessage(_ text: String, id: Int? = nil) {
         model.refresh()
         guard !model.status.muted, !isPlaybackBusy else {
             model.refresh()
@@ -2866,14 +3044,19 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         onChange()
         speakReplay(text)
+        // Set after speakReplay, which clears it via beginPlaybackAttempt. A replay has no claim,
+        // so this is the only handle on the row that a clear would delete.
+        currentReplayRelayId = id
     }
 
     private func speak(_ claim: NativeSpeechClaim) {
+        beginPlaybackAttempt(textLength: claim.text.count)
 #if APP_STORE
         let utterance = AVSpeechUtterance(string: claim.text)
         utterance.voice = preferredRelayVoice(identifier: model.loadSettings().speechVoiceIdentifier)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1
+        currentUtterance = utterance
         synthesizer.speak(utterance)
 #else
         let settings = model.loadSettings()
@@ -2888,11 +3071,13 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func speakReplay(_ text: String) {
+        beginPlaybackAttempt(textLength: text.count)
 #if APP_STORE
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = preferredRelayVoice(identifier: model.loadSettings().speechVoiceIdentifier)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1
+        currentUtterance = utterance
         synthesizer.speak(utterance)
 #else
         let settings = model.loadSettings()
@@ -2916,6 +3101,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
                 guard let self else {
+                    return
+                }
+
+                guard self.currentProcess === process else {
                     return
                 }
 
@@ -3061,6 +3250,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func handleVoiceCommandFinished(process: Process, outputURL: URL, directory: URL, claimId: Int?) {
+        guard currentProcess === process else {
+            cleanupVoiceCommandDirectory(directory)
+            return
+        }
+
         currentProcess = nil
 
         guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: outputURL.path) else {
@@ -3086,6 +3280,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         do {
             let player = try AVAudioPlayer(contentsOf: outputURL)
+            renewPlaybackDeadline(seconds: player.duration + playbackStallMinimumTimeoutSeconds)
             currentAudioPlayer = player
             player.delegate = self
             player.prepareToPlay()
@@ -3113,6 +3308,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
+        // Synthesis already consumed part of this relay's budget, so the spoken fallback starts
+        // on a deadline sized for the text it is about to speak.
+        renewPlaybackDeadline(seconds: playbackStallTimeoutSeconds(forCharacterCount: text.count))
         speakWithSay(text: text, option: option, claimId: claimId, autoAdvance: claimId != nil)
     }
 
@@ -3148,6 +3346,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 #endif
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        guard utterance === currentUtterance else {
+            return
+        }
+        currentUtterance = nil
+
         guard let id = currentId else {
             onChange()
             return
@@ -3162,6 +3365,11 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        guard utterance === currentUtterance else {
+            return
+        }
+        currentUtterance = nil
+
         guard let id = currentId else {
             onChange()
             return
@@ -3176,6 +3384,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 #if !APP_STORE
 extension NativeSpeechPlayback: AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard player === currentAudioPlayer else {
+            return
+        }
+
         let completedClaim = currentId != nil
         if let id = currentId {
             if flag {
@@ -3196,6 +3408,10 @@ extension NativeSpeechPlayback: AVAudioPlayerDelegate {
     }
 
     func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        guard player === currentAudioPlayer else {
+            return
+        }
+
         if let id = currentId {
             model.markNativeSpeechFailed(id: id)
         }
@@ -3626,6 +3842,10 @@ final class MenuBarModel {
     func unmute() {
         store.setMuted(false)
         refresh()
+    }
+
+    func relayExists(id: Int) -> Bool {
+        store.relayExists(id: id)
     }
 
     func clear() {
@@ -4660,6 +4880,16 @@ final class NativeRelayStore {
         }
     }
 
+    private func relayIsStillQueued(_ database: OpaquePointer, id: Int) -> Bool {
+        var queued = false
+        query(database, """
+            SELECT COUNT(*) FROM relays WHERE id = ? AND status = 'queued'
+        """, [String(id)]) { statement in
+            queued = sqlite3_column_int(statement, 0) > 0
+        }
+        return queued
+    }
+
     func enqueue(_ input: NewRelayInput) throws -> NativeRelay? {
         let relay = try normalizeRelay(input)
         var inserted: NativeRelay?
@@ -4696,7 +4926,11 @@ final class NativeRelayStore {
 
         write { database in
             let currentActiveLine = loadRawSettings(database)["active_line"]
-            let stillInactive = shouldCombineInactive && currentActiveLine != relay.line
+            // The combiner shells out, so the relay it folded in can be skipped or cleared while
+            // it runs. Queue the incoming relay on its own rather than letting the combined text
+            // put the skipped message back.
+            let existingStillQueued = snapshot?.existing.map { relayIsStillQueued(database, id: $0.id) } ?? true
+            let stillInactive = shouldCombineInactive && currentActiveLine != relay.line && existingStillQueued
 
             if stillInactive {
                 guard let combinedRelay else {
@@ -4754,7 +4988,7 @@ final class NativeRelayStore {
         write { database in
             execute(database, """
                 DELETE FROM relays
-                WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
+                WHERE status IN ('queued', 'speaking', 'heard', 'handled', 'skipped', 'expired', 'failed')
             """)
         }
     }
@@ -4854,6 +5088,25 @@ final class NativeRelayStore {
                 text: spokenText(relay, includeLine: includeLine)
             )
         }
+    }
+
+    /// Deletion is the only signal that a relay was cleared. Status is not usable here because the
+    /// stale-speaking sweep can flip a still-playing relay to `failed` on its own schedule.
+    func relayExists(id: Int) -> Bool {
+        let result: Bool? = withWriteDatabase { database in
+            var exists: Bool?
+            query(database, """
+                SELECT COUNT(*) FROM relays WHERE id = ?
+            """, [String(id)]) { statement in
+                exists = sqlite3_column_int(statement, 0) > 0
+            }
+
+            // COUNT always yields a row, so a missing row means the query itself failed.
+            // Assume the relay is still there rather than cancelling healthy playback.
+            return exists ?? true
+        }
+
+        return result ?? true
     }
 
     func recentMessages(line: String, limit: Int = 20) -> [LineMessage] {
