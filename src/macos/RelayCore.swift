@@ -6,7 +6,7 @@ import SQLite3
 // command-line target. This file must not import AppKit, AVFoundation, or any
 // macOS UI/audio frameworks so it can compile into a plain command-line tool.
 
-let relayCliVersion = "2.1.0"
+let relayCliVersion = "2.1.1"
 
 let relayMessageTypes = ["update", "complete", "blocked", "needs-input"]
 let relayPriorities = ["low", "normal", "high"]
@@ -1004,6 +1004,7 @@ Commands:
   mute                 Mute playback.
   unmute               Unmute playback.
   clear                Clear queued and delivered relays.
+  ff [--line <line>]   Fast-forward past every queued relay, keeping history.
   clear-line --line <line>
                        Clear queued relays for one line.
   clear-delivered [--line <line>]
@@ -1136,6 +1137,17 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeN
                 wakeNotifier.post()
             }
             return RelayCliResult(stdout: "cleared \(count) delivered relays", stderr: "", exitCode: 0)
+        }
+    case "ff":
+        return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
+            let count = try store.skipAllQueued(line: line)
+            if count > 0 {
+                wakeNotifier.post()
+            }
+            if let line {
+                return RelayCliResult(stdout: "fast-forwarded \(count) queued relays from \(line)", stderr: "", exitCode: 0)
+            }
+            return RelayCliResult(stdout: "fast-forwarded \(count) queued relays", stderr: "", exitCode: 0)
         }
     case "skip-next":
         return runOptionalLineCommand(Array(arguments.dropFirst())) { store, line in
@@ -1710,14 +1722,24 @@ private final class RelayCliStore {
         let state = try state()
 
         if state.mode != "live", let activeLine = state.activeLine, relay.line != activeLine {
+            let existing = try latestQueuedRelay(line: relay.line)
             let combined = try combineInactiveRelay(
                 activeLine: activeLine,
                 incoming: relay,
-                existing: latestQueuedRelay(line: relay.line),
+                existing: existing,
                 command: inactiveLineCombinerCommand()
             )
             guard let combinedRelay = combined.relay else {
                 return RelayEnqueueOutcome(relay: nil)
+            }
+
+            // The combiner shells out, so the relay it folded in can be skipped or cleared while
+            // it runs. Queue the incoming relay on its own rather than letting the combined text
+            // put the skipped message back.
+            if let existing, try !relayIsStillQueued(id: existing.id) {
+                let inserted = try insertRelay(relay)
+                try setSettingIfMissing(key: "active_line", value: inserted.line)
+                return RelayEnqueueOutcome(relay: inserted)
             }
 
             _ = try clearQueued(line: relay.line)
@@ -1759,6 +1781,15 @@ private final class RelayCliStore {
             ORDER BY created_at DESC, id DESC
             LIMIT 1
         """, [line])
+    }
+
+    private func relayIsStillQueued(id: Int) throws -> Bool {
+        try optionalReturningRelay("""
+            SELECT id, line, message, type, priority, status
+            FROM relays
+            WHERE id = ? AND status = 'queued'
+            LIMIT 1
+        """, [String(id)]) != nil
     }
 
     func queuedCountForLine(_ line: String) throws -> Int {
@@ -2034,7 +2065,7 @@ private final class RelayCliStore {
     func clear() throws -> Int {
         try changes("""
             DELETE FROM relays
-            WHERE status IN ('queued', 'heard', 'handled', 'skipped', 'expired', 'failed')
+            WHERE status IN ('queued', 'speaking', 'heard', 'handled', 'skipped', 'expired', 'failed')
         """)
     }
 
@@ -2070,6 +2101,14 @@ private final class RelayCliStore {
 
     func skipNextQueued(line: String?) throws -> RelayCliStoredRelay? {
         try markFirstMatchingStatus(from: "queued", to: "skipped", line: line)
+    }
+
+    func skipAllQueued(line: String?) throws -> Int {
+        try changes("""
+            UPDATE relays
+            SET status = 'skipped', updated_at = ?
+            WHERE status = 'queued' AND (? IS NULL OR line = ?)
+        """, [nowString(), line, line])
     }
 
     func markLatestHeardHandled(line: String?) throws -> RelayCliStoredRelay? {

@@ -12,7 +12,7 @@ final class RelayCliTests: XCTestCase {
     func testVersionPrintsRelayVersion() {
         let result = runRelayCli(["--version"])
 
-        XCTAssertEqual(result.stdout, "relay 2.1.0")
+        XCTAssertEqual(result.stdout, "relay 2.1.1")
         XCTAssertEqual(result.stderr, "")
         XCTAssertEqual(result.exitCode, 0)
     }
@@ -25,8 +25,8 @@ final class RelayCliTests: XCTestCase {
             .appendingPathComponent("Info.plist")
         let infoPlist = try String(contentsOf: infoPlistURL, encoding: .utf8)
 
-        XCTAssertTrue(infoPlist.contains("<key>CFBundleShortVersionString</key>\n  <string>2.1.0</string>"))
-        XCTAssertEqual(relayCliVersion, "2.1.0")
+        XCTAssertTrue(infoPlist.contains("<key>CFBundleShortVersionString</key>\n  <string>2.1.1</string>"))
+        XCTAssertEqual(relayCliVersion, "2.1.1")
     }
 
     func testNoArgumentsPrintsUsage() {
@@ -695,6 +695,52 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["clear-delivered"]).stdout, "cleared 0 delivered relays")
         XCTAssertEqual(runRelayCli(["acknowledge"]).stdout, "no delivered relay to mark handled")
         XCTAssertEqual(runRelayCli(["replay-last"]).stdout, "no delivered relay to replay")
+    }
+
+    func testFastForwardSkipsEveryQueuedRelayWithoutDeletingHistory() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        _ = runRelayCli(["--line", "Brain", "--message", "first"])
+        _ = runRelayCli(["--line", "Brain", "--message", "second", "--type", "blocked"])
+        _ = runRelayCli(["--line", "Other", "--message", "third", "--priority", "high"])
+
+        XCTAssertEqual(runRelayCli(["ff"]).stdout, "fast-forwarded 3 queued relays")
+
+        let listing = runRelayCli(["list"]).stdout
+        XCTAssertTrue(listing.contains("#1 [skipped]"), listing)
+        XCTAssertTrue(listing.contains("#2 [skipped]"), listing)
+        XCTAssertTrue(listing.contains("#3 [skipped]"), listing)
+
+        XCTAssertEqual(runRelayCli(["ff"]).stdout, "fast-forwarded 0 queued relays")
+    }
+
+    func testFastForwardScopesToOneLine() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        _ = runRelayCli(["--line", "Brain", "--message", "first"])
+        _ = runRelayCli(["--line", "Other", "--message", "second"])
+
+        XCTAssertEqual(runRelayCli(["ff", "--line", "Brain"]).stdout, "fast-forwarded 1 queued relays from Brain")
+
+        let listing = runRelayCli(["list"]).stdout
+        XCTAssertTrue(listing.contains("#1 [skipped]"), listing)
+        XCTAssertTrue(listing.contains("#2 [queued]"), listing)
+    }
+
+    func testClearRemovesRelaysStuckInSpeaking() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_PROCESSOR_AUTH", "app-owned-processor", 1)
+        defer { unsetenv("TSRS_PROCESSOR_AUTH") }
+
+        _ = runRelayCli(["live"])
+        _ = runRelayCli(["--line", "Brain", "--message", "wedged"])
+
+        let claim = try jsonObject(runRelayCli(["app-claim-next"]).stdout)
+        XCTAssertEqual(claim["line"] as? String, "Brain")
+        XCTAssertTrue(runRelayCli(["list"]).stdout.contains("[speaking]"))
+
+        XCTAssertEqual(runRelayCli(["clear"]).stdout, "cleared 1 relays")
+        XCTAssertFalse(runRelayCli(["list"]).stdout.contains("speaking"))
     }
 }
 
