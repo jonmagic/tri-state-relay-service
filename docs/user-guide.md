@@ -154,6 +154,15 @@ relay acknowledge
 relay clear-delivered
 ```
 
+When a line has queued more than you want to listen to, fast-forward past the backlog:
+
+```sh
+relay ff
+relay ff --line "Brain"
+```
+
+`relay ff` marks every queued relay `skipped` instead of deleting it, so the backlog stops playing while the record of what was skipped stays in the queue. Use `relay clear` only when you actually want to delete relays, because clearing removes queued, delivered, and terminal rows outright.
+
 In the menu bar app, left click for the fastest Play Next path. Use Start Live when you want automatic playback and Stop Live when you want to return to Focus. Right click opens the command palette. Your keyboard shortcut opens the command palette with Play Next selected, so pressing Return immediately plays the next eligible relay.
 
 The app owns playback. The CLI submits and manages relays, but it does not speak directly.

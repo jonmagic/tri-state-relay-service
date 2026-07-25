@@ -19,6 +19,7 @@ relay mute
 relay unmute
 relay clear
 relay clear-delivered
+relay ff
 relay skip-next
 relay acknowledge
 relay replay-last

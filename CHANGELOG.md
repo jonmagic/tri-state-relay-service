@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.1 - Stuck playback recovery and fast-forward
+
+- Fixed playback hanging indefinitely when a speech subprocess never exits, which left the menu bar showing playing with no audio until the app was restarted.
+- Added a playback watchdog that force-recovers stalled playback, terminating the stalled process, resetting voice-command resolution, the audio player, and the synthesizer, and marking the stalled relay failed.
+- The stall deadline scales with message length, and each playback phase gets its own deadline, so a long relay is never cut off mid-sentence and a slow voice synthesis never eats the budget for the audio that follows.
+- Playback callbacks now verify that they still own the process, audio player, or utterance that produced them, so a late callback from recovered playback can no longer mark or interrupt the relay that replaced it.
+- Stall recovery waits for the cancelled speech process to exit before starting the next relay, so recovery cannot briefly overlap two voices.
+- Fixed the inactive-line combiner requeueing a relay that was skipped or cleared while the combiner was still running.
+- Fixed `relay clear` so it also removes relays stuck in `speaking` and stops audio that is currently playing, instead of leaving the app speaking a relay that was already cleared.
+- Added `relay ff [--line <line>]` to fast-forward past every queued relay by marking it `skipped` instead of deleting it, so skipping the backlog no longer destroys relay history.
+- Updated the app and CLI version to 2.1.1.
+
 ## 2.1.0 - Optional local Kokoro voices
 
 - Added a Kokoro-compatible voice helper for direct-download builds that can use a user-installed local Kokoro venv without bundling Kokoro packages, model weights, voices, spaCy models, or caches.
