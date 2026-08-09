@@ -137,6 +137,36 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("process.executableURL = URL(fileURLWithPath: \"/usr/bin/say\")"))
     }
 
+    func testClaimPublishesPreparingBeforeGeneratedAudioSynthesis() throws {
+        let source = try triStateRelayServiceSource()
+        let preparing = try XCTUnwrap(source.range(of: "publishPlaybackObservation(relayId: claim.id, phase: .preparing)"))
+        let synthesis = try XCTUnwrap(source.range(of: "synthesizeVoiceCommand(text: claim.text, line: claim.line"))
+
+        XCTAssertLessThan(preparing.lowerBound, synthesis.lowerBound)
+        XCTAssertFalse(String(source[preparing.lowerBound..<synthesis.lowerBound]).contains("phase: .playing"))
+    }
+
+    func testEveryProviderPublishesAudibleStartAndCompletion() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("try process.run()\n            publishPlayingIfClaimed(claimId)"), source)
+        XCTAssertTrue(source.contains("if player.play() {\n                publishPlayingIfClaimed(claimId)\n            }"), source)
+        XCTAssertTrue(source.contains("didStart utterance: AVSpeechUtterance"), source)
+        XCTAssertTrue(source.contains("publishPlayingIfClaimed(currentId)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(claimId, outcome: process.terminationStatus == 0 ? .heard : .failed)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(id, outcome: .heard)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(id, outcome: flag ? .heard : .failed)"), source)
+    }
+
+    func testCancellationFailureAndRequeueSettleIdle() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(cancelledId, outcome: .cancelled)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(stalledId, outcome: .failed)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(claimId, outcome: .requeued)"), source)
+        XCTAssertTrue(source.contains("publishIdleIfClaimed(id, outcome: .failed)"), source)
+    }
+
     func testExplicitReplayShowsPlaybackActivityWithoutQueueMutation() throws {
         let source = try triStateRelayServiceSource()
 

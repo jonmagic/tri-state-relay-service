@@ -120,6 +120,12 @@ When developing TSRS, use the built Swift CLI to enqueue real progress messages:
 
 Good dogfood relays are short, intentionally authored status updates: start of a meaningful slice, phase changes, blockers, requests for human input, and completion summaries. Do not enqueue raw terminal output, code, logs, secrets, private data, or long explanations.
 
+## Playback observation
+
+The app publishes the latest normal claimed-relay playback state as versioned JSON in the existing SQLite `settings` row keyed by `chitka_playback_observation`. The payload contains `version`, `relayId`, `phase` (`preparing`, `playing`, or `idle`), optional idle `outcome` (`heard`, `failed`, `cancelled`, or `requeued`), `updatedAt`, and `publishedAtEpochMs`.
+
+After each successful row write, the app posts the Darwin notification `com.jonmagic.tristaterelayservice.playback-changed`. `preparing` is published immediately after claim, while `playing` is withheld until the active provider reaches its audible-start callback or process boundary. Observation publication is best-effort and never owns, cancels, advances, or otherwise changes playback.
+
 ## Safety invariants
 
 1. The CLI must never call `/usr/bin/say` or otherwise speak directly.

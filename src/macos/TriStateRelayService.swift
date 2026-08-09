@@ -2734,6 +2734,39 @@ private let secondarySidebarIconName = "text.bubble"
 #endif
 
 private let defaultStaleRelayAgeMinutes = 30
+let chitkaPlaybackChangedDarwinNotification = "com.jonmagic.tristaterelayservice.playback-changed"
+
+enum ChitkaPlaybackPhase: String, Codable {
+    case preparing
+    case playing
+    case idle
+}
+
+enum ChitkaPlaybackIdleOutcome: String, Codable {
+    case heard
+    case failed
+    case cancelled
+    case requeued
+}
+
+private struct ChitkaPlaybackObservation: Codable {
+    let version: Int
+    let relayId: Int
+    let phase: ChitkaPlaybackPhase
+    let outcome: ChitkaPlaybackIdleOutcome?
+    let updatedAt: String
+    let publishedAtEpochMs: Int64
+}
+
+private func postChitkaPlaybackChangedNotification() {
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(chitkaPlaybackChangedDarwinNotification as CFString),
+        nil,
+        nil,
+        true
+    )
+}
 
 let playbackStallMinimumTimeoutSeconds: TimeInterval = 60
 
@@ -2830,6 +2863,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
 
         if let stalledId {
             model.markNativeSpeechFailed(id: stalledId)
+            publishIdleIfClaimed(stalledId, outcome: .failed)
         }
 
         onChange()
@@ -2843,7 +2877,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
+        let cancelledId = currentId
         cancelActivePlayback()
+        publishIdleIfClaimed(cancelledId, outcome: .cancelled)
         onChange()
     }
 
@@ -2962,6 +2998,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         currentId = claim.id
+        model.publishPlaybackObservation(relayId: claim.id, phase: .preparing)
         onChange()
         speak(claim)
     }
@@ -2986,6 +3023,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         currentId = claim.id
+        model.publishPlaybackObservation(relayId: claim.id, phase: .preparing)
         onChange()
         speak(claim)
     }
@@ -3114,6 +3152,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
                     } else {
                         self.model.markNativeSpeechFailed(id: claimId)
                     }
+                    self.publishIdleIfClaimed(claimId, outcome: process.terminationStatus == 0 ? .heard : .failed)
                 }
 
                 self.currentId = nil
@@ -3128,10 +3167,12 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         do {
             currentProcess = process
             try process.run()
+            publishPlayingIfClaimed(claimId)
         } catch {
             currentProcess = nil
             if let claimId {
                 model.markNativeSpeechFailed(id: claimId)
+                publishIdleIfClaimed(claimId, outcome: .failed)
             }
             currentId = nil
             onChange()
@@ -3272,6 +3313,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             currentAudioDirectory = nil
             if let claimId {
                 model.requeueNativeSpeech(id: claimId)
+                publishIdleIfClaimed(claimId, outcome: .requeued)
                 currentId = nil
             }
             onChange()
@@ -3284,7 +3326,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             currentAudioPlayer = player
             player.delegate = self
             player.prepareToPlay()
-            player.play()
+            if player.play() {
+                publishPlayingIfClaimed(claimId)
+            }
             model.recordVoiceCommandError(nil)
             onChange()
         } catch {
@@ -3302,6 +3346,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         if model.status.muted || inputCaptureSensor.isInputCaptureActive() {
             if let claimId {
                 model.requeueNativeSpeech(id: claimId)
+                publishIdleIfClaimed(claimId, outcome: .requeued)
                 currentId = nil
             }
             onChange()
@@ -3345,6 +3390,27 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     }
 #endif
 
+    private func publishPlayingIfClaimed(_ relayId: Int?) {
+        guard let relayId else {
+            return
+        }
+        model.publishPlaybackObservation(relayId: relayId, phase: .playing)
+    }
+
+    private func publishIdleIfClaimed(_ relayId: Int?, outcome: ChitkaPlaybackIdleOutcome) {
+        guard let relayId else {
+            return
+        }
+        model.publishPlaybackObservation(relayId: relayId, phase: .idle, outcome: outcome)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        guard utterance === currentUtterance else {
+            return
+        }
+        publishPlayingIfClaimed(currentId)
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         guard utterance === currentUtterance else {
             return
@@ -3357,6 +3423,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         model.markNativeSpeechHeard(id: id)
+        publishIdleIfClaimed(id, outcome: .heard)
         currentId = nil
         onChange()
         if model.status.mode == "live" {
@@ -3376,6 +3443,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         model.markNativeSpeechFailed(id: id)
+        publishIdleIfClaimed(id, outcome: .failed)
         currentId = nil
         onChange()
     }
@@ -3395,6 +3463,7 @@ extension NativeSpeechPlayback: AVAudioPlayerDelegate {
             } else {
                 model.markNativeSpeechFailed(id: id)
             }
+            publishIdleIfClaimed(id, outcome: flag ? .heard : .failed)
         }
 
         currentId = nil
@@ -3414,6 +3483,7 @@ extension NativeSpeechPlayback: AVAudioPlayerDelegate {
 
         if let id = currentId {
             model.markNativeSpeechFailed(id: id)
+            publishIdleIfClaimed(id, outcome: .failed)
         }
         currentId = nil
         currentAudioPlayer = nil
@@ -3936,6 +4006,14 @@ final class MenuBarModel {
     func requeueNativeSpeech(id: Int) {
         store.requeueNativeSpeech(id: id)
         refresh()
+    }
+
+    func publishPlaybackObservation(
+        relayId: Int,
+        phase: ChitkaPlaybackPhase,
+        outcome: ChitkaPlaybackIdleOutcome? = nil
+    ) {
+        _ = store.publishPlaybackObservation(relayId: relayId, phase: phase, outcome: outcome)
     }
 
     func recordVoiceCommandError(_ message: String?) {
@@ -5186,6 +5264,45 @@ final class NativeRelayStore {
         }
     }
 
+    @discardableResult
+    func publishPlaybackObservation(
+        relayId: Int,
+        phase: ChitkaPlaybackPhase,
+        outcome: ChitkaPlaybackIdleOutcome? = nil,
+        now: Date = Date(),
+        notification: () -> Void = postChitkaPlaybackChangedNotification
+    ) -> Bool {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let observation = ChitkaPlaybackObservation(
+            version: 1,
+            relayId: relayId,
+            phase: phase,
+            outcome: phase == .idle ? outcome : nil,
+            updatedAt: formatter.string(from: now),
+            publishedAtEpochMs: Int64(now.timeIntervalSince1970 * 1_000)
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        guard
+            let data = try? encoder.encode(observation),
+            let value = String(data: data, encoding: .utf8),
+            writeResult({ database in
+                executeSucceeded(database, """
+                    INSERT INTO settings (key, value)
+                    VALUES ('chitka_playback_observation', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """, [value]) ? true : nil
+            }) == true
+        else {
+            return false
+        }
+
+        notification()
+        return true
+    }
+
     func recordVoiceCommandError(_ message: String?) {
         write { database in
             setSetting(database, key: "voice_command_last_error", value: message ?? "")
@@ -5503,6 +5620,24 @@ final class NativeRelayStore {
         if result != SQLITE_DONE {
             NSLog("TSRS native store execute failed: \(sqliteError(database))")
         }
+    }
+
+    private func executeSucceeded(_ database: OpaquePointer, _ sql: String, _ values: [String?] = []) -> Bool {
+        var statement: OpaquePointer?
+
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            if let statement {
+                sqlite3_finalize(statement)
+            }
+            return false
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        bind(values, to: statement)
+        return sqlite3_step(statement) == SQLITE_DONE
     }
 
     private func executeBatch(_ database: OpaquePointer, _ sql: String) {

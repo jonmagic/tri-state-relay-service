@@ -3,6 +3,62 @@ import SQLite3
 @testable import Tri_State_Relay_Service
 
 final class NativeRelayStoreTests: XCTestCase {
+    func testPlaybackObservationPersistsVersionedJSON() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        var notificationCount = 0
+        XCTAssertTrue(store.publishPlaybackObservation(relayId: 42, phase: .preparing) {
+            notificationCount += 1
+        })
+
+        let database = try DatabaseSnapshot(path: databasePath)
+        let value = try XCTUnwrap(database.scalar("SELECT value FROM settings WHERE key = 'chitka_playback_observation'"))
+        let observation = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
+
+        XCTAssertEqual(observation["version"] as? Int, 1)
+        XCTAssertEqual(observation["relayId"] as? Int, 42)
+        XCTAssertEqual(observation["phase"] as? String, "preparing")
+        XCTAssertNil(observation["outcome"])
+        XCTAssertNotNil(observation["updatedAt"] as? String)
+        XCTAssertNotNil(observation["publishedAtEpochMs"] as? Int)
+        XCTAssertEqual(notificationCount, 1)
+
+        XCTAssertTrue(store.publishPlaybackObservation(relayId: 42, phase: .idle, outcome: .heard) {
+            notificationCount += 1
+        })
+        let idleValue = try XCTUnwrap(database.scalar("SELECT value FROM settings WHERE key = 'chitka_playback_observation'"))
+        let idle = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(idleValue.utf8)) as? [String: Any])
+        XCTAssertEqual(idle["phase"] as? String, "idle")
+        XCTAssertEqual(idle["outcome"] as? String, "heard")
+        XCTAssertEqual(notificationCount, 2)
+    }
+
+    func testPlaybackObservationWriteFailureDoesNotNotify() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        setenv("TSRS_DB_PATH", directory.path, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        var notified = false
+        XCTAssertFalse(NativeRelayStore(profile: "direct").publishPlaybackObservation(relayId: 42, phase: .playing) {
+            notified = true
+        })
+        XCTAssertFalse(notified)
+    }
+
     func testFreshDatabaseDefaultSettings() throws {
         let missingDirectory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
