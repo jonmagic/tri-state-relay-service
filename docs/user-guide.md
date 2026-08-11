@@ -51,6 +51,14 @@ relay live
 
 Live mode plays queued relays by line. TSRS drains the relays that were available for one line, switches to the next queued line, and then returns to a previous line if more relays arrived there in the meantime. A high-priority relay on another line waits until the current line batch finishes. Use Stop Live, Focus, or `relay focus` to go quiet again.
 
+When an intentional screen recording or other trusted input-capture session must include Relay audio, start Live mode with:
+
+```sh
+relay live --allow-input-capture
+```
+
+This temporarily bypasses TSRS's microphone-capture pause. The override ends when you run `relay focus`, start ordinary Live mode, or restart the app.
+
 ## What makes a good relay
 
 Good relays are short and intentional. Use them for:

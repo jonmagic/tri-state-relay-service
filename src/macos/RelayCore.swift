@@ -999,7 +999,8 @@ Commands:
   status               Print queue status JSON.
   state                Print focus/ready/mute state.
   ready                Release one relay.
-  live                 Play new relays automatically, grouped by line.
+  live [--allow-input-capture]
+                       Play automatically; optionally bypass input-capture pausing.
   focus                Keep queued relays quiet.
   mute                 Mute playback.
   unmute               Unmute playback.
@@ -1091,10 +1092,19 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeN
             return RelayCliResult(stdout: state.muted ? "release queued, but muted is on" : "ready to release one relay", stderr: "", exitCode: 0)
         }
     case "live":
+        let options = Array(arguments.dropFirst())
+        guard options.isEmpty || options == ["--allow-input-capture"] else {
+            return RelayCliResult(stdout: "", stderr: "live accepts only --allow-input-capture", exitCode: 1)
+        }
         return withRelayCliStore { store in
-            let state = try store.setMode("live")
+            let allowsInputCapturePlayback = options == ["--allow-input-capture"]
+            let state = try store.setMode("live", allowsInputCapturePlayback: allowsInputCapturePlayback)
             wakeNotifier.post()
-            return RelayCliResult(stdout: state.muted ? "live mode on, but muted is on" : "live mode on", stderr: "", exitCode: 0)
+            if state.muted {
+                return RelayCliResult(stdout: "live mode on, but muted is on", stderr: "", exitCode: 0)
+            }
+            let suffix = allowsInputCapturePlayback ? "; input capture override enabled" : ""
+            return RelayCliResult(stdout: "live mode on\(suffix)", stderr: "", exitCode: 0)
         }
     case "focus":
         return withRelayCliStore { store in
@@ -1854,6 +1864,7 @@ private final class RelayCliStore {
             "voiceCommandLastError": try voiceCommandLastError() as Any,
             "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "activeLine": state.activeLine as Any,
+            "allowsInputCapturePlayback": try allowsInputCapturePlayback(),
             "counts": counts,
             "queueCount": counts["queued"] ?? 0,
             "attentionCount": (counts["queued"] ?? 0) + (counts["heard"] ?? 0) + (counts["failed"] ?? 0),
@@ -1884,15 +1895,25 @@ private final class RelayCliStore {
         return try jsonString(object)
     }
 
-    func setMode(_ mode: String) throws -> RelayCliQueueState {
+    func setMode(_ mode: String, allowsInputCapturePlayback: Bool = false) throws -> RelayCliQueueState {
         guard ["focus", "ready", "live"].contains(mode) else {
             throw RelayCliStoreError(message: "invalid mode: \(mode)")
         }
         try setSetting(key: "mode", value: mode)
+        try setSetting(
+            key: "allows_input_capture_playback",
+            value: String(mode == "live" && allowsInputCapturePlayback)
+        )
         if mode != "live" {
             try clearLiveBatch()
         }
         return try state()
+    }
+
+    private func allowsInputCapturePlayback() throws -> Bool {
+        let settings = try rawSettings()
+        return playbackMode(settings["mode"]) == "live"
+            && settings["allows_input_capture_playback"] == "true"
     }
 
     func setMuted(_ muted: Bool) throws {
@@ -2545,6 +2566,7 @@ private final class RelayCliStore {
         try execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
         try setSettingIfMissing(key: "mode", value: "focus")
         try setSettingIfMissing(key: "muted", value: "false")
+        try setSettingIfMissing(key: "allows_input_capture_playback", value: "false")
         try setSettingIfMissing(key: "inactive_line_combiner", value: "none")
         try setSettingIfMissing(key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         try setSettingIfMissing(key: "speech_command", value: defaultSpeechCommand)

@@ -121,6 +121,30 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(runRelayCli(["list"]).stdout, "mode=focus muted=false")
     }
 
+    func testLiveInputCaptureOverrideIsExplicitAndTemporary() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        XCTAssertEqual(
+            runRelayCli(["live", "--allow-input-capture"]).stdout,
+            "live mode on; input capture override enabled"
+        )
+        var status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["mode"] as? String, "live")
+        XCTAssertEqual(status["allowsInputCapturePlayback"] as? Bool, true)
+
+        XCTAssertEqual(runRelayCli(["focus"]).stdout, "focus mode on")
+        status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["allowsInputCapturePlayback"] as? Bool, false)
+
+        XCTAssertEqual(runRelayCli(["live"]).stdout, "live mode on")
+        status = try jsonObject(runRelayCli(["status"]).stdout)
+        XCTAssertEqual(status["allowsInputCapturePlayback"] as? Bool, false)
+
+        let invalid = runRelayCli(["live", "--unknown"])
+        XCTAssertEqual(invalid.exitCode, 1)
+        XCTAssertEqual(invalid.stderr, "live accepts only --allow-input-capture")
+    }
+
     func testMutatingCommandsPostQueueWakeNotifications() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
         let wakes = WakeCounter()

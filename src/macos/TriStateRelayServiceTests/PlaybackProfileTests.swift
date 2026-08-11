@@ -10,6 +10,12 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertFalse(isOutputOnlySuperColliderProcess(arguments: ["/usr/bin/other-audio", "-i", "0"]))
     }
 
+    func testInputCapturePlaybackOverrideBypassesOnlyTheCaptureGate() {
+        XCTAssertTrue(shouldPauseForInputCapture(isActive: true, allowsPlaybackDuringInputCapture: false))
+        XCTAssertFalse(shouldPauseForInputCapture(isActive: true, allowsPlaybackDuringInputCapture: true))
+        XCTAssertFalse(shouldPauseForInputCapture(isActive: false, allowsPlaybackDuringInputCapture: false))
+    }
+
     func testStallDeadlineScalesWithMessageLength() {
         XCTAssertEqual(playbackStallMinimumTimeoutSeconds, 60)
         XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: 0), 60)
@@ -336,7 +342,8 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("handleVoiceCommandFailure(message, text: fallbackText"))
         XCTAssertTrue(source.contains("model.recordVoiceCommandError(redactedVoiceCommandError(message))"))
         XCTAssertTrue(source.contains("redactedVoiceCommandError(message)"))
-        XCTAssertTrue(source.contains("model.status.muted || inputCaptureSensor.isInputCaptureActive()"))
+        XCTAssertTrue(source.contains("model.status.muted || shouldPauseForInputCapture("))
+        XCTAssertTrue(source.contains("allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()"))
         XCTAssertTrue(source.contains("speakWithSay(text: text, option: option, claimId: claimId"))
         XCTAssertTrue(source.contains("Last BYO voice command error:"))
     }

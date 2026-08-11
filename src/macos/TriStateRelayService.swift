@@ -2982,7 +2982,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
-        if inputCaptureSensor.isInputCaptureActive() {
+        if shouldPauseForInputCapture(
+            isActive: inputCaptureSensor.isInputCaptureActive(),
+            allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()
+        ) {
             model.refresh()
             if shouldRetryAfterInputCapture(line: line) {
                 scheduleInputCaptureRetry(line: line)
@@ -3009,7 +3012,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
-        if inputCaptureSensor.isInputCaptureActive() {
+        if shouldPauseForInputCapture(
+            isActive: inputCaptureSensor.isInputCaptureActive(),
+            allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()
+        ) {
             model.refresh()
             scheduleInputCaptureRetry(line: line, id: id)
             onChange()
@@ -3075,7 +3081,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
             return
         }
 
-        if inputCaptureSensor.isInputCaptureActive() {
+        if shouldPauseForInputCapture(
+            isActive: inputCaptureSensor.isInputCaptureActive(),
+            allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()
+        ) {
             model.refresh()
             onChange()
             return
@@ -3309,7 +3318,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         model.refresh()
-        if model.status.muted || inputCaptureSensor.isInputCaptureActive() {
+        if model.status.muted || shouldPauseForInputCapture(
+            isActive: inputCaptureSensor.isInputCaptureActive(),
+            allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()
+        ) {
             cleanupVoiceCommandDirectory(directory)
             currentAudioDirectory = nil
             if let claimId {
@@ -3344,7 +3356,10 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private func handleVoiceCommandFailure(_ message: String, text: String, option: SpeechVoiceOption, claimId: Int?) {
         model.recordVoiceCommandError(redactedVoiceCommandError(message))
         model.refresh()
-        if model.status.muted || inputCaptureSensor.isInputCaptureActive() {
+        if model.status.muted || shouldPauseForInputCapture(
+            isActive: inputCaptureSensor.isInputCaptureActive(),
+            allowsPlaybackDuringInputCapture: model.allowsInputCapturePlayback()
+        ) {
             if let claimId {
                 model.requeueNativeSpeech(id: claimId)
                 publishIdleIfClaimed(claimId, outcome: .requeued)
@@ -3586,6 +3601,10 @@ func removeStaleVoiceCommandDirectories(
 
 protocol InputCaptureSensing {
     func isInputCaptureActive() -> Bool
+}
+
+func shouldPauseForInputCapture(isActive: Bool, allowsPlaybackDuringInputCapture: Bool) -> Bool {
+    isActive && !allowsPlaybackDuringInputCapture
 }
 
 struct DefaultInputCaptureSensor: InputCaptureSensing {
@@ -4043,6 +4062,10 @@ final class MenuBarModel {
     func focus() {
         store.setMode("focus")
         refresh()
+    }
+
+    func allowsInputCapturePlayback() -> Bool {
+        store.allowsInputCapturePlayback()
     }
 
     func mute() {
@@ -4910,8 +4933,17 @@ final class NativeRelayStore {
     func cleanupOnStartup() {
         removeStaleVoiceCommandDirectories(in: FileManager.default.temporaryDirectory)
         write { database in
+            setSetting(database, key: "allows_input_capture_playback", value: "false")
             pruneRetainedData(database)
         }
+    }
+
+    func allowsInputCapturePlayback() -> Bool {
+        withDatabase { database in
+            let settings = loadRawSettings(database)
+            return playbackMode(settings["mode"]) == "live"
+                && settings["allows_input_capture_playback"] == "true"
+        } ?? false
     }
 
     func loadStatus() -> QueueStatus {
@@ -4934,7 +4966,7 @@ final class NativeRelayStore {
         } ?? defaultStatus()
     }
 
-    func setMode(_ mode: String) {
+    func setMode(_ mode: String, allowsInputCapturePlayback: Bool = false) {
         guard mode == "ready" || mode == "focus" || mode == "live" else {
             NSLog("TSRS native store rejected invalid mode: \(mode)")
             return
@@ -4942,6 +4974,11 @@ final class NativeRelayStore {
 
         write { database in
             setSetting(database, key: "mode", value: mode)
+            setSetting(
+                database,
+                key: "allows_input_capture_playback",
+                value: String(mode == "live" && allowsInputCapturePlayback)
+            )
             if mode != "live" {
                 clearLiveBatch(database)
             }
@@ -5557,6 +5594,7 @@ final class NativeRelayStore {
         execute(database, "INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
         setSettingIfMissing(database, key: "mode", value: "focus")
         setSettingIfMissing(database, key: "muted", value: "false")
+        setSettingIfMissing(database, key: "allows_input_capture_playback", value: "false")
         setSettingIfMissing(database, key: "inactive_line_combiner", value: "none")
         setSettingIfMissing(database, key: "inactive_line_combiner_command", value: defaultInactiveLineCombinerCommand)
         setSettingIfMissing(database, key: "speech_command", value: defaultSpeechCommand)
