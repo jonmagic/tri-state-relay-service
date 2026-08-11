@@ -322,7 +322,7 @@ On app startup, TSRS removes old terminal relay rows and spoken-usage buckets ol
 
 If agents cannot find `relay`, open Settings and install the CLI to `/usr/local/bin/relay`, then make sure `/usr/local/bin` is on your `PATH`. If you did not install it, copy the bundled CLI path from Settings and use that full path in your agent instructions.
 
-If relays queue but do not speak, check whether TSRS is focused, muted, not in Live mode, or waiting because the microphone appears active. You can always use `relay list` to see what is waiting.
+If relays queue but do not speak, check whether TSRS is focused, muted, not in Live mode, or waiting because the microphone appears active. TSRS ignores Parlando's output-only SuperCollider process when it is explicitly launched with zero input channels, but continues pausing for real microphone capture. You can always use `relay list` to see what is waiting.
 
 If Kokoro is configured but nothing speaks, run `relay status` and look at `voiceCommandLastError`. If Kokoro is not installed, the helper reports the local setup commands instead of trying to install packages. If the helper server looks stale, run `<app-bin>/kokoro server stop`; the next Kokoro relay starts it again.
 

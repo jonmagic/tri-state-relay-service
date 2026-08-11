@@ -295,6 +295,8 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testCommandPaletteMouseSelectionAvoidsRedundantRenders() throws {
         let source = try triStateRelayServiceSource()
 
+        XCTAssertTrue(source.contains("styleMask: [.borderless],"))
+        XCTAssertFalse(source.contains("styleMask: [.borderless, .nonactivatingPanel],"))
         XCTAssertTrue(source.contains("guard nextIndex != selectedIndex else"))
         XCTAssertTrue(source.contains("private func moveSelection(_ delta: Int) -> Bool"))
         XCTAssertTrue(source.contains("return false\n        }\n\n        selectedIndex = nextIndex"))

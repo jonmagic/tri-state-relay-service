@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Carbon.HIToolbox
 import CoreAudio
+import Darwin
 import ServiceManagement
 import SQLite3
 
@@ -2102,7 +2103,7 @@ final class CommandPaletteWindowController: NSWindowController, NSTextFieldDeleg
         self.commandsProvider = commandsProvider
         let panel = CommandPalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 120),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -3589,6 +3590,92 @@ protocol InputCaptureSensing {
 
 struct DefaultInputCaptureSensor: InputCaptureSensing {
     func isInputCaptureActive() -> Bool {
+        if let processIDs = runningInputProcessIDs() {
+            return processIDs.contains { processID in
+                !isOutputOnlySuperColliderProcess(arguments: processArguments(processID))
+            }
+        }
+
+        return isDefaultInputDeviceRunning()
+    }
+
+    private func runningInputProcessIDs() -> [pid_t]? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr else {
+            return nil
+        }
+
+        var objects = [AudioObjectID](
+            repeating: 0,
+            count: Int(size) / MemoryLayout<AudioObjectID>.size
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &objects
+        ) == noErr else {
+            return nil
+        }
+
+        return objects.compactMap { object in
+            guard audioUInt32Property(
+                object,
+                selector: kAudioProcessPropertyIsRunningInput,
+                scope: kAudioObjectPropertyScopeInput
+            ) == 1 else {
+                return nil
+            }
+            return audioProcessID(object)
+        }
+    }
+
+    private func audioUInt32Property(
+        _ object: AudioObjectID,
+        selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> UInt32? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: scope,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else {
+            return nil
+        }
+        return value
+    }
+
+    private func audioProcessID(_ object: AudioObjectID) -> pid_t? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyPID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value = pid_t(0)
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else {
+            return nil
+        }
+        return value
+    }
+
+    private func isDefaultInputDeviceRunning() -> Bool {
         guard let deviceID = defaultInputDeviceID() else {
             return false
         }
@@ -3637,6 +3724,60 @@ struct DefaultInputCaptureSensor: InputCaptureSensing {
 
         return deviceID
     }
+}
+
+func isOutputOnlySuperColliderProcess(arguments: [String]) -> Bool {
+    guard arguments.first.map({ URL(fileURLWithPath: $0).lastPathComponent }) == "scsynth" else {
+        return false
+    }
+
+    for (index, argument) in arguments.enumerated() {
+        if argument == "-i", arguments.indices.contains(index + 1), arguments[index + 1] == "0" {
+            return true
+        }
+        if argument == "-i0" || argument == "-i=0" {
+            return true
+        }
+    }
+    return false
+}
+
+private func processArguments(_ processID: pid_t) -> [String] {
+    var managementInformationBase = [CTL_KERN, KERN_PROCARGS2, processID]
+    var size = 0
+    guard sysctl(&managementInformationBase, 3, nil, &size, nil, 0) == 0,
+          size > MemoryLayout<Int32>.size else {
+        return []
+    }
+
+    var buffer = [UInt8](repeating: 0, count: size)
+    guard sysctl(&managementInformationBase, 3, &buffer, &size, nil, 0) == 0 else {
+        return []
+    }
+
+    let argumentCount = buffer.withUnsafeBytes { Int($0.load(as: Int32.self)) }
+    var index = MemoryLayout<Int32>.size
+    while index < size && buffer[index] != 0 {
+        index += 1
+    }
+    while index < size && buffer[index] == 0 {
+        index += 1
+    }
+
+    var arguments: [String] = []
+    while index < size && arguments.count < argumentCount {
+        let start = index
+        while index < size && buffer[index] != 0 {
+            index += 1
+        }
+        if index > start, let argument = String(bytes: buffer[start..<index], encoding: .utf8) {
+            arguments.append(argument)
+        }
+        while index < size && buffer[index] == 0 {
+            index += 1
+        }
+    }
+    return arguments
 }
 
 struct SpeechVoiceOption {

@@ -3,6 +3,13 @@ import Carbon.HIToolbox
 @testable import Tri_State_Relay_Service
 
 final class PlaybackProfileTests: XCTestCase {
+    func testOutputOnlySuperColliderDoesNotCountAsMicrophoneCapture() {
+        XCTAssertTrue(isOutputOnlySuperColliderProcess(arguments: ["/Applications/SuperCollider.app/Contents/Resources/scsynth", "-i", "0", "-o", "2"]))
+        XCTAssertTrue(isOutputOnlySuperColliderProcess(arguments: ["/usr/local/bin/scsynth", "-i0"]))
+        XCTAssertFalse(isOutputOnlySuperColliderProcess(arguments: ["/usr/local/bin/scsynth", "-i", "2"]))
+        XCTAssertFalse(isOutputOnlySuperColliderProcess(arguments: ["/usr/bin/other-audio", "-i", "0"]))
+    }
+
     func testStallDeadlineScalesWithMessageLength() {
         XCTAssertEqual(playbackStallMinimumTimeoutSeconds, 60)
         XCTAssertEqual(playbackStallTimeoutSeconds(forCharacterCount: 0), 60)
