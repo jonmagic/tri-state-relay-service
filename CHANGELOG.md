@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0 - Stable line voices and input-aware playback
+
+- Kept app-owned playback available while output-only audio is active and while temporary input capture is safely coordinated.
+- Published bounded playback observations for local integrations without moving speech ownership out of the app.
+- Added persistent voice reservations so new Relay lines receive stable, unused provider voices when available.
+- Added `relay voice ensure --line <line> [--voice-id <voice-id>]` for persona-agnostic automatic or explicit line-to-voice assignment.
+- Validated explicit voice IDs against the active provider catalog before persisting them.
+- Fixed PATH-invoked `relay` commands so bundled Kokoro and Speechify helpers resolve from the real app bundle rather than the current working directory.
+- Updated the app and CLI version to 2.2.0.
+
 ## 2.1.1 - Stuck playback recovery and fast-forward
 
 - Fixed playback hanging indefinitely when a speech subprocess never exits, which left the menu bar showing playing with no audio until the app was restarted.
