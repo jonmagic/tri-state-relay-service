@@ -92,6 +92,21 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 1)
     }
 
+    func testRelayCliAppBinResolvesTheInstalledSymlinkTarget() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let appBin = directory.appendingPathComponent("Tri-State Relay Service.app/Contents/MacOS", isDirectory: true)
+        let installedBin = directory.appendingPathComponent("usr-local-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: appBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: installedBin, withIntermediateDirectories: true)
+        let target = appBin.appendingPathComponent("relay")
+        FileManager.default.createFile(atPath: target.path, contents: Data())
+        let symlink = installedBin.appendingPathComponent("relay")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: target)
+
+        XCTAssertEqual(relayCliAppBin(executablePath: symlink.path), appBin.path)
+    }
+
     func testNormalizeValidRelaySucceeds() {
         let result = runRelayCli([
             "normalize",

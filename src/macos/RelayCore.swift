@@ -1003,6 +1003,10 @@ struct RelayEnqueueOutcome {
     let relay: RelayCliStoredRelay?
 }
 
+func relayCliAppBin(executablePath: String = CommandLine.arguments[0]) -> String {
+    URL(fileURLWithPath: executablePath).resolvingSymlinksInPath().deletingLastPathComponent().path
+}
+
 let relayCliUsage = """
 Usage: relay <command> [options]
 
@@ -1072,7 +1076,7 @@ func runRelayCli(
     version: String = relayCliVersion,
     wakeNotifier: RelayWakeNotifier = .darwin,
     configPath: String = relayConfigPath(),
-    appBin: String = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path,
+    appBin: String = relayCliAppBin(),
     catalogRunner: ([String]) throws -> [String] = runVoiceCatalogCommand
 ) -> RelayCliResult {
     guard let command = arguments.first else {
