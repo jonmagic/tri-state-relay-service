@@ -36,6 +36,77 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 0)
     }
 
+    func testVoiceEnsureAssignsAndPrintsAStickyVoiceWithoutQueueAccess() throws {
+        let configPath = try isolatedConfigPath()
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify synthesize --voice-id <voice-id> --text-file <text-file> --output-file <output-file>"
+
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices"
+        assignment_strategy = "stable-hash"
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let first = runRelayCli(
+            ["voice", "ensure", "--line", "Sally"],
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in ["george", "henry", "simba"] }
+        )
+        XCTAssertEqual(first.exitCode, 0)
+        XCTAssertFalse(first.stdout.isEmpty)
+        XCTAssertEqual(first.stderr, "")
+
+        let second = runRelayCli(
+            ["voice", "ensure", "--line", "Sally"],
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in XCTFail("sticky assignment should not reload the catalog"); return [] }
+        )
+        XCTAssertEqual(second, first)
+    }
+
+    func testVoiceEnsureSucceedsWithoutOutputWhenAutoAssignmentIsUnavailable() throws {
+        let configPath = try isolatedConfigPath()
+        try """
+        [voice]
+        command = "/usr/bin/say -f <text-file> -o <output-file>"
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(
+            ["voice", "ensure", "--line", "Sally"],
+            configPath: configPath,
+            catalogRunner: { _ in XCTFail("catalog should not run"); return [] }
+        )
+        XCTAssertEqual(result, RelayCliResult(stdout: "", stderr: "", exitCode: 0))
+    }
+
+    func testVoiceEnsureRequiresALine() {
+        let result = runRelayCli(["voice", "ensure"])
+
+        XCTAssertEqual(result.stdout, "")
+        XCTAssertEqual(result.stderr, "line is required")
+        XCTAssertEqual(result.exitCode, 1)
+    }
+
+    func testRelayCliAppBinResolvesTheInstalledSymlinkTarget() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let appBin = directory.appendingPathComponent("Tri-State Relay Service.app/Contents/MacOS", isDirectory: true)
+        let installedBin = directory.appendingPathComponent("usr-local-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: appBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: installedBin, withIntermediateDirectories: true)
+        let target = appBin.appendingPathComponent("relay")
+        FileManager.default.createFile(atPath: target.path, contents: Data())
+        let symlink = installedBin.appendingPathComponent("relay")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: target)
+
+        XCTAssertEqual(relayCliAppBin(executablePath: symlink.path), appBin.path)
+    }
+
     func testNormalizeValidRelaySucceeds() {
         let result = runRelayCli([
             "normalize",
@@ -773,6 +844,13 @@ private func isolatedDatabasePath() -> String {
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
         .appendingPathComponent("relay.db")
         .path
+}
+
+private func isolatedConfigPath() throws -> String {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory.appendingPathComponent("config.toml").path
 }
 
 private final class WakeCounter {
