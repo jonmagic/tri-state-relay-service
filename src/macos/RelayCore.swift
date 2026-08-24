@@ -1032,6 +1032,8 @@ Commands:
                        Replay the latest delivered relay.
   line [line|--line <line>]
                        Get or set active line.
+  voice ensure --line <line>
+                       Ensure and print a sticky provider voice without speaking.
   combiner             Get inactive-line combiner command.
   config [path|show|validate|reload]
   config set [--voice-command <command>] [--combiner-command <command>]
@@ -1065,7 +1067,14 @@ docs/cli-parity-inventory.md for the validation inventory.
 """
 
 // Pure argument dispatcher so behavior is testable without a process boundary.
-func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeNotifier: RelayWakeNotifier = .darwin) -> RelayCliResult {
+func runRelayCli(
+    _ arguments: [String],
+    version: String = relayCliVersion,
+    wakeNotifier: RelayWakeNotifier = .darwin,
+    configPath: String = relayConfigPath(),
+    appBin: String = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path,
+    catalogRunner: ([String]) throws -> [String] = runVoiceCatalogCommand
+) -> RelayCliResult {
     guard let command = arguments.first else {
         return RelayCliResult(stdout: relayCliUsage, stderr: "", exitCode: 0)
     }
@@ -1099,12 +1108,20 @@ func runRelayCli(_ arguments: [String], version: String = relayCliVersion, wakeN
                 exitCode: 0
             )
         }
+    case "voice":
+        return runVoiceCli(
+            Array(arguments.dropFirst()),
+            configPath: configPath,
+            appBin: appBin,
+            catalogRunner: catalogRunner
+        )
     case "ready":
         return withRelayCliStore { store in
             let state = try store.setMode("ready")
             wakeNotifier.post()
             return RelayCliResult(stdout: state.muted ? "release queued, but muted is on" : "ready to release one relay", stderr: "", exitCode: 0)
         }
+
     case "live":
         return withRelayCliStore { store in
             let state = try store.setMode("live")
@@ -1232,6 +1249,41 @@ private func withRelayCliStore(_ action: (RelayCliStore) throws -> RelayCliResul
         return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
     } catch {
         return RelayCliResult(stdout: "", stderr: "\(error)", exitCode: 1)
+    }
+}
+
+private func runVoiceCli(
+    _ arguments: [String],
+    configPath: String,
+    appBin: String,
+    catalogRunner: ([String]) throws -> [String]
+) -> RelayCliResult {
+    guard arguments.first == "ensure" else {
+        return RelayCliResult(stdout: "", stderr: "usage: relay voice ensure --line <line>", exitCode: 1)
+    }
+    do {
+        let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["line"])
+        guard let line = flags["line"], !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return RelayCliResult(stdout: "", stderr: "line is required", exitCode: 1)
+        }
+        if let voiceID = try autoAssignLineVoiceIfNeeded(
+            line: line,
+            configPath: configPath,
+            appBin: appBin,
+            catalogRunner: catalogRunner
+        ) {
+            return RelayCliResult(stdout: voiceID, stderr: "", exitCode: 0)
+        }
+        let config = try RelayConfig.loadExisting(path: configPath)
+        let lineKey = normalizedLineVoiceKey(line)
+        let voiceID = config.voiceProvider
+            .flatMap { config.voiceProviders[$0] }
+            .flatMap { provider in lineKey.flatMap { provider.lineVoices[$0] } }
+        return RelayCliResult(stdout: voiceID ?? "", stderr: "", exitCode: 0)
+    } catch let error as RelayCliFlagError {
+        return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
+    } catch {
+        return RelayCliResult(stdout: "", stderr: relayConfigErrorMessage(error), exitCode: 1)
     }
 }
 
