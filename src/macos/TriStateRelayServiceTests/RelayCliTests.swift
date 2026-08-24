@@ -153,10 +153,12 @@ final class RelayCliTests: XCTestCase {
         try FileManager.default.createDirectory(at: installedBin, withIntermediateDirectories: true)
         let target = appBin.appendingPathComponent("relay")
         FileManager.default.createFile(atPath: target.path, contents: Data())
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: target.path)
         let symlink = installedBin.appendingPathComponent("relay")
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: target)
 
         XCTAssertEqual(relayCliAppBin(executablePath: symlink.path), appBin.path)
+        XCTAssertEqual(relayCliAppBin(executablePath: "relay", pathValue: installedBin.path), appBin.path)
     }
 
     func testNormalizeValidRelaySucceeds() {

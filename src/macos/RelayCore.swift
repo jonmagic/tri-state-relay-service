@@ -1003,8 +1003,22 @@ struct RelayEnqueueOutcome {
     let relay: RelayCliStoredRelay?
 }
 
-func relayCliAppBin(executablePath: String = CommandLine.arguments[0]) -> String {
-    URL(fileURLWithPath: executablePath).resolvingSymlinksInPath().deletingLastPathComponent().path
+func relayCliAppBin(
+    executablePath: String = CommandLine.arguments[0],
+    pathValue: String? = ProcessInfo.processInfo.environment["PATH"]
+) -> String {
+    var resolvedPath = executablePath
+    if !executablePath.contains("/") {
+        for directory in (pathValue ?? "").split(separator: ":", omittingEmptySubsequences: false) {
+            let base = directory.isEmpty ? FileManager.default.currentDirectoryPath : String(directory)
+            let candidate = URL(fileURLWithPath: base).appendingPathComponent(executablePath).path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                resolvedPath = candidate
+                break
+            }
+        }
+    }
+    return URL(fileURLWithPath: resolvedPath).resolvingSymlinksInPath().deletingLastPathComponent().path
 }
 
 let relayCliUsage = """
