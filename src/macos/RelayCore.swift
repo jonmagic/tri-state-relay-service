@@ -1037,8 +1037,9 @@ Commands:
                        Replay the latest delivered relay.
   line [line|--line <line>]
                        Get or set active line.
-  voice ensure --line <line>
+  voice ensure --line <line> [--voice-id <voice-id>]
                        Ensure and print a sticky provider voice without speaking.
+                       An explicit voice ID must exist in the active provider catalog.
   combiner             Get inactive-line combiner command.
   config [path|show|validate|reload]
   config set [--voice-command <command>] [--combiner-command <command>]
@@ -1273,12 +1274,22 @@ private func runVoiceCli(
     catalogRunner: ([String]) throws -> [String]
 ) -> RelayCliResult {
     guard arguments.first == "ensure" else {
-        return RelayCliResult(stdout: "", stderr: "usage: relay voice ensure --line <line>", exitCode: 1)
+        return RelayCliResult(stdout: "", stderr: "usage: relay voice ensure --line <line> [--voice-id <voice-id>]", exitCode: 1)
     }
     do {
-        let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["line"])
+        let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["line", "voice-id"])
         guard let line = flags["line"], !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return RelayCliResult(stdout: "", stderr: "line is required", exitCode: 1)
+        }
+        if let requestedVoiceID = flags["voice-id"] {
+            let voiceID = try assignExplicitLineVoice(
+                line: line,
+                voiceID: requestedVoiceID,
+                configPath: configPath,
+                appBin: appBin,
+                catalogRunner: catalogRunner
+            )
+            return RelayCliResult(stdout: voiceID, stderr: "", exitCode: 0)
         }
         if let voiceID = try autoAssignLineVoiceIfNeeded(
             line: line,
@@ -1298,6 +1309,51 @@ private func runVoiceCli(
         return RelayCliResult(stdout: "", stderr: error.message, exitCode: 1)
     } catch {
         return RelayCliResult(stdout: "", stderr: relayConfigErrorMessage(error), exitCode: 1)
+    }
+}
+
+private func assignExplicitLineVoice(
+    line: String,
+    voiceID: String,
+    configPath: String,
+    appBin: String,
+    catalogRunner: ([String]) throws -> [String]
+) throws -> String {
+    guard let lineKey = normalizedLineVoiceKey(line) else {
+        throw RelayCliStoreError(message: "line is required")
+    }
+    let requestedVoiceID = voiceID.trimmingCharacters(in: .whitespacesAndNewlines)
+    try validateVoiceIdentifier(requestedVoiceID, label: "voice ID")
+
+    let config = try RelayConfig.loadExisting(path: configPath)
+    guard
+        config.voiceCommand.contains("<voice-id>"),
+        let providerName = config.voiceProvider,
+        let provider = config.voiceProviders[providerName],
+        let catalogCommand = firstEnabledCommandLine(provider.catalogCommand)
+    else {
+        throw RelayCliStoreError(message: "active voice provider does not expose a voice catalog")
+    }
+
+    let catalog = try catalogRunner(voiceCatalogCommandArguments(catalogCommand, appBin: appBin))
+    guard stableVoiceCatalogIDs(catalog).contains(requestedVoiceID) else {
+        throw RelayCliStoreError(message: "voice ID is not in the active provider catalog")
+    }
+
+    return try withRelayConfigFileLock(path: configPath) {
+        var freshConfig = try RelayConfig.loadExisting(path: configPath)
+        guard
+            freshConfig.voiceCommand.contains("<voice-id>"),
+            freshConfig.voiceProvider == providerName,
+            var freshProvider = freshConfig.voiceProviders[providerName]
+        else {
+            throw RelayCliStoreError(message: "active voice provider changed during assignment")
+        }
+        freshProvider.lineVoices[lineKey] = requestedVoiceID
+        freshConfig.voiceProviders[providerName] = freshProvider
+        try freshConfig.validate()
+        try freshConfig.write(to: configPath, lock: false)
+        return requestedVoiceID
     }
 }
 

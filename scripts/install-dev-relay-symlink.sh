@@ -13,13 +13,14 @@ fi
 target_dir="$(dirname "$target")"
 mkdir -p "$target_dir"
 
+if [[ ! -w "$target_dir" ]]; then
+  echo "$target_dir is not writable by $(id -un)." >&2
+  echo "Run this once with sudo to install the rebuilt relay CLI:" >&2
+  printf '  sudo TSRS_RELAY_INSTALL_TARGET=%q TSRS_RELAY_SOURCE=%q %q\n' "$target" "$source" "$0" >&2
+  exit 1
+fi
+
 if [[ -e "$target" || -L "$target" ]]; then
-  if [[ ! -w "$target" && ! -w "$target_dir" ]]; then
-    echo "$target is not writable by $(id -un)." >&2
-    echo "Run this once with sudo to replace the stale installed relay with a dev symlink:" >&2
-    printf '  sudo TSRS_RELAY_INSTALL_TARGET=%q TSRS_RELAY_SOURCE=%q %q\n' "$target" "$source" "$0" >&2
-    exit 1
-  fi
   rm -f "$target"
 fi
 

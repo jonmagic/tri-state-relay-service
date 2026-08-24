@@ -324,7 +324,7 @@ final class PlaybackProfileTests: XCTestCase {
         """.write(toFile: configPath, atomically: true, encoding: .utf8)
 
         let first = try autoAssignLineVoiceIfNeeded(
-            line: "Sally",
+            line: "Agent One",
             configPath: configPath,
             catalogRunner: { _ in ["george", "henry", "simba"] }
         )

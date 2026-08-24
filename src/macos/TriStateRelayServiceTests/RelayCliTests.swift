@@ -51,7 +51,7 @@ final class RelayCliTests: XCTestCase {
         """.write(toFile: configPath, atomically: true, encoding: .utf8)
 
         let first = runRelayCli(
-            ["voice", "ensure", "--line", "Sally"],
+            ["voice", "ensure", "--line", "Agent One"],
             configPath: configPath,
             appBin: "/Applications/TSRS.app/Contents/MacOS",
             catalogRunner: { _ in ["george", "henry", "simba"] }
@@ -61,7 +61,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(first.stderr, "")
 
         let second = runRelayCli(
-            ["voice", "ensure", "--line", "Sally"],
+            ["voice", "ensure", "--line", "Agent One"],
             configPath: configPath,
             appBin: "/Applications/TSRS.app/Contents/MacOS",
             catalogRunner: { _ in XCTFail("sticky assignment should not reload the catalog"); return [] }
@@ -77,11 +77,63 @@ final class RelayCliTests: XCTestCase {
         """.write(toFile: configPath, atomically: true, encoding: .utf8)
 
         let result = runRelayCli(
-            ["voice", "ensure", "--line", "Sally"],
+            ["voice", "ensure", "--line", "Agent One"],
             configPath: configPath,
             catalogRunner: { _ in XCTFail("catalog should not run"); return [] }
         )
         XCTAssertEqual(result, RelayCliResult(stdout: "", stderr: "", exitCode: 0))
+    }
+
+    func testVoiceEnsurePersistsAnExplicitCatalogVoice() throws {
+        let configPath = try isolatedConfigPath()
+        try """
+        [voice]
+        provider = "kokoro"
+        command = "<app-bin>/kokoro synthesize --voice-id <voice-id> --text-file <text-file> --output-file <output-file>"
+
+        [kokoro]
+        default_voice_id = "voice-one"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/kokoro voices"
+        assignment_strategy = "stable-hash"
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(
+            ["voice", "ensure", "--line", "Agent One", "--voice-id", "voice-two"],
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in ["voice-one", "voice-two"] }
+        )
+
+        XCTAssertEqual(result, RelayCliResult(stdout: "voice-two", stderr: "", exitCode: 0))
+        let config = try RelayConfig.loadExisting(path: configPath)
+        XCTAssertEqual(config.voiceProviders["kokoro"]?.lineVoices["Agent One"], "voice-two")
+    }
+
+    func testVoiceEnsureRejectsAnExplicitVoiceOutsideTheCatalog() throws {
+        let configPath = try isolatedConfigPath()
+        try """
+        [voice]
+        provider = "kokoro"
+        command = "<app-bin>/kokoro synthesize --voice-id <voice-id> --text-file <text-file> --output-file <output-file>"
+
+        [kokoro]
+        default_voice_id = "voice-one"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/kokoro voices"
+        assignment_strategy = "stable-hash"
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let result = runRelayCli(
+            ["voice", "ensure", "--line", "Agent One", "--voice-id", "missing-voice"],
+            configPath: configPath,
+            appBin: "/Applications/TSRS.app/Contents/MacOS",
+            catalogRunner: { _ in ["voice-one", "voice-two"] }
+        )
+
+        XCTAssertEqual(result.stdout, "")
+        XCTAssertEqual(result.stderr, "voice ID is not in the active provider catalog")
+        XCTAssertEqual(result.exitCode, 1)
     }
 
     func testVoiceEnsureRequiresALine() {
