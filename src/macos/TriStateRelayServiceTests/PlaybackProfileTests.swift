@@ -255,6 +255,55 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertEqual(resolvedVoiceIdentifier(for: "Work", config: afterFirst, selectedVoice: nil), first)
     }
 
+    func testAutoAssignLineVoiceAvoidsExistingAssignmentsUntilCatalogIsExhausted() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let configPath = directory.appendingPathComponent("config.toml").path
+        try """
+        [voice]
+        provider = "speechify"
+        command = "<app-bin>/speechify --text-file <text-file> --output-file <output-file> --voice-id <voice-id>"
+        [speechify]
+        default_voice_id = "george"
+        auto_assign_line_voices = true
+        catalog_command = "<app-bin>/speechify voices"
+        assignment_strategy = "stable-hash"
+        [speechify.line_voices]
+        Brain = "george"
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let first = try autoAssignLineVoiceIfNeeded(
+            line: "Sally",
+            configPath: configPath,
+            catalogRunner: { _ in ["george", "henry", "simba"] }
+        )
+        XCTAssertNotEqual(first, "george")
+
+        let second = try autoAssignLineVoiceIfNeeded(
+            line: "Bob",
+            configPath: configPath,
+            catalogRunner: { _ in ["george", "henry", "simba"] }
+        )
+        XCTAssertNotEqual(second, "george")
+        XCTAssertNotEqual(second, first)
+
+        let exhausted = try autoAssignLineVoiceIfNeeded(
+            line: "Ada",
+            configPath: configPath,
+            catalogRunner: { _ in ["george", "henry", "simba"] }
+        )
+        XCTAssertNotNil(exhausted)
+        XCTAssertTrue(["george", "henry", "simba"].contains(exhausted!))
+    }
+
     func testProviderMappingsAreInertWithoutVoicePlaceholder() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

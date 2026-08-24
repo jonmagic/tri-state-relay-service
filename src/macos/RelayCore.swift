@@ -770,7 +770,6 @@ func autoAssignLineVoiceIfNeeded(
     guard !voiceIds.isEmpty else {
         return nil
     }
-    let assignedVoiceId = voiceIds[stableLineVoiceIndex(lineKey, count: voiceIds.count)]
 
     return try withRelayConfigFileLock(path: configPath) {
         var freshConfig = try RelayConfig.loadExisting(path: configPath)
@@ -784,12 +783,28 @@ func autoAssignLineVoiceIfNeeded(
             return nil
         }
 
+        let assignedVoiceId = stableAvailableLineVoice(
+            line: lineKey,
+            voiceIds: voiceIds,
+            assignedVoiceIds: Set(freshProvider.lineVoices.values)
+        )
         freshProvider.lineVoices[lineKey] = assignedVoiceId
         freshConfig.voiceProviders[providerName] = freshProvider
         try freshConfig.validate()
         try freshConfig.write(to: configPath, lock: false)
         return assignedVoiceId
     }
+}
+
+private func stableAvailableLineVoice(line: String, voiceIds: [String], assignedVoiceIds: Set<String>) -> String {
+    let startIndex = stableLineVoiceIndex(line, count: voiceIds.count)
+    for offset in 0..<voiceIds.count {
+        let candidate = voiceIds[(startIndex + offset) % voiceIds.count]
+        if !assignedVoiceIds.contains(candidate) {
+            return candidate
+        }
+    }
+    return voiceIds[startIndex]
 }
 
 func voiceCatalogCommandArguments(_ commandLine: String, appBin: String = "") throws -> [String] {
