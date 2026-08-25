@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.0 - Configurable playback boost
+
+- Added a bounded playback boost with output limiting for generated voice audio, making quieter voices easier to hear without changing the app-owned playback safeguards.
+- Added the `[voice] gain_db` TOML setting with validated `0` through `12` dB values and a `6` dB default.
+- Added `relay config set --playback-gain-db <0-12>` for changing playback boost from the CLI, including decimal values.
+- Added a compact, auto-saving Playback volume boost slider to Settings > Voice for whole-decibel adjustments.
+- Preserved the emergency direct-`say` fallback without amplification.
+- Updated the app and CLI version to 2.3.0.
+
 ## 2.2.0 - Stable line voices and input-aware playback
 
 - Kept app-owned playback available while output-only audio is active and while temporary input capture is safely coordinated.
