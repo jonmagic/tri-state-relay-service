@@ -225,6 +225,7 @@ struct RelayConfig {
     var voiceProvider: String?
     var voiceVariables: [String: String]
     var voiceProviders: [String: RelayVoiceProviderConfig]
+    var playbackGainDB: Float
     var combinerCommand: String
     var combinerVariables: [String: String]
     var cleanupRetentionMinutes: Int
@@ -246,6 +247,7 @@ struct RelayConfig {
             voiceProvider: nil,
             voiceVariables: [:],
             voiceProviders: [:],
+            playbackGainDB: defaultPlaybackGainDB,
             combinerCommand: firstEnabledCommandLine(storedCombiner) ?? "",
             combinerVariables: [:],
             cleanupRetentionMinutes: cleanupRetentionMinutesFromSettings(settings)
@@ -306,6 +308,9 @@ struct RelayConfig {
             try validateVoiceProviderName(providerName, line: nil)
             try provider.validate(providerName: providerName)
         }
+        guard playbackGainDB.isFinite, (minimumPlaybackGainDB...maximumPlaybackGainDB).contains(playbackGainDB) else {
+            throw RelayCliStoreError(message: "voice gain_db must be between 0 and 12")
+        }
         try validateCommandPlaceholders(combinerCommand, allowed: ["<input>", "<system>"], label: "inactive-line combiner")
         guard (1...maxCleanupRetentionMinutes).contains(cleanupRetentionMinutes) else {
             throw RelayCliStoreError(message: "cleanup retention minutes must be between 1 and \(maxCleanupRetentionMinutes)")
@@ -324,6 +329,7 @@ struct RelayConfig {
         }
         lines += [
             "command = \(tomlQuotedString(voiceCommand))",
+            "gain_db = \(tomlPlaybackGainDB(playbackGainDB))",
         ]
         if !voiceVariables.isEmpty {
             lines += [
@@ -387,6 +393,14 @@ struct RelayConfig {
     }
 }
 
+let minimumPlaybackGainDB: Float = 0
+let maximumPlaybackGainDB: Float = 12
+let defaultPlaybackGainDB: Float = 6
+
+private func tomlPlaybackGainDB(_ gainDB: Float) -> String {
+    gainDB.rounded() == gainDB ? String(Int(gainDB)) : String(gainDB)
+}
+
 let defaultLineVoiceAssignmentStrategy = "stable-hash"
 
 struct RelayVoiceProviderConfig: Equatable {
@@ -445,6 +459,7 @@ private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
         voiceProvider: nil,
         voiceVariables: [:],
         voiceProviders: [:],
+        playbackGainDB: defaultPlaybackGainDB,
         combinerCommand: defaultInactiveLineCombinerCommand,
         combinerVariables: [:],
         cleanupRetentionMinutes: defaultCleanupRetentionMinutes
@@ -477,6 +492,11 @@ private func parseRelayConfigTOML(_ text: String) throws -> RelayConfig {
             let provider = try parseTomlString(value, line: index + 1)
             try validateVoiceProviderName(provider, line: index + 1)
             config.voiceProvider = provider
+        case "voice" where key == "gain_db":
+            guard let gainDB = Float(value) else {
+                throw RelayCliStoreError(message: "config line \(index + 1): gain_db must be a number")
+            }
+            config.playbackGainDB = gainDB
         case "voice.variables":
             config.voiceVariables[key] = try parseTomlString(value, line: index + 1)
         case "combiner" where key == "command":

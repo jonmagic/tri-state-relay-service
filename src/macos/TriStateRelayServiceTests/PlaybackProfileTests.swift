@@ -222,7 +222,7 @@ final class PlaybackProfileTests: XCTestCase {
         XCTAssertTrue(source.contains("gainNode.globalGain = clampedPlaybackGainDB(gainDB)"), source)
         XCTAssertTrue(source.contains("kAudioUnitSubType_DynamicsProcessor"), source)
         XCTAssertTrue(source.contains("completionCallbackType: .dataPlayedBack"), source)
-        XCTAssertTrue(source.contains("let player = try AmplifiedAudioPlayer(contentsOf: outputURL)"), source)
+        XCTAssertTrue(source.contains("let player = try AmplifiedAudioPlayer(contentsOf: outputURL, gainDB: settings.playbackGainDB)"), source)
     }
 
     func testVoiceCommandArgumentsExpandFileAndVoicePlaceholders() {
@@ -252,6 +252,7 @@ final class PlaybackProfileTests: XCTestCase {
                     lineVoices: ["Brain": "henry"]
                 )
             ],
+            playbackGainDB: defaultPlaybackGainDB,
             combinerCommand: "",
             combinerVariables: [:],
             cleanupRetentionMinutes: defaultCleanupRetentionMinutes

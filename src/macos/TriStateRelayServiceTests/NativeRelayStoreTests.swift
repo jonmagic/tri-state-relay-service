@@ -75,6 +75,7 @@ final class NativeRelayStoreTests: XCTestCase {
         let settings = store.loadSettings()
         XCTAssertEqual(settings.inactiveLineCombinerCommand, "")
         XCTAssertEqual(settings.voiceCommand, "/usr/bin/say -f <text-file> -o <output-file>")
+        XCTAssertEqual(settings.playbackGainDB, defaultPlaybackGainDB)
         XCTAssertNil(settings.voiceCommandLastError)
         XCTAssertEqual(settings.cleanupRetentionMinutes, defaultCleanupRetentionMinutes)
         XCTAssertEqual(settings.commandPaletteShortcut.identifier, "control-option-command-space")
@@ -299,6 +300,7 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(status.muted, true)
         XCTAssertEqual(status.activeLine, "Brain")
         XCTAssertTrue(config.contains("command = \"/usr/bin/say -f <text-file> -o <output-file>\""))
+        XCTAssertTrue(config.contains("gain_db = 6"))
         XCTAssertTrue(config.contains("llm prompt <input> --system <system>"))
         XCTAssertFalse(config.contains("\\n# Voice command."))
         XCTAssertFalse(config.contains("Speechify example"))
@@ -341,10 +343,69 @@ final class NativeRelayStoreTests: XCTestCase {
         let config = try String(contentsOfFile: configPath, encoding: .utf8)
 
         XCTAssertEqual(settings.inactiveLineCombinerCommand, "apfel --system <system> --output plain <input>")
+        XCTAssertEqual(settings.playbackGainDB, defaultPlaybackGainDB)
         XCTAssertEqual(settings.cleanupRetentionMinutes, 42)
         XCTAssertTrue(show.contains("apfel --system <system> --output plain <input>"))
         XCTAssertTrue(show.contains("cleanup_retention_minutes = 42"))
         XCTAssertEqual(config, existingConfig)
+    }
+
+    func testPlaybackGainLoadsFromToml() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        setenv("TSRS_CONFIG_PATH", configPath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try """
+        [voice]
+        command = "/usr/bin/say -f <text-file> -o <output-file>"
+        gain_db = 9
+        [combiner]
+        command = ""
+        [retention]
+        cleanup_retention_minutes = 60
+        """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().playbackGainDB, 9)
+    }
+
+    func testPlaybackGainRejectsValuesOutsideSupportedRange() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let configPath = directory.appendingPathComponent("config.toml").path
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        for (gain, expectedError) in [
+            ("-1", "voice gain_db must be between 0 and 12"),
+            ("13", "voice gain_db must be between 0 and 12"),
+            ("nan", "voice gain_db must be between 0 and 12"),
+        ] {
+            try """
+            [voice]
+            command = "/usr/bin/say -f <text-file> -o <output-file>"
+            gain_db = \(gain)
+            [combiner]
+            command = ""
+            [retention]
+            cleanup_retention_minutes = 60
+            """.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+            XCTAssertThrowsError(try RelayConfig.loadExisting(path: configPath)) { error in
+                let message = relayConfigErrorMessage(error)
+                XCTAssertTrue(message.contains(expectedError), "gain \(gain): \(message)")
+            }
+        }
     }
 
     func testRecentLineMessagesReturnQueuedThenDelivered() throws {

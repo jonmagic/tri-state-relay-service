@@ -211,6 +211,13 @@ The direct-download app can use a configured voice command to generate an audio 
 
 Advanced voice, inactive-line combiner, and cleanup retention settings live in `~/Library/Application Support/Tri-State Relay Service/config.toml`. On upgrade, TSRS creates this file once from existing 1.1.2 SQLite settings. If the file already exists, TSRS preserves it and treats it as the source of truth for those advanced settings.
 
+Generated voice audio uses the `[voice]` section's `gain_db` value. The supported range is `0` through `12` dB and the default is `6`. Changes apply to subsequent relays; the emergency direct-`say` fallback is not amplified.
+
+```toml
+[voice]
+gain_db = 6
+```
+
 ```sh
 relay config path
 relay config show

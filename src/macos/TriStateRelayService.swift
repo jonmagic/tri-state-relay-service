@@ -14,10 +14,9 @@ let distributionProfile = "direct"
 #endif
 
 let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? relayCliVersion
-let defaultPlaybackGainDB: Float = 6
 
 func clampedPlaybackGainDB(_ gainDB: Float) -> Float {
-    min(max(gainDB, 0), 12)
+    min(max(gainDB, minimumPlaybackGainDB), maximumPlaybackGainDB)
 }
 
 func makePlaybackLimiter() -> AVAudioUnitEffect {
@@ -3441,7 +3440,8 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         do {
-            let player = try AmplifiedAudioPlayer(contentsOf: outputURL)
+            let settings = model.loadSettings()
+            let player = try AmplifiedAudioPlayer(contentsOf: outputURL, gainDB: settings.playbackGainDB)
             renewPlaybackDeadline(seconds: player.duration + playbackStallMinimumTimeoutSeconds)
             currentAudioPlayer = player
             player.prepareToPlay()
@@ -4893,6 +4893,7 @@ struct SettingsSnapshot {
     let inactiveLineCombinerCommand: String
     let voiceCommand: String
     let voiceProvider: String?
+    let playbackGainDB: Float
     let voiceCommandLastError: String?
     let configError: String?
     let configPath: String
@@ -5015,6 +5016,7 @@ final class NativeRelayStore {
                 inactiveLineCombinerCommand: inactiveLineCombinerCommand(settings),
                 voiceCommand: voiceCommand(settings),
                 voiceProvider: voiceProvider(settings),
+                playbackGainDB: playbackGainDB(settings),
                 voiceCommandLastError: voiceCommandLastError(settings),
                 configError: configError(settings),
                 configPath: relayConfigPath(),
@@ -6382,6 +6384,10 @@ final class NativeRelayStore {
         return validRelayConfig(settings: settings)?.voiceProvider
     }
 
+    private func playbackGainDB(_ settings: [String: String]) -> Float {
+        validRelayConfig(settings: settings)?.playbackGainDB ?? defaultPlaybackGainDB
+    }
+
     private func voiceCommandLastError(_ settings: [String: String]) -> String? {
         let value = settings["voice_command_last_error"] ?? ""
         return value.isEmpty ? nil : value
@@ -6459,7 +6465,7 @@ private func defaultStatus() -> QueueStatus {
 }
 
 private func defaultSettings() -> SettingsSnapshot {
-    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceProvider: nil, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
+    SettingsSnapshot(inactiveLineCombinerCommand: "", voiceCommand: defaultVoiceCommand, voiceProvider: nil, playbackGainDB: defaultPlaybackGainDB, voiceCommandLastError: nil, configError: nil, configPath: relayConfigPath(), cleanupRetentionMinutes: defaultCleanupRetentionMinutes, speechVoiceIdentifier: defaultSpeechVoiceIdentifier, commandPaletteShortcut: .defaultCommandPalette, firstStartSetupComplete: false)
 }
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
