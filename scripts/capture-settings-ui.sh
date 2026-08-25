@@ -157,21 +157,23 @@ if [[ "${TSRS_SETTINGS_UI_ROUNDTRIP:-0}" == "1" ]]; then
   voice_command="/bin/cp <text-file> <output-file>"
   combiner_command="llm prompt <input> --system <system> --no-stream --no-log"
   retention_minutes="1440"
+  playback_gain_db="9"
 
-  if "$relay_cli" debug settings-roundtrip --voice-command "$voice_command" --combiner-command "$combiner_command" --cleanup-retention-minutes "$retention_minutes" >"$roundtrip_report" 2>&1
+  if "$relay_cli" debug settings-roundtrip --voice-command "$voice_command" --combiner-command "$combiner_command" --cleanup-retention-minutes "$retention_minutes" --playback-gain-db "$playback_gain_db" >"$roundtrip_report" 2>&1
   then
     for _ in {1..40}; do
       "$relay_cli" status >"$artifact_root/settings-after-modify.json"
-      if python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
+      if python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" "$playback_gain_db" <<'PY'
 import json
 import sys
 
-path, voice, combiner, retention = sys.argv[1:]
+path, voice, combiner, retention, playback_gain_db = sys.argv[1:]
 settings = json.load(open(path))
 if (
     settings.get("voiceCommand") == voice
     and settings.get("inactiveLineCombinerCommand") == combiner
     and settings.get("cleanupRetentionMinutes") == int(retention)
+    and settings.get("playbackGainDB") == float(playback_gain_db)
 ):
     raise SystemExit(0)
 raise SystemExit(1)
@@ -182,16 +184,17 @@ PY
       sleep 0.25
     done
     "$relay_cli" status >"$artifact_root/settings-after-modify.json"
-    python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" <<'PY'
+    python3 - "$artifact_root/settings-after-modify.json" "$voice_command" "$combiner_command" "$retention_minutes" "$playback_gain_db" <<'PY'
 import json
 import sys
 
-path, voice, combiner, retention = sys.argv[1:]
+path, voice, combiner, retention, playback_gain_db = sys.argv[1:]
 settings = json.load(open(path))
 expected = {
     "voiceCommand": voice,
     "inactiveLineCombinerCommand": combiner,
     "cleanupRetentionMinutes": int(retention),
+    "playbackGainDB": float(playback_gain_db),
 }
 for key, value in expected.items():
     if settings.get(key) != value:

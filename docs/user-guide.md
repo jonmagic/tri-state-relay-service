@@ -213,6 +213,8 @@ Advanced voice, inactive-line combiner, and cleanup retention settings live in `
 
 Generated voice audio uses the `[voice]` section's `gain_db` value. The supported range is `0` through `12` dB and the default is `6`. Changes apply to subsequent relays; the emergency direct-`say` fallback is not amplified.
 
+You can change this value in **Settings > Voice > Playback volume boost**. The slider uses whole-decibel steps; edit TOML or use the CLI when you need a decimal value.
+
 ```toml
 [voice]
 gain_db = 6

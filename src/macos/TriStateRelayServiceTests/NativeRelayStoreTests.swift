@@ -377,6 +377,29 @@ final class NativeRelayStoreTests: XCTestCase {
         XCTAssertEqual(NativeRelayStore(profile: "direct").loadSettings().playbackGainDB, 9)
     }
 
+    func testSettingsSavePlaybackGainPersistsToToml() throws {
+        let directory = testArtifactDirectory()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let databasePath = directory.appendingPathComponent("relay.db").path
+        let configPath = directory.appendingPathComponent("config.toml").path
+        setenv("TSRS_DB_PATH", databasePath, 1)
+        setenv("TSRS_CONFIG_PATH", configPath, 1)
+        defer {
+            unsetenv("TSRS_DB_PATH")
+            unsetenv("TSRS_CONFIG_PATH")
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = NativeRelayStore(profile: "direct")
+        try store.savePlaybackGainDB(9)
+
+        XCTAssertEqual(store.loadSettings().playbackGainDB, 9)
+        XCTAssertTrue(try String(contentsOfFile: configPath, encoding: .utf8).contains("gain_db = 9"))
+        XCTAssertThrowsError(try store.savePlaybackGainDB(13))
+        XCTAssertEqual(store.loadSettings().playbackGainDB, 9)
+    }
+
     func testPlaybackGainRejectsValuesOutsideSupportedRange() throws {
         let directory = testArtifactDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

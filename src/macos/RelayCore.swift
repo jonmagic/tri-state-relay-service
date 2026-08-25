@@ -1657,15 +1657,18 @@ private func runDebugCommand(_ arguments: [String], wakeNotifier: RelayWakeNotif
 
     if action == "settings-roundtrip" {
         do {
-            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["voice-command", "combiner-command", "cleanup-retention-minutes"])
-            guard let voiceCommand = flags["voice-command"], let combinerCommand = flags["combiner-command"], let retentionMinutes = flags["cleanup-retention-minutes"] else {
-                return RelayCliResult(stdout: "", stderr: "settings-roundtrip requires --voice-command, --combiner-command, and --cleanup-retention-minutes", exitCode: 1)
+            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["voice-command", "combiner-command", "cleanup-retention-minutes", "playback-gain-db"])
+            guard let voiceCommand = flags["voice-command"], let combinerCommand = flags["combiner-command"], let retentionMinutes = flags["cleanup-retention-minutes"], let playbackGainDB = flags["playback-gain-db"] else {
+                return RelayCliResult(stdout: "", stderr: "settings-roundtrip requires --voice-command, --combiner-command, --cleanup-retention-minutes, and --playback-gain-db", exitCode: 1)
             }
             guard Int(retentionMinutes) != nil else {
                 return RelayCliResult(stdout: "", stderr: "cleanup-retention-minutes must be an integer", exitCode: 1)
             }
+            guard let gainDB = Float(playbackGainDB), gainDB.isFinite, (minimumPlaybackGainDB...maximumPlaybackGainDB).contains(gainDB) else {
+                return RelayCliResult(stdout: "", stderr: "playback-gain-db must be between 0 and 12", exitCode: 1)
+            }
             let result = withRelayCliStore { store in
-                try store.setDebugSettingsRoundtrip(voiceCommand: voiceCommand, combinerCommand: combinerCommand, cleanupRetentionMinutes: retentionMinutes)
+                try store.setDebugSettingsRoundtrip(voiceCommand: voiceCommand, combinerCommand: combinerCommand, cleanupRetentionMinutes: retentionMinutes, playbackGainDB: playbackGainDB)
                 return RelayCliResult(stdout: "", stderr: "", exitCode: 0)
             }
             if result.exitCode != 0 {
@@ -2025,6 +2028,7 @@ private final class RelayCliStore {
             "speechCommand": try speechCommand(),
             "voiceCommand": try voiceCommand(),
             "voiceCommandLastError": try voiceCommandLastError() as Any,
+            "playbackGainDB": config?.playbackGainDB ?? defaultPlaybackGainDB,
             "cleanupRetentionMinutes": try cleanupRetentionMinutes(),
             "activeLine": state.activeLine as Any,
             "allowsInputCapturePlayback": try allowsInputCapturePlayback(),
@@ -2096,10 +2100,11 @@ private final class RelayCliStore {
         try setSetting(key: "debug_open_settings_panel", value: panel)
     }
 
-    func setDebugSettingsRoundtrip(voiceCommand: String, combinerCommand: String, cleanupRetentionMinutes: String) throws {
+    func setDebugSettingsRoundtrip(voiceCommand: String, combinerCommand: String, cleanupRetentionMinutes: String, playbackGainDB: String) throws {
         try setSetting(key: "debug_settings_roundtrip_voice_command", value: voiceCommand)
         try setSetting(key: "debug_settings_roundtrip_combiner_command", value: combinerCommand)
         try setSetting(key: "debug_settings_roundtrip_cleanup_retention_minutes", value: cleanupRetentionMinutes)
+        try setSetting(key: "debug_settings_roundtrip_playback_gain_db", value: playbackGainDB)
     }
 
     func inactiveLineCombinerCommand() throws -> String {

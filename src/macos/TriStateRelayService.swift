@@ -1277,6 +1277,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let voiceCommandTextView = NSTextView()
     private let voiceCommandStatusView = NSTextField(labelWithString: "")
     private let saveVoiceCommandButton = NSButton(title: "Save voice command", target: nil, action: nil)
+    private let playbackGainSlider = NSSlider(value: Double(defaultPlaybackGainDB), minValue: Double(minimumPlaybackGainDB), maxValue: Double(maximumPlaybackGainDB), target: nil, action: nil)
+    private let playbackGainValueView = NSTextField(labelWithString: "")
     private let saveCombinerCommandButton = NSButton(title: "Save combiner", target: nil, action: nil)
     private let setupShortcutRecorderButton = ShortcutRecorderButton()
     private let setupShortcutStatusView = NSTextField(labelWithString: "")
@@ -1412,6 +1414,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cleanupRetentionSaveButton.action = #selector(saveCleanupRetention(_:))
         saveVoiceCommandButton.target = self
         saveVoiceCommandButton.action = #selector(saveCommandTemplates)
+        playbackGainSlider.target = self
+        playbackGainSlider.action = #selector(savePlaybackGain(_:))
         saveCombinerCommandButton.target = self
         saveCombinerCommandButton.action = #selector(saveCommandTemplates)
         openConfigButton.target = self
@@ -1511,6 +1515,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func performDebugSettingsRoundtrip(_ request: DebugSettingsRoundtripRequest) {
 #if !APP_STORE
         selectVoiceSection()
+        playbackGainSlider.floatValue = request.playbackGainDB
+        updatePlaybackGainValue()
+        savePlaybackGain(playbackGainSlider)
         voiceCommandTextView.string = request.voiceCommand
         selectSecondarySection()
         combinerTextView.string = request.combinerCommand
@@ -1578,6 +1585,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let settings = model.loadSettings()
         combinerTextView.string = settings.inactiveLineCombinerCommand
         voiceCommandTextView.string = settings.voiceCommand
+        playbackGainSlider.floatValue = settings.playbackGainDB
+        updatePlaybackGainValue()
         resetVoiceCommandTextViewScroll()
         cleanupRetentionField.stringValue = String(settings.cleanupRetentionMinutes)
         configPathView.stringValue = settings.configPath
@@ -1623,6 +1632,29 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         updateSetupIntroVisibility()
         onSave()
 #endif
+    }
+
+    @objc private func savePlaybackGain(_ sender: NSSlider) {
+#if !APP_STORE
+        let gainDB = sender.floatValue
+        updatePlaybackGainValue()
+        do {
+            try model.savePlaybackGainDB(gainDB)
+            onSave()
+        } catch {
+            reload()
+            window?.presentError(error)
+        }
+#endif
+    }
+
+    private func updatePlaybackGainValue() {
+        playbackGainValueView.stringValue = playbackGainDisplayText(playbackGainSlider.floatValue)
+    }
+
+    private func playbackGainDisplayText(_ gainDB: Float) -> String {
+        let value = gainDB.rounded() == gainDB ? String(Int(gainDB)) : String(gainDB)
+        return "+\(value) dB"
     }
 
     private func configureSetupIntroView() {
@@ -1693,6 +1725,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureAccessibility(voiceCommandTextView, identifier: "tsrs.settings.voice.command", label: "Voice command")
         configureAccessibility(saveVoiceCommandButton, identifier: "tsrs.settings.voice.save-command", label: "Save voice command")
         configureAccessibility(voiceCommandStatusView, identifier: "tsrs.settings.voice.command-status", label: "Voice command save status")
+        configureAccessibility(playbackGainSlider, identifier: "tsrs.settings.voice.playback-gain", label: "Playback volume boost")
+        configureAccessibility(playbackGainValueView, identifier: "tsrs.settings.voice.playback-gain-value", label: "Playback volume boost value")
         configureAccessibility(voiceCommandErrorView, identifier: "tsrs.settings.voice.command-error", label: "Voice command error status")
         configureAccessibility(configErrorView, identifier: "tsrs.settings.voice.config-error", label: "Config error status")
         configureAccessibility(configPathView, identifier: "tsrs.settings.voice.config-path", label: "Config file path")
@@ -1963,6 +1997,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configSection.spacing = 7
         configSection.translatesAutoresizingMaskIntoConstraints = false
 
+        let gainLabel = NSTextField(labelWithString: "Playback volume boost")
+        gainLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+        playbackGainSlider.numberOfTickMarks = 13
+        playbackGainSlider.allowsTickMarkValuesOnly = true
+        playbackGainSlider.isContinuous = false
+        playbackGainSlider.controlSize = .small
+        playbackGainValueView.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        playbackGainValueView.alignment = .right
+        let gainControlRow = NSStackView(views: [playbackGainSlider, playbackGainValueView])
+        gainControlRow.orientation = .horizontal
+        gainControlRow.alignment = .centerY
+        gainControlRow.spacing = 10
+
+        let gainSection = NSStackView(views: [gainLabel, gainControlRow])
+        gainSection.orientation = .vertical
+        gainSection.alignment = .leading
+        gainSection.spacing = 7
+
         let commandLabel = NSTextField(labelWithString: "Voice command")
         commandLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
@@ -1976,7 +2029,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let diagnosticsLabel = NSTextField(labelWithString: "Voice command diagnostics")
         diagnosticsLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
+        views.append(contentsOf: [gainSection, configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])
 #endif
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1987,6 +2040,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #if !APP_STORE
         configNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         configPathView.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+        playbackGainSlider.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        playbackGainValueView.widthAnchor.constraint(equalToConstant: 56).isActive = true
         commandNote.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
         commandScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         commandScrollView.heightAnchor.constraint(equalToConstant: 96).isActive = true
@@ -1997,6 +2052,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 #endif
         stack.setCustomSpacing(18, after: title)
 #if !APP_STORE
+        stack.setCustomSpacing(18, after: gainSection)
         stack.setCustomSpacing(18, after: configSection)
         stack.setCustomSpacing(9, after: commandNote)
         stack.setCustomSpacing(14, after: voiceCommandStatusView)
@@ -4344,6 +4400,11 @@ final class MenuBarModel {
         refresh()
     }
 
+    func savePlaybackGainDB(_ gainDB: Float) throws {
+        try store.savePlaybackGainDB(gainDB)
+        refresh()
+    }
+
     func saveCommandPaletteShortcut(_ shortcut: KeyboardShortcut) {
         store.saveCommandPaletteShortcut(shortcut)
         refresh()
@@ -4907,6 +4968,7 @@ struct DebugSettingsRoundtripRequest {
     let voiceCommand: String
     let combinerCommand: String
     let cleanupRetentionMinutes: String
+    let playbackGainDB: Float
 }
 
 #if !APP_STORE
@@ -5184,6 +5246,27 @@ final class NativeRelayStore {
         }
     }
 
+    func savePlaybackGainDB(_ gainDB: Float) throws {
+        guard gainDB.isFinite, (minimumPlaybackGainDB...maximumPlaybackGainDB).contains(gainDB) else {
+            throw NSError(domain: "TSRSPlaybackGain", code: 1, userInfo: [NSLocalizedDescriptionKey: "Playback boost must be between 0 and 12 dB."])
+        }
+        var writeError: Error?
+        write { database in
+            do {
+                try updateRelayConfig(fallbackSettings: loadRawSettings(database)) { config in
+                    config.playbackGainDB = gainDB
+                }
+                clearConfigError(database)
+            } catch {
+                writeError = error
+                setConfigError(database, relayConfigErrorMessage(error))
+            }
+        }
+        if let writeError {
+            throw writeError
+        }
+    }
+
     func consumeDebugOpenSettingsPanel() -> String? {
         writeResult { database in
             let settings = loadRawSettings(database)
@@ -5204,9 +5287,12 @@ final class NativeRelayStore {
                 let voiceCommand = settings["debug_settings_roundtrip_voice_command"],
                 let combinerCommand = settings["debug_settings_roundtrip_combiner_command"],
                 let cleanupRetentionMinutes = settings["debug_settings_roundtrip_cleanup_retention_minutes"],
+                let playbackGainDB = settings["debug_settings_roundtrip_playback_gain_db"].flatMap(Float.init),
                 !voiceCommand.isEmpty,
                 !combinerCommand.isEmpty,
-                !cleanupRetentionMinutes.isEmpty
+                !cleanupRetentionMinutes.isEmpty,
+                playbackGainDB.isFinite,
+                (minimumPlaybackGainDB...maximumPlaybackGainDB).contains(playbackGainDB)
             else {
                 return nil
             }
@@ -5214,10 +5300,12 @@ final class NativeRelayStore {
             setSetting(database, key: "debug_settings_roundtrip_voice_command", value: "")
             setSetting(database, key: "debug_settings_roundtrip_combiner_command", value: "")
             setSetting(database, key: "debug_settings_roundtrip_cleanup_retention_minutes", value: "")
+            setSetting(database, key: "debug_settings_roundtrip_playback_gain_db", value: "")
             return DebugSettingsRoundtripRequest(
                 voiceCommand: voiceCommand,
                 combinerCommand: combinerCommand,
-                cleanupRetentionMinutes: cleanupRetentionMinutes
+                cleanupRetentionMinutes: cleanupRetentionMinutes,
+                playbackGainDB: playbackGainDB
             )
         }
     }

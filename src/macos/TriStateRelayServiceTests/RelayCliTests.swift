@@ -299,6 +299,36 @@ final class RelayCliTests: XCTestCase {
         XCTAssertEqual(wakes.count, 5)
     }
 
+    func testDebugSettingsRoundtripCarriesPlaybackGain() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+        setenv("TSRS_CONFIG_PATH", try isolatedConfigPath(), 1)
+
+        let result = runRelayCli([
+            "debug", "settings-roundtrip",
+            "--voice-command", "/bin/cp <text-file> <output-file>",
+            "--combiner-command", "none",
+            "--cleanup-retention-minutes", "1440",
+            "--playback-gain-db", "9",
+        ])
+        XCTAssertEqual(result.exitCode, 0)
+
+        let request = try XCTUnwrap(NativeRelayStore(profile: "direct").consumeDebugSettingsRoundtrip())
+        XCTAssertEqual(request.voiceCommand, "/bin/cp <text-file> <output-file>")
+        XCTAssertEqual(request.combinerCommand, "none")
+        XCTAssertEqual(request.cleanupRetentionMinutes, "1440")
+        XCTAssertEqual(request.playbackGainDB, 9)
+
+        let invalid = runRelayCli([
+            "debug", "settings-roundtrip",
+            "--voice-command", "none",
+            "--combiner-command", "none",
+            "--cleanup-retention-minutes", "1440",
+            "--playback-gain-db", "13",
+        ])
+        XCTAssertEqual(invalid.exitCode, 1)
+        XCTAssertEqual(invalid.stderr, "playback-gain-db must be between 0 and 12")
+    }
+
     func testStatusReportsJsonForQueue() throws {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
         _ = runRelayCli(["--line", "Brain", "--message", "json please", "--session", "sess-1", "--app", "Copilot"])
@@ -315,6 +345,7 @@ final class RelayCliTests: XCTestCase {
         XCTAssertNotNil(object["speechCommand"] as? String)
         XCTAssertNotNil(object["voiceCommand"] as? String)
         XCTAssertNil(object["voiceCommandLastError"] as? String)
+        XCTAssertEqual(object["playbackGainDB"] as? Double, 6)
 
         let counts = try XCTUnwrap(object["counts"] as? [String: Int])
         XCTAssertEqual(counts["queued"], 1)

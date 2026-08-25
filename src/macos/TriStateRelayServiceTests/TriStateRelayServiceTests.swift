@@ -125,6 +125,8 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertTrue(source.contains("configureAccessibility(configErrorView, identifier: \"tsrs.settings.voice.config-error\""))
         XCTAssertTrue(source.contains("configureAccessibility(openConfigButton, identifier: \"tsrs.settings.voice.open-config\""))
         XCTAssertTrue(source.contains("configureAccessibility(saveVoiceCommandButton, identifier: \"tsrs.settings.voice.save-command\""))
+        XCTAssertTrue(source.contains("configureAccessibility(playbackGainSlider, identifier: \"tsrs.settings.voice.playback-gain\""))
+        XCTAssertTrue(source.contains("configureAccessibility(playbackGainValueView, identifier: \"tsrs.settings.voice.playback-gain-value\""))
         XCTAssertTrue(source.contains("configureAccessibility(saveCombinerCommandButton, identifier: \"tsrs.settings.combiner.save-command\""))
         XCTAssertTrue(source.contains("configureAccessibility(cleanupRetentionStatusView, identifier: \"tsrs.settings.advanced.cleanup-retention-status\""))
     }
@@ -155,6 +157,9 @@ final class TriStateRelayServiceTests: XCTestCase {
         XCTAssertLessThan(script.distance(from: script.startIndex, to: focusRange.lowerBound), script.distance(from: script.startIndex, to: restartRange.lowerBound))
         XCTAssertTrue(script.contains("interaction-smoke.txt"))
         XCTAssertTrue(script.contains("TSRS_SETTINGS_UI_ROUNDTRIP"))
+        XCTAssertTrue(script.contains("playback_gain_db=\"9\""))
+        XCTAssertTrue(script.contains("--playback-gain-db \"$playback_gain_db\""))
+        XCTAssertTrue(script.contains("settings.get(\"playbackGainDB\") == float(playback_gain_db)"))
         XCTAssertTrue(script.contains("settings-after-restore.json"))
         XCTAssertTrue(script.contains("click (first button of contentGroup whose title is \"Copy bundled CLI path\")"))
         XCTAssertTrue(script.contains("first button of contentGroup whose title contains \"Command\""))
@@ -230,7 +235,7 @@ final class TriStateRelayServiceTests: XCTestCase {
     func testVoiceAndCombinerHelpersSitBelowSectionLabels() throws {
         let source = try triStateRelayServiceSource()
 
-        XCTAssertTrue(source.contains("views.append(contentsOf: [configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
+        XCTAssertTrue(source.contains("views.append(contentsOf: [gainSection, configSection, commandLabel, commandNote, commandScrollView, saveVoiceCommandButton, voiceCommandStatusView, diagnosticsLabel, configErrorView, voiceCommandErrorView])"))
         XCTAssertTrue(source.contains("NSStackView(views: [title, combinerLabel, combinerNote, scrollView, saveCombinerCommandButton])"))
     }
 
@@ -247,6 +252,16 @@ final class TriStateRelayServiceTests: XCTestCase {
 
         XCTAssertTrue(source.contains("private let voiceCommandTextView = NSTextView()"))
         XCTAssertTrue(source.contains("voiceCommandTextView.string = settings.voiceCommand"))
+        XCTAssertTrue(source.contains("let gainLabel = NSTextField(labelWithString: \"Playback volume boost\")"))
+        XCTAssertTrue(source.contains("playbackGainSlider.numberOfTickMarks = 13"))
+        XCTAssertTrue(source.contains("playbackGainSlider.allowsTickMarkValuesOnly = true"))
+        XCTAssertTrue(source.contains("playbackGainSlider.isContinuous = false"))
+        XCTAssertTrue(source.contains("playbackGainSlider.action = #selector(savePlaybackGain(_:))"))
+        XCTAssertTrue(source.contains("let gainSection = NSStackView(views: [gainLabel, gainControlRow])"))
+        XCTAssertTrue(source.contains("@objc private func savePlaybackGain"))
+        XCTAssertTrue(source.contains("try model.savePlaybackGainDB(gainDB)"))
+        XCTAssertFalse(source.contains("Save boost"))
+        XCTAssertFalse(source.contains("Boosts generated voice audio before playback"))
         XCTAssertTrue(source.contains("let commandLabel = NSTextField(labelWithString: \"Voice command\")"))
         XCTAssertFalse(source.contains("Provider line voices"))
         XCTAssertTrue(source.contains("The active command writes an audio file. TSRS still owns playback"))
