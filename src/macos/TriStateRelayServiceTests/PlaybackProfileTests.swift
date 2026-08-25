@@ -163,7 +163,9 @@ final class PlaybackProfileTests: XCTestCase {
         let source = try triStateRelayServiceSource()
 
         XCTAssertTrue(source.contains("try process.run()\n            publishPlayingIfClaimed(claimId)"), source)
-        XCTAssertTrue(source.contains("if player.play() {\n                publishPlayingIfClaimed(claimId)\n            }"), source)
+        XCTAssertTrue(source.contains("guard player.play(completion:"), source)
+        XCTAssertTrue(source.contains("}) else {"), source)
+        XCTAssertTrue(source.contains("publishPlayingIfClaimed(claimId)\n            model.recordVoiceCommandError(nil)"), source)
         XCTAssertTrue(source.contains("didStart utterance: AVSpeechUtterance"), source)
         XCTAssertTrue(source.contains("publishPlayingIfClaimed(currentId)"), source)
         XCTAssertTrue(source.contains("publishIdleIfClaimed(claimId, outcome: process.terminationStatus == 0 ? .heard : .failed)"), source)
@@ -204,6 +206,23 @@ final class PlaybackProfileTests: XCTestCase {
             XCTAssertEqual(sayArguments(text: "Relay ready", option: option), ["-v", option.name, "Relay ready"])
             XCTAssertFalse(option.name.isEmpty)
         }
+    }
+
+    func testGeneratedAudioPlaybackUsesBoundedGainBoost() {
+        XCTAssertEqual(defaultPlaybackGainDB, 6)
+        XCTAssertEqual(clampedPlaybackGainDB(-4), 0)
+        XCTAssertEqual(clampedPlaybackGainDB(6), 6)
+        XCTAssertEqual(clampedPlaybackGainDB(30), 12)
+    }
+
+    func testGeneratedAudioUsesAmplifiedPlaybackPath() throws {
+        let source = try triStateRelayServiceSource()
+
+        XCTAssertTrue(source.contains("AVAudioUnitEQ(numberOfBands: 0)"), source)
+        XCTAssertTrue(source.contains("gainNode.globalGain = clampedPlaybackGainDB(gainDB)"), source)
+        XCTAssertTrue(source.contains("kAudioUnitSubType_DynamicsProcessor"), source)
+        XCTAssertTrue(source.contains("completionCallbackType: .dataPlayedBack"), source)
+        XCTAssertTrue(source.contains("let player = try AmplifiedAudioPlayer(contentsOf: outputURL)"), source)
     }
 
     func testVoiceCommandArgumentsExpandFileAndVoicePlaceholders() {

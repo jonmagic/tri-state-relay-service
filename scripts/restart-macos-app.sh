@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-APP_PATH="dist/macos/Tri-State Relay Service.app"
+APP_PATH="${TSRS_APP_PATH:-/Applications/Tri-State Relay Service.app}"
 EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/Tri-State Relay Service"
 
 if [ ! -x "${EXECUTABLE_PATH}" ]; then

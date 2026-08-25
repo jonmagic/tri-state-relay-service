@@ -10,6 +10,12 @@ if [[ ! -x "$source" ]]; then
   exit 1
 fi
 
+if [[ "$source" = /* ]]; then
+  link_target="$source"
+else
+  link_target="$PWD/$source"
+fi
+
 target_dir="$(dirname "$target")"
 mkdir -p "$target_dir"
 
@@ -20,10 +26,6 @@ if [[ ! -w "$target_dir" ]]; then
   exit 1
 fi
 
-if [[ -e "$target" || -L "$target" ]]; then
-  rm -f "$target"
-fi
-
-ln -s "$PWD/$source" "$target"
-echo "linked $target -> $PWD/$source"
+ln -sfn "$link_target" "$target"
+echo "linked $target -> $link_target"
 "$target" --version

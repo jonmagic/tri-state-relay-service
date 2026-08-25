@@ -1,4 +1,5 @@
 import AppKit
+import AudioToolbox
 import AVFoundation
 import Carbon.HIToolbox
 import CoreAudio
@@ -13,6 +14,113 @@ let distributionProfile = "direct"
 #endif
 
 let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? relayCliVersion
+let defaultPlaybackGainDB: Float = 6
+
+func clampedPlaybackGainDB(_ gainDB: Float) -> Float {
+    min(max(gainDB, 0), 12)
+}
+
+func makePlaybackLimiter() -> AVAudioUnitEffect {
+    let description = AudioComponentDescription(
+        componentType: kAudioUnitType_Effect,
+        componentSubType: kAudioUnitSubType_DynamicsProcessor,
+        componentManufacturer: kAudioUnitManufacturer_Apple,
+        componentFlags: 0,
+        componentFlagsMask: 0
+    )
+    let limiter = AVAudioUnitEffect(audioComponentDescription: description)
+    _ = AudioUnitSetParameter(limiter.audioUnit, kDynamicsProcessorParam_Threshold, kAudioUnitScope_Global, 0, -1, 0)
+    _ = AudioUnitSetParameter(limiter.audioUnit, kDynamicsProcessorParam_HeadRoom, kAudioUnitScope_Global, 0, 0, 0)
+    _ = AudioUnitSetParameter(limiter.audioUnit, kDynamicsProcessorParam_AttackTime, kAudioUnitScope_Global, 0, 0.001, 0)
+    _ = AudioUnitSetParameter(limiter.audioUnit, kDynamicsProcessorParam_ReleaseTime, kAudioUnitScope_Global, 0, 0.05, 0)
+    return limiter
+}
+
+final class AmplifiedAudioPlayer {
+    private let engine = AVAudioEngine()
+    private let playerNode = AVAudioPlayerNode()
+    private let gainNode = AVAudioUnitEQ(numberOfBands: 0)
+    private let limiterNode = makePlaybackLimiter()
+    private let audioFile: AVAudioFile
+    private var completion: ((Bool) -> Void)?
+    private var configurationObserver: NSObjectProtocol?
+
+    let duration: TimeInterval
+
+    init(contentsOf url: URL, gainDB: Float = defaultPlaybackGainDB) throws {
+        audioFile = try AVAudioFile(forReading: url)
+        let sampleRate = audioFile.processingFormat.sampleRate
+        guard sampleRate > 0, engine.outputNode.outputFormat(forBus: 0).sampleRate > 0 else {
+            throw AmplifiedAudioPlayerError.noOutputDevice
+        }
+        duration = sampleRate > 0 ? Double(audioFile.length) / sampleRate : 0
+
+        gainNode.globalGain = clampedPlaybackGainDB(gainDB)
+        engine.attach(playerNode)
+        engine.attach(gainNode)
+        engine.attach(limiterNode)
+        engine.connect(playerNode, to: gainNode, format: audioFile.processingFormat)
+        engine.connect(gainNode, to: limiterNode, format: audioFile.processingFormat)
+        engine.connect(limiterNode, to: engine.mainMixerNode, format: audioFile.processingFormat)
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            self?.finish(successfully: false)
+        }
+    }
+
+    deinit {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+        }
+    }
+
+    func prepareToPlay() {
+        engine.prepare()
+    }
+
+    func play(completion: @escaping (Bool) -> Void) -> Bool {
+        self.completion = completion
+        playerNode.scheduleFile(audioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.finish(successfully: true)
+            }
+        }
+
+        do {
+            try engine.start()
+            playerNode.play()
+            return true
+        } catch {
+            self.completion = nil
+            playerNode.stop()
+            engine.stop()
+            return false
+        }
+    }
+
+    func stop() {
+        completion = nil
+        playerNode.stop()
+        engine.stop()
+    }
+
+    private func finish(successfully: Bool) {
+        guard let completion else {
+            return
+        }
+        self.completion = nil
+        playerNode.stop()
+        engine.stop()
+        completion(successfully)
+    }
+}
+
+private enum AmplifiedAudioPlayerError: Error {
+    case noOutputDevice
+}
 
 @main
 final class TriStateRelayServiceApp: NSObject, NSApplicationDelegate {
@@ -2815,7 +2923,7 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
     private let inputCaptureSensor: InputCaptureSensing
     private var currentId: Int?
     private var currentProcess: Process?
-    private var currentAudioPlayer: AVAudioPlayer?
+    private var currentAudioPlayer: AmplifiedAudioPlayer?
     private var currentAudioDirectory: URL?
     private var resolvingVoiceCommand = false
     private var currentVoiceCommandToken: UUID?
@@ -2929,7 +3037,6 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
         currentProcess = nil
 
-        currentAudioPlayer?.delegate = nil
         currentAudioPlayer?.stop()
         currentAudioPlayer = nil
 
@@ -3334,14 +3441,29 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         do {
-            let player = try AVAudioPlayer(contentsOf: outputURL)
+            let player = try AmplifiedAudioPlayer(contentsOf: outputURL)
             renewPlaybackDeadline(seconds: player.duration + playbackStallMinimumTimeoutSeconds)
             currentAudioPlayer = player
-            player.delegate = self
             player.prepareToPlay()
-            if player.play() {
-                publishPlayingIfClaimed(claimId)
+            guard player.play(completion: { [weak self, weak player] flag in
+                guard let self, let player, player === self.currentAudioPlayer else {
+                    return
+                }
+                self.audioPlayerDidFinishPlaying(player, successfully: flag)
+            }) else {
+                currentAudioPlayer = nil
+                let fallbackText = claimTextForFallback(directory: directory)
+                cleanupVoiceCommandDirectory(directory)
+                currentAudioDirectory = nil
+                handleVoiceCommandFailure(
+                    "voice command output could not start audio playback",
+                    text: fallbackText,
+                    option: speechVoiceOption(identifier: model.loadSettings().speechVoiceIdentifier),
+                    claimId: claimId
+                )
+                return
             }
+            publishPlayingIfClaimed(claimId)
             model.recordVoiceCommandError(nil)
             onChange()
         } catch {
@@ -3463,11 +3585,9 @@ final class NativeSpeechPlayback: NSObject, AVSpeechSynthesizerDelegate {
         currentId = nil
         onChange()
     }
-}
 
 #if !APP_STORE
-extension NativeSpeechPlayback: AVAudioPlayerDelegate {
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    private func audioPlayerDidFinishPlaying(_ player: AmplifiedAudioPlayer, successfully flag: Bool) {
         guard player === currentAudioPlayer else {
             return
         }
@@ -3491,24 +3611,10 @@ extension NativeSpeechPlayback: AVAudioPlayerDelegate {
             playNext()
         }
     }
-
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        guard player === currentAudioPlayer else {
-            return
-        }
-
-        if let id = currentId {
-            model.markNativeSpeechFailed(id: id)
-            publishIdleIfClaimed(id, outcome: .failed)
-        }
-        currentId = nil
-        currentAudioPlayer = nil
-        cleanupVoiceCommandDirectory(currentAudioDirectory)
-        currentAudioDirectory = nil
-        onChange()
-    }
+#endif
 }
 
+#if !APP_STORE
 private enum VoiceCommandError: Error {
     case empty
     case unterminatedQuote

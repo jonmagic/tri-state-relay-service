@@ -36,19 +36,27 @@ commits, and call out any remaining uncommitted work or risks in the handoff.
 Before committing, inspect `git diff --cached --name-only` and confirm the staged
 file list matches the intended milestone.
 
-For app-visible macOS changes, run `scripts/build-macos.sh direct` and then
-`scripts/restart-macos-app.sh`. Do not use ad hoc `open` commands without first
-stopping the old process. The restart helper must report a running PID from the
-rebuilt `dist/macos/Tri-State Relay Service.app` bundle; say that explicitly in
-the handoff. Before any handoff or docs-only commit, check for pending app-visible
-Swift changes; if any exist, either run the restart gate and commit them first or
-explicitly say they remain uncommitted for review.
+For app-visible macOS changes, run `scripts/build-macos.sh direct`, replace
+`/Applications/Tri-State Relay Service.app` with the rebuilt
+`dist/macos/Tri-State Relay Service.app`, and run
+`scripts/restart-macos-app.sh`. Never leave `/Applications` on an older version
+after a successful direct build. Do not use ad hoc `open` commands without first
+stopping the old process. The restart helper defaults to the installed app and
+must report a running PID from `/Applications/Tri-State Relay Service.app`; use
+`TSRS_APP_PATH` only for an intentional alternate bundle. Say the installed PID
+explicitly in the handoff. Before any handoff or docs-only commit, check for
+pending app-visible Swift changes; if any exist, either run the
+install-and-restart gate and commit them first or explicitly say they remain
+uncommitted for review.
 
-When a change adds or changes `relay` CLI commands, verify both the bundled CLI
-and the `relay` command resolved from `PATH`. For local development, prefer
-`scripts/install-dev-relay-symlink.sh` so `/usr/local/bin/relay` follows the
-rebuilt bundled CLI; if root-owned permissions block it, report the helper's
-exact sudo command instead of claiming the PATH command was updated.
+After a direct build, compare the bundled CLI with the `relay` command resolved
+from `PATH` and update the global command whenever it is missing or stale. For
+local development, prefer `scripts/install-dev-relay-symlink.sh` so
+`/usr/local/bin/relay` follows the CLI inside the installed
+`/Applications/Tri-State Relay Service.app`; set `TSRS_RELAY_SOURCE` explicitly
+to that installed bundle path. If root-owned permissions block it, report the
+helper's exact sudo command instead of claiming the PATH command was updated.
+Verify both the bundled CLI and the `relay` command resolved from `PATH`.
 
 ## Product rules
 
