@@ -223,6 +223,7 @@ relay config path
 relay config show
 relay config validate
 relay config set --voice-command '/usr/bin/say -f <text-file> -o <output-file>'
+relay config set --playback-gain-db 9
 ```
 
 If `config.toml` is malformed or uses unsupported placeholders, `relay config validate` reports the error. Playback fails quiet while the config is invalid: relays stay queued, Settings/status surface the config error, and TSRS does not claim messages for speech until the config is fixed.

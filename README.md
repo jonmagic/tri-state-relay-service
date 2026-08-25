@@ -29,6 +29,7 @@ relay combiner
 relay config show
 relay config validate
 relay config set --voice-command '/usr/bin/say -f <text-file> -o <output-file>'
+relay config set --playback-gain-db 9
 relay status
 ```
 

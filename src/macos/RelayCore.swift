@@ -1077,6 +1077,7 @@ Commands:
   combiner             Get inactive-line combiner command.
   config [path|show|validate|reload]
   config set [--voice-command <command>] [--combiner-command <command>]
+             [--playback-gain-db <0-12>]
              [--cleanup-retention-minutes <minutes>]
                        Inspect, validate, and update TOML-backed advanced config.
   first-start [status|reset|complete]
@@ -1525,7 +1526,7 @@ private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNoti
 
     if action == "set" {
         do {
-            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["combiner-command", "voice-command", "cleanup-retention-minutes"])
+            let flags = try parseRelayFlags(Array(arguments.dropFirst()), knownFlags: ["combiner-command", "voice-command", "playback-gain-db", "cleanup-retention-minutes"])
             guard !flags.isEmpty else {
                 return RelayCliResult(stdout: "", stderr: "config set requires at least one flag", exitCode: 1)
             }
@@ -1533,6 +1534,7 @@ private func runConfigCommand(_ arguments: [String], wakeNotifier: RelayWakeNoti
                 let config = try store.setAdvancedConfig(
                     voiceCommand: flags["voice-command"],
                     combinerCommand: flags["combiner-command"],
+                    playbackGainDB: flags["playback-gain-db"],
                     cleanupRetentionMinutes: flags["cleanup-retention-minutes"]
                 )
                 wakeNotifier.post()
@@ -2159,7 +2161,7 @@ private final class RelayCliStore {
         try setSetting(key: "cleanup_retention_minutes", value: String(minutes))
     }
 
-    func setAdvancedConfig(voiceCommand: String?, combinerCommand: String?, cleanupRetentionMinutes: String?) throws -> RelayConfig {
+    func setAdvancedConfig(voiceCommand: String?, combinerCommand: String?, playbackGainDB: String?, cleanupRetentionMinutes: String?) throws -> RelayConfig {
         let normalizedVoiceCommand = voiceCommand.map { command -> String in
             command == "none" ? defaultVoiceCommand : resetBlankCommand(command, fallback: defaultVoiceCommand)
         }
@@ -2168,6 +2170,17 @@ private final class RelayCliStore {
             guard enabledCommandLineCount(normalized) == 1 else {
                 throw RelayCliStoreError(message: "voice command must have exactly one uncommented command")
             }
+        }
+
+        let gainDB = try playbackGainDB.map { value in
+            guard
+                let gainDB = Float(value),
+                gainDB.isFinite,
+                (minimumPlaybackGainDB...maximumPlaybackGainDB).contains(gainDB)
+            else {
+                throw RelayCliStoreError(message: "playback gain must be between 0 and 12 dB")
+            }
+            return gainDB
         }
 
         let cleanupMinutes = try cleanupRetentionMinutes.map { value in
@@ -2183,6 +2196,9 @@ private final class RelayCliStore {
             }
             if let combinerCommand {
                 config.combinerCommand = combinerCommand == "none" ? "" : resetBlankCommand(combinerCommand, fallback: "")
+            }
+            if let gainDB {
+                config.playbackGainDB = gainDB
             }
             if let cleanupMinutes {
                 config.cleanupRetentionMinutes = cleanupMinutes

@@ -359,6 +359,28 @@ final class RelayCliTests: XCTestCase {
         XCTAssertTrue(reset.stdout.contains("command = \"\(command)\""))
     }
 
+    func testConfigSetPersistsPlaybackGain() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        let updated = runRelayCli(["config", "set", "--playback-gain-db", "9.5"])
+
+        XCTAssertEqual(updated.exitCode, 0)
+        XCTAssertTrue(updated.stdout.contains("gain_db = 9.5"))
+        XCTAssertEqual(try RelayConfig.loadExisting().playbackGainDB, 9.5)
+    }
+
+    func testConfigSetRejectsInvalidPlaybackGainWithoutChangingConfig() throws {
+        setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
+
+        for gain in ["-1", "13", "nan", "loud"] {
+            let result = runRelayCli(["config", "set", "--playback-gain-db", gain])
+
+            XCTAssertEqual(result.exitCode, 1)
+            XCTAssertTrue(result.stderr.contains("playback gain must be between 0 and 12 dB"))
+            XCTAssertEqual(try RelayConfig.loadExisting().playbackGainDB, defaultPlaybackGainDB)
+        }
+    }
+
     func testConfigSetRejectsMultipleEnabledVoiceCommands() {
         setenv("TSRS_DB_PATH", isolatedDatabasePath(), 1)
 
@@ -410,6 +432,10 @@ final class RelayCliTests: XCTestCase {
 
         let validate = runRelayCli(["config", "validate"])
         XCTAssertEqual(validate.stdout, "config valid: \(configPath)")
+    }
+
+    func testHelpDocumentsPlaybackGainConfigFlag() {
+        XCTAssertTrue(relayCliUsage.contains("[--playback-gain-db <0-12>]"))
     }
 
     func testConfigShowRoundTripsProviderLineVoices() throws {
